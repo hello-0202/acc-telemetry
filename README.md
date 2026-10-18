@@ -17,7 +17,7 @@
 Most professional telemetry tools require complex setups. **ACC Telemetry** is an **out-of-the-box**, lightweight, self-hosted alternative. By reading ACC's shared memory directly, it provides a seamless "plug-and-play" local installation experience. No complex configurations required. It records lap times, analyzes pedal inputs, and stores local data securely—letting you focus entirely on driving.
 
 **中文:** 
-市面上的专业遥测软件往往配置繁琐、上手门槛高。**ACC Telemetry** 主打**“开箱即用”**与**“本地极简安装”**。它直接读取 ACC 的共享内存，提供真正的“无感”体验。普通玩家**下载即用，无需任何复杂配置**。它可以静默记录圈速、分析踏板数据，并将数据安全存取在本地记录中，让你完全专注于驾驶本身。
+市面上的专业遥测软件往往配置繁琐、上手门槛高。**ACC Telemetry** 主打“开箱即用”**与**“本地极简安装”**。它直接读取 ACC 的共享内存，提供真正的“无感”体验。普通玩家**下载即用，无需任何复杂配置**。它可以静默记录圈速、分析踏板数据，并将数据安全存取在本地记录中，让你完全专注于驾驶本身。
 
 ### ✨ Key Features (核心特性)
 - 🏎️ **Real-time Dashboard**: Zero-latency HUD for secondary screens. (零延迟的副屏实时数据面板)
