@@ -1,0 +1,996 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ACC 遥测 · Telemetry</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230B0D10'/%3E%3Crect x='7' y='7' width='18' height='18' fill='%23C8F53E'/%3E%3C/svg%3E" />
+<script>try{var t=localStorage.getItem('acc-theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+/* ================= tokens ================= */
+:root{
+  --font-display:'Chakra Petch','Bahnschrift','DIN Alternate','Microsoft YaHei',sans-serif;
+  --font-mono:'JetBrains Mono','Cascadia Code',Consolas,'Microsoft YaHei',monospace;
+  --font-ui:'Chakra Petch','Microsoft YaHei','PingFang SC',sans-serif;
+}
+html[data-theme="dark"]{
+  --desk:#05070A;
+  --bg:#0B0D10; --bg-soft:#0E1116; --panel:#12161C; --panel-2:#171D25;
+  --line:#232B35; --line-2:#333D4A;
+  --text:#E9EEF4; --text-dim:#96A2B1; --text-faint:#5B6572;
+  --signal:#C8F53E; --signal-ink:#0B0D10; --signal-text:#C8F53E; --signal-dim:rgba(200,245,62,.13);
+  --good:#3CE68E; --cold:#3FA2F5; --hot:#FF4B33; --hot-dim:rgba(255,75,51,.13); --warn:#FFB020; --warn-dim:rgba(255,176,32,.12);
+  --grid-line:rgba(150,162,177,.09);
+  --chart-band-a:rgba(255,255,255,.055); --chart-band-b:rgba(255,255,255,0);
+  --win-shadow:0 26px 70px rgba(0,0,0,.6);
+  --tab-track:#080A0D;
+  --inset:inset 0 1px 3px rgba(0,0,0,.55);
+}
+html[data-theme="light"]{
+  --desk:#D7DBD4;
+  --bg:#F2F4F1; --bg-soft:#E8EBE7; --panel:#FFFFFF; --panel-2:#F5F7F4;
+  --line:#D8DCD5; --line-2:#BCC3B6;
+  --text:#13181C; --text-dim:#525C66; --text-faint:#8A9390;
+  --signal:#C8F53E; --signal-ink:#10140A; --signal-text:#4E6A00; --signal-dim:rgba(122,162,0,.16);
+  --good:#0B9A5A; --cold:#0F6FC4; --hot:#D5321A; --hot-dim:rgba(213,50,26,.12); --warn:#9A6200; --warn-dim:rgba(154,98,0,.12);
+  --grid-line:rgba(19,24,28,.07);
+  --chart-band-a:rgba(19,24,28,.05); --chart-band-b:rgba(19,24,28,0);
+  --win-shadow:0 20px 50px rgba(30,40,30,.28);
+  --tab-track:#E6E9E4;
+  --inset:inset 0 1px 2px rgba(30,40,30,.14);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--desk);color:var(--text);font-family:var(--font-ui);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;overflow:hidden}
+::selection{background:var(--signal);color:var(--signal-ink)}
+:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.signal-text{color:var(--signal-text)}
+
+/* ================= window shell ================= */
+.desktop{height:100vh;display:flex;align-items:center;justify-content:center;overflow:auto;padding:16px}
+.win{width:1000px;height:680px;flex:none;display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--line);box-shadow:var(--win-shadow);overflow:hidden;transform-origin:50% 50%}
+.win-bar{height:30px;flex:none;display:flex;align-items:center;gap:8px;padding:0 10px;background:var(--bg-soft);border-bottom:1px solid var(--line);user-select:none}
+.win-id{display:flex;align-items:center;gap:7px}
+.win-id .brand-mark{width:13px;height:13px;background:var(--signal);clip-path:polygon(0 0,100% 0,100% 70%,70% 100%,0 100%);position:relative;flex:none}
+.win-id .brand-mark::after{content:"";position:absolute;inset:3px;border:1px solid var(--signal-ink)}
+.win-bar .name{font-family:var(--font-display);font-weight:600;font-size:11.5px;color:var(--text-dim);letter-spacing:.05em}
+.win-bar .wbtns{margin-left:auto;display:flex}
+.win-bar .wb{width:34px;height:22px;display:flex;align-items:center;justify-content:center;color:var(--text-faint)}
+.win-bar .wb svg{width:10px;height:10px}
+.win-bar .wb.close:hover{background:var(--hot);color:#fff}
+.app{flex:1;display:flex;flex-direction:column;min-height:0}
+
+/* ================= topbar: circular page buttons ================= */
+.topbar{flex:none;display:flex;align-items:center;justify-content:center;position:relative;padding:0 16px;height:56px;border-bottom:1px solid var(--line);background:var(--bg-soft)}
+/* 嵌入式分段控件：内凹轨道 + 方形按钮 */
+.tabs{display:inline-flex;gap:2px;padding:3px;background:var(--tab-track);border:1px solid var(--line);border-radius:5px;box-shadow:var(--inset)}
+.tab{display:flex;align-items:center;gap:7px;padding:7px 14px;border-radius:3px;color:var(--text-dim);font-family:var(--font-display);font-weight:600;font-size:12.5px;letter-spacing:.03em;transition:background .14s,color .14s}
+.tab-ico{width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex:none}
+.tab-ico svg{width:16px;height:16px}
+.tab-label{font-family:var(--font-display);font-size:12.5px;letter-spacing:.03em}
+.tab:hover{color:var(--text);background:var(--panel-2)}
+.tab.active{background:var(--signal);color:var(--signal-ink);box-shadow:0 1px 2px rgba(0,0,0,.35)}
+.tab.active:hover{background:var(--signal)}
+.top-right{position:absolute;right:16px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:8px}
+.sq-btn{width:32px;height:32px;border-radius:3px;border:1px solid var(--line-2);background:var(--panel);color:var(--text-dim);display:flex;align-items:center;justify-content:center;transition:.14s}
+.sq-btn:hover{color:var(--text);border-color:var(--text-faint)}
+.sq-btn svg{width:15px;height:15px}
+.sq-btn.on{background:var(--signal);border-color:var(--signal);color:var(--signal-ink)}
+
+/* ================= stage ================= */
+.stage{flex:1;min-height:0;overflow:hidden;position:relative}
+.view{display:none;height:100%}
+.view.active{display:flex;flex-direction:column;animation:viewIn .16s ease-out}
+@keyframes viewIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+.sec-title{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+.sec-title h3{font-family:var(--font-display);font-size:13px;font-weight:600}
+.sec-title .en{font-family:var(--font-mono);font-size:9px;color:var(--text-faint);letter-spacing:.14em}
+.sec-title .right{margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--text-faint)}
+.panel{background:var(--panel);border:1px solid var(--line);padding:13px 14px}
+.btn{clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);padding:7px 14px;font-family:var(--font-display);font-weight:600;font-size:12.5px;display:inline-flex;align-items:center;gap:7px}
+.btn-primary{background:var(--signal);color:var(--signal-ink)}
+.btn-ghost{background:var(--panel-2);color:var(--text);box-shadow:inset 0 0 0 1px var(--line-2)}
+.btn-danger{background:var(--hot);color:#fff}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* ================= monitor view ================= */
+#view-monitor{padding:14px 16px;gap:10px;overflow:hidden}
+.mon-top{display:flex;gap:12px;align-items:stretch}
+.mon-status{flex:1;display:flex;flex-direction:column;gap:5px;padding:10px 14px}
+.mon-line{display:flex;align-items:center;gap:9px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim)}
+.sdot{width:8px;height:8px;border-radius:50%;flex:none}
+.sdot.good{background:var(--good);box-shadow:0 0 7px var(--good);animation:pulse 1.6s ease-in-out infinite}
+.sdot.warn{background:var(--warn);box-shadow:0 0 7px var(--warn)}
+.sdot.hot{background:var(--hot);box-shadow:0 0 7px var(--hot)}
+.sdot.off{background:var(--text-faint)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.mon-title{font-family:var(--font-display);font-size:14px;font-weight:600}
+.mon-action{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;background:var(--panel);border:1px solid var(--line);padding:10px 16px}
+.start-btn{min-width:180px;height:62px;padding:0 20px;border-radius:4px;border:2px solid var(--line-2);background:var(--panel-2);color:var(--text-dim);display:flex;align-items:center;justify-content:center;gap:11px;transition:.16s}
+.start-btn svg{width:20px;height:20px;flex:none}
+.sb-col{display:flex;flex-direction:column;align-items:flex-start;gap:1px}
+.start-btn .sb-t{font-family:var(--font-display);font-weight:700;font-size:15px;letter-spacing:.05em}
+.start-btn .sb-s{font-family:var(--font-mono);font-size:9.5px;color:var(--text-faint);letter-spacing:.1em}
+.start-btn:hover{border-color:var(--signal-text);color:var(--text)}
+.start-btn.on{border-color:var(--signal);background:var(--signal);color:var(--signal-ink)}
+.start-btn.on .sb-s{color:rgba(11,13,16,.65)}
+.start-btn.on.rec{box-shadow:0 0 0 5px var(--hot-dim);border-color:var(--hot)}
+.live-wrap{flex:1;min-height:0;display:block}
+.live{display:grid;grid-template-columns:1.1fr 1fr;grid-template-rows:minmax(0,1fr);gap:12px;width:100%;height:100%}
+.live-main{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
+.live-lower{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;min-width:0}
+.live-lower>.panel:last-child{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:center}
+.tyre-legend{display:flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:9px;color:var(--text-faint)}
+.tyre-legend span{display:inline-flex;align-items:center;gap:4px}
+.tyre-legend i{width:8px;height:8px;display:inline-block}
+.tyre-legend i.g{background:var(--good)} .tyre-legend i.c{background:var(--cold)} .tyre-legend i.h{background:var(--hot)}
+.live-hero{display:grid;grid-template-columns:auto auto 1fr;grid-template-areas:"spd gear dlta" "rpm rpm rpm" "lap lap lap";gap:9px 18px;align-items:center;padding:12px 14px}
+.live-hero .spd{grid-area:spd;display:flex;align-items:baseline;gap:8px}
+.big-num{font-family:var(--font-mono);font-weight:700;font-size:clamp(42px,4.6vw,54px);line-height:.95;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.unit{font-family:var(--font-display);color:var(--text-dim);font-size:11px;letter-spacing:.2em}
+.live-hero .gear{grid-area:gear;text-align:center;padding-left:18px;border-left:1px solid var(--line)}
+.gear-num{font-family:var(--font-mono);font-weight:700;font-size:38px;line-height:1;color:var(--signal-text)}
+.gear-lbl{font-family:var(--font-display);font-size:9.5px;color:var(--text-faint);letter-spacing:.26em;margin-top:2px}
+.live-hero .dlta{grid-area:dlta;text-align:right}
+.dlta-lbl{font-family:var(--font-display);font-size:9.5px;color:var(--text-faint);letter-spacing:.14em}
+.dlta-val{font-family:var(--font-mono);font-weight:700;font-size:26px;line-height:1.1;font-variant-numeric:tabular-nums}
+.dlta-val.good{color:var(--good)} .dlta-val.hot{color:var(--hot)}
+.rpm-bar{display:flex;gap:2.5px;height:12px}
+.rpm-seg{flex:1;background:var(--line)}
+.rpm-seg.on{background:var(--text-dim)}
+.rpm-seg.on.s-good{background:var(--good)} .rpm-seg.on.s-warn{background:var(--warn)} .rpm-seg.on.s-hot{background:var(--hot)}
+.rpm-bar.flash .rpm-seg.on.s-hot{animation:segflash .18s steps(2) infinite}
+@keyframes segflash{50%{opacity:.15}}
+.rpm-meta{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:9.5px;color:var(--text-faint);margin-top:4px}
+.lap-row{display:flex;gap:20px;border-top:1px solid var(--line);padding-top:9px}
+.lap-row .lbl{font-family:var(--font-display);font-size:9.5px;color:var(--text-faint);letter-spacing:.14em;display:block}
+.lap-row .val{font-family:var(--font-mono);font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.live-side{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
+.map-panel{flex:1;display:flex;flex-direction:column;min-height:0}
+.map-fill{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;margin:4px 0 8px}
+.map-svg{width:100%;height:100%;display:block;max-height:none}
+.map-meta{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);margin-top:7px;display:flex;justify-content:space-between;gap:10px}
+.map-base{fill:none;stroke:var(--line);stroke-width:9;stroke-linejoin:round;stroke-linecap:round}
+.map-inline{fill:none;stroke:var(--line-2);stroke-width:1.4;stroke-dasharray:1 5}
+.map-corner{fill:var(--text-faint)}
+.map-dot{fill:var(--signal)} .map-dot-glow{fill:var(--signal);opacity:.22}
+.map-progress{height:3px;background:var(--line);margin-top:7px;position:relative}
+.map-progress i{position:absolute;left:0;top:0;bottom:0;background:var(--signal);width:0}
+.pedal-row{display:grid;grid-template-columns:44px 1fr 40px;align-items:center;gap:9px;margin-bottom:6px}
+.pedal-name{font-family:var(--font-display);font-size:11px;font-weight:600;color:var(--text-dim)}
+.pedal-track{height:13px;background:var(--bg-soft);border:1px solid var(--line);position:relative;overflow:hidden}
+.pedal-fill{position:absolute;left:0;top:0;bottom:0;width:0}
+.pedal-fill.throttle{background:var(--good)} .pedal-fill.brake{background:var(--hot)}
+.pedal-val{font-family:var(--font-mono);font-size:11px;text-align:right;font-variant-numeric:tabular-nums}
+.steer-track{height:13px;background:var(--bg-soft);border:1px solid var(--line);position:relative}
+.steer-center{position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--line-2)}
+.steer-fill{position:absolute;top:0;bottom:0;background:var(--signal);left:50%;width:0}
+/* 按车辆四轮位置排布：前左 前右 / 后左 后右 */
+.tyre-layout{position:relative}
+.tyre-axis{display:flex;align-items:center;justify-content:space-between;font-family:var(--font-mono);font-size:9px;color:var(--text-faint);letter-spacing:.14em;margin-bottom:5px}
+.tyre-layout::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--line);pointer-events:none}
+.tire-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+.tire-card{border:1px solid var(--line);background:var(--panel-2);padding:5px 7px}
+.tire-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+.tire-corner{font-family:var(--font-display);font-weight:700;font-size:11px}
+.tire-pres{font-family:var(--font-mono);font-size:9.5px;color:var(--text-dim);font-variant-numeric:tabular-nums}
+.tire-temp{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+.t-block{width:16px;height:16px;flex:none}
+.t-block.good{background:var(--good)} .t-block.cold{background:var(--cold)} .t-block.hot{background:var(--hot)}
+.t-val{font-family:var(--font-mono);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+.tire-brake{font-family:var(--font-mono);font-size:9px;color:var(--text-dim);display:flex;gap:6px;align-items:center}
+.b-bar{flex:1;height:3px;background:var(--line);position:relative}
+.b-bar i{position:absolute;left:0;top:0;bottom:0;background:var(--warn)}
+.b-bar i.hot{background:var(--hot)} .b-bar i.cold{background:var(--cold)}
+.live-off{display:flex;align-items:center;justify-content:center;gap:10px;padding:34px 0;border:1px dashed var(--line-2);color:var(--text-faint);font-family:var(--font-mono);font-size:11.5px}
+[hidden]{display:none!important}
+
+/* ================= history view: 3 columns ================= */
+#view-history{flex-direction:row;gap:0;height:100%}
+.col{display:flex;flex-direction:column;min-height:0;padding:13px 12px}
+.col-tracks{width:240px;flex:none;border-right:1px solid var(--line);background:var(--bg-soft)}
+.col-ana{flex:1;min-width:0;padding:0}
+.list-head{display:flex;align-items:baseline;gap:7px;margin:0 2px 9px}
+.list-head h3{font-family:var(--font-display);font-size:12.5px;font-weight:600}
+.list-head .n{font-family:var(--font-mono);font-size:9.5px;color:var(--text-faint)}
+.list-scroll{flex:1;overflow-y:auto;margin:0 -4px;padding:0 4px}
+.track-group{margin-bottom:2px}
+.track-row{position:relative;display:flex;align-items:stretch;gap:2px}
+.track-item{flex:1;min-width:0;display:flex;align-items:flex-start;gap:8px;width:100%;text-align:left;padding:9px 10px;border:1px solid transparent;position:relative;background:none}
+.track-kebab{flex:none;width:24px;align-self:center;height:30px;border:1px solid transparent;background:none;color:var(--text-faint);font-size:16px;line-height:1;cursor:pointer;border-radius:4px;display:flex;align-items:center;justify-content:center;transition:color .12s,background .12s,border-color .12s}
+.track-kebab:hover,.track-kebab.open{background:var(--panel);color:var(--text);border-color:var(--line)}
+.track-menu{position:absolute;right:2px;top:calc(100% - 2px);z-index:30;display:none;min-width:128px;background:var(--panel);border:1px solid var(--line-2);box-shadow:0 8px 22px rgba(0,0,0,.4);border-radius:6px;padding:4px}
+.track-menu.show{display:block}
+.track-menu button{display:block;width:100%;text-align:left;padding:7px 9px;border:none;background:none;color:var(--text);font-family:var(--font-display);font-size:11px;border-radius:4px;cursor:pointer}
+.track-menu button:hover{background:var(--panel-2)}
+.track-menu button.danger{color:var(--hot)}
+.track-menu button.danger:hover{background:var(--hot-dim)}
+.track-item .chev{width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:5px solid var(--text-faint);margin-top:5px;flex:none;transition:transform .15s,border-left-color .15s}
+.track-group.open .track-item .chev{transform:rotate(90deg);border-left-color:var(--signal)}
+.track-body{flex:1;min-width:0}
+.track-item:hover{background:var(--panel);border-color:var(--line)}
+.track-item.active{background:var(--panel);border-color:var(--line);box-shadow:inset 3px 0 0 var(--signal)}
+.lap-list{margin:0 0 4px 16px;padding:2px 0 4px 12px;border-left:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
+.track-name{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px}
+.track-name .live-dot{width:6px;height:6px;border-radius:50%;background:var(--good);box-shadow:0 0 6px var(--good);animation:pulse 1.4s ease-in-out infinite}
+.track-meta{font-family:var(--font-mono);font-size:9.5px;color:var(--text-faint);margin-top:3px;display:flex;gap:8px}
+.track-meta b{color:var(--text-dim);font-weight:500}
+.lap-item{display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid transparent;margin-bottom:2px;width:100%;text-align:left;background:none}
+.lap-item:hover{background:var(--panel-2)}
+.lap-item.active{background:var(--panel);border-color:var(--line);box-shadow:inset 3px 0 0 var(--signal)}
+.lap-item .lap-no{font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint);width:24px;flex:none}
+.lap-item .lap-time{font-family:var(--font-mono);font-size:12.5px;font-variant-numeric:tabular-nums;flex:1}
+.lap-item.invalid .lap-time{color:var(--text-faint);text-decoration:line-through}
+.lap-item.best .lap-time{color:var(--signal-text);font-weight:700}
+.lap-item.best.active{box-shadow:none}
+.tag{font-family:var(--font-mono);font-size:9px;padding:1px 5px;border:1px solid var(--line-2);color:var(--text-faint);flex:none}
+.tag.pb{border-color:var(--signal);color:var(--signal-text);background:var(--signal-dim)}
+.tag.out{border-color:var(--warn);color:var(--warn);background:var(--warn-dim)}
+.tag.bad{border-color:var(--hot);color:var(--hot);background:var(--hot-dim)}
+.ana-head{flex:none;padding:11px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;background:var(--bg-soft)}
+.ana-head .t{font-family:var(--font-display);font-size:14px;font-weight:600}
+.ana-head .s{font-family:var(--font-mono);font-size:10px;color:var(--text-faint)}
+.ana-head .chip{margin-left:auto;font-family:var(--font-mono);font-size:10px;border:1px solid var(--line);padding:3px 8px;color:var(--text-dim)}
+.ana-scroll{flex:1;overflow-y:auto;padding:13px 14px;display:flex;flex-direction:column;gap:12px}
+/* 隐藏滚动条但保留滚动（Tauri/WebKit 生效）：滚轮、触控板、键盘均可滚动 */
+.list-scroll,.ana-scroll,#view-settings,.desktop{scrollbar-width:none;-ms-overflow-style:none}
+.list-scroll::-webkit-scrollbar,.ana-scroll::-webkit-scrollbar,#view-settings::-webkit-scrollbar,.desktop::-webkit-scrollbar{display:none;width:0;height:0}
+.ana-card{border:1px solid var(--line);background:var(--panel);padding:12px 13px}
+.ana-card h4{font-family:var(--font-display);font-size:12px;font-weight:600;margin-bottom:9px;display:flex;align-items:center;gap:8px}
+.ana-card h4 .en{font-family:var(--font-mono);font-size:8.5px;color:var(--text-faint);letter-spacing:.14em}
+.kv-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 10px}
+.kv{display:flex;flex-direction:column;gap:1px}
+.kv .k{font-family:var(--font-display);font-size:9.5px;color:var(--text-faint);letter-spacing:.1em}
+.kv .v{font-family:var(--font-mono);font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums}
+.kv .v.good{color:var(--good)} .kv .v.hot{color:var(--hot)} .kv .v.sig{color:var(--signal-text)}
+.ana-split{display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start}
+.sum-right{min-width:0;display:flex;flex-direction:column;gap:11px}
+.mini-map{position:relative;border:1px solid var(--line);background:var(--panel-2);padding:4px;cursor:crosshair}
+.mini-map svg{width:100%;height:auto;display:block}
+.mini-map .map-corner{fill:var(--text-faint);opacity:.7}
+.mini-map .map-corner:hover{fill:var(--signal)}
+.kv.lap .v{font-size:21px;line-height:1.1}
+.sum-main{grid-template-columns:repeat(3,auto);justify-content:start;gap:14px 22px;align-items:center}
+.sector-box{border:none;background:transparent;padding:0}
+.kv-grid.sector-grid{grid-template-columns:repeat(4,1fr);gap:7px 9px}
+.sb-head{font-family:var(--font-display);font-size:10px;color:var(--text-dim);letter-spacing:.12em;margin-bottom:7px}
+.sb-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.sb-cell{display:flex;flex-direction:column;gap:1px}
+.sb-cell.pt{grid-column:1/-1;border-top:1px dashed var(--line-2);padding-top:7px;margin-top:1px;flex-direction:row;align-items:baseline;gap:10px}
+.sb-k{font-family:var(--font-display);font-size:9px;color:var(--text-faint);letter-spacing:.12em}
+.sb-v{font-family:var(--font-mono);font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text)}
+.sb-d{font-family:var(--font-mono);font-size:10px;font-variant-numeric:tabular-nums}
+.sb-d.hot{color:var(--hot)} .sb-d.good{color:var(--good)}
+.map-hint{position:absolute;left:0;right:0;bottom:5px;text-align:center;font-family:var(--font-mono);font-size:8px;color:var(--text-faint);letter-spacing:.12em;pointer-events:none}
+.chart-svg{width:100%;display:block}
+.cursor-line{position:absolute;top:0;bottom:0;width:1px;background:var(--signal-text);display:none;pointer-events:none}
+.cursor-line::before{content:"";position:absolute;top:0;left:-3px;width:7px;height:7px;background:var(--signal-text)}
+.chart-wrap{position:relative}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--font-mono);font-size:9.5px;color:var(--text-dim);margin-bottom:8px}
+.legend i{display:inline-block;width:13px;height:3px;vertical-align:2px;margin-right:5px}
+#heatCanvas{width:100%;display:block}
+.heat-legend{display:flex;align-items:center;gap:7px;font-family:var(--font-mono);font-size:9px;color:var(--text-faint);margin-top:8px}
+.heat-legend .bar{flex:1;height:7px;background:linear-gradient(90deg,#0B6B2A,#E8B400,#A80E0E)}
+.delta-sum{font-family:var(--font-mono);font-size:10.5px;color:var(--text-dim);line-height:1.75;margin-top:8px}
+.delta-sum b{color:var(--hot)} .delta-sum .g{color:var(--good)}
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;height:100%;color:var(--text-faint);font-family:var(--font-mono);font-size:11.5px}
+.empty svg{width:26px;height:26px;opacity:.5}
+
+/* ================= settings ================= */
+#view-settings{padding:16px 18px;overflow-y:auto;align-items:center}
+.set-group{margin-bottom:16px;width:100%;max-width:520px}
+.set-group>.glbl{font-family:var(--font-mono);font-size:9.5px;color:var(--text-faint);letter-spacing:.14em;display:block;margin-bottom:7px}
+.set-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line);font-size:12.5px}
+.set-row:last-child{border-bottom:none}
+.set-row .v{font-family:var(--font-mono);font-size:11px;color:var(--text-dim)}
+.seg{display:flex;border:1px solid var(--line)}
+.seg button{padding:4px 11px;font-family:var(--font-mono);font-size:10.5px;color:var(--text-dim)}
+.seg button.active{background:var(--signal);color:var(--signal-ink)}
+.switch{width:34px;height:18px;border:1px solid var(--line-2);background:var(--panel-2);position:relative;flex:none}
+.switch::after{content:"";position:absolute;left:2px;top:2px;width:12px;height:12px;background:var(--text-faint);transition:.15s}
+.switch.on{border-color:var(--signal)} .switch.on::after{left:18px;background:var(--signal)}
+
+/* ================= statusbar ================= */
+.statusbar{flex:none;display:flex;align-items:center;gap:14px;padding:0 14px;height:24px;border-top:1px solid var(--line);background:var(--bg-soft);font-family:var(--font-mono);font-size:9.5px;color:var(--text-faint)}
+.statusbar .r{margin-left:auto;display:flex;gap:14px}
+kbd{font-family:var(--font-mono);border:1px solid var(--line-2);padding:0 4px;color:var(--text-dim)}
+
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="desktop">
+<div class="win" id="win">
+  <!-- window chrome (Tauri 里可用 decorations:false 自绘) -->
+  <div class="win-bar" aria-hidden="true">
+    <div class="win-id">
+      <span class="brand-mark"></span><span class="name">ACC 遥测 · Telemetry</span>
+    </div>
+    <div class="wbtns">
+      <span class="wb"><svg viewBox="0 0 10 10"><rect x="0" y="4.4" width="10" height="1.2" fill="currentColor"/></svg></span>
+      <span class="wb"><svg viewBox="0 0 10 10"><rect x="0.6" y="0.6" width="8.8" height="8.8" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></span>
+      <span class="wb close"><svg viewBox="0 0 10 10"><path d="M0.6 0.6 9.4 9.4M9.4 0.6 0.6 9.4" stroke="currentColor" stroke-width="1.3"/></svg></span>
+    </div>
+  </div>
+
+  <div class="app">
+    <!-- ================= topbar ================= -->
+    <header class="topbar">
+      <nav class="tabs" aria-label="页面切换">
+        <button class="tab active" data-view="monitor" aria-current="page">
+          <span class="tab-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4.5 13.5H11L9.5 22 19 10h-6.5L13 2z"/></svg></span>
+          <span class="tab-label">监测</span>
+        </button>
+        <button class="tab" data-view="history">
+          <span class="tab-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4"/><path d="M5 5h14l-2.5 4L19 13H5"/></svg></span>
+          <span class="tab-label">历史</span>
+        </button>
+        <button class="tab" data-view="settings">
+          <span class="tab-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.65 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.08A1.7 1.7 0 0 0 10.12 3V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.08a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.03z"/></svg></span>
+          <span class="tab-label">设置</span>
+        </button>
+      </nav>
+      <div class="top-right">
+        <button class="sq-btn" id="themeBtn" aria-label="切换黑白主题" title="切换主题 (T)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ================= stage ================= -->
+    <main class="stage">
+
+      <!-- ========== 监测 ========== -->
+      <section class="view active" id="view-monitor">
+        <div class="mon-top">
+          <div class="panel mon-status">
+            <div class="mon-line"><span class="sdot off" id="monDot"></span><span class="mon-title" id="monTitle">未开始监测</span></div>
+            <div class="mon-line" id="monLine1"><span style="color:var(--text-faint)">车辆</span><span>—</span></div>
+            <div class="mon-line" id="monLine2"><span style="color:var(--text-faint)">数据集</span><span>—</span></div>
+          </div>
+          <div class="mon-action">
+            <button class="start-btn" id="startBtn" aria-label="开始监测">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5L8 5.5z"/></svg>
+              <span class="sb-col"><span class="sb-t" id="startBtnT">开始监测</span><span class="sb-s mono" id="startBtnS" hidden></span></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="live-wrap" id="liveWrap" hidden>
+          <div class="live">
+            <div class="live-main">
+            <div class="panel live-hero">
+              <div class="spd"><span class="big-num" id="spdVal">--</span><span class="unit">KM/H</span></div>
+              <div class="gear"><div class="gear-num" id="gearVal">-</div><div class="gear-lbl">档位</div></div>
+              <div class="dlta"><div class="dlta-lbl">DELTA · 对 PB</div><div class="dlta-val mono" id="dltaVal">+0.000</div></div>
+              <div class="rpm" style="grid-area:rpm">
+                <div class="rpm-bar" id="rpmBar"></div>
+                <div class="rpm-meta"><span id="rpmVal">-- rpm</span><span>红线 7 600</span></div>
+              </div>
+              <div class="lap-row" style="grid-area:lap">
+                <div><span class="lbl">本圈</span><span class="val mono" id="curLap">0:00.000</span></div>
+                <div><span class="lbl">上一圈</span><span class="val mono" id="lastLap">--:--.---</span></div>
+                <div><span class="lbl">本赛道 PB</span><span class="val mono signal-text" id="pbLap">--:--.---</span></div>
+              </div>
+            </div>
+              <div class="live-lower">
+                <div class="panel">
+                  <div class="pedal-row"><span class="pedal-name">油门</span><div class="pedal-track"><div class="pedal-fill throttle" id="thrFill"></div></div><span class="pedal-val" id="thrVal">0%</span></div>
+                  <div class="pedal-row"><span class="pedal-name">刹车</span><div class="pedal-track"><div class="pedal-fill brake" id="brkFill"></div></div><span class="pedal-val" id="brkVal">0%</span></div>
+                  <div class="pedal-row"><span class="pedal-name">方向盘</span><div class="steer-track"><span class="steer-center"></span><div class="steer-fill" id="steerFill"></div></div><span class="pedal-val" id="steerVal">0°</span></div>
+                </div>
+                <div class="panel">
+                  <div class="tyre-layout">
+                    <div class="tire-grid" id="tireGrid"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="live-side">
+              <div class="panel map-panel">
+                <div class="map-fill">
+                  <svg class="map-svg" viewBox="0 0 480 290" id="liveMap" aria-label="赛道地图"></svg>
+                </div>
+                <div class="map-progress"><i id="mapProg"></i></div>
+                <div class="map-meta"><span id="mapNext">—</span><span id="mapPct">0%</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="live-off" id="liveOff">未监测 · 点击右上角「开始监测」后显示实时数据</div>
+      </section>
+
+      <!-- ========== 历史 ========== -->
+      <section class="view" id="view-history">
+        <div class="col col-tracks">
+          <div class="list-head"><h3>赛道</h3><span class="n" id="trackCount">监测识别 5</span></div>
+          <div class="list-scroll" id="trackList"></div>
+        </div>
+        <div class="col col-ana">
+          <div class="ana-head" id="anaHead" hidden>
+            <div>
+              <div class="t" id="anaTitle">—</div>
+              <div class="s" id="anaSub">—</div>
+            </div>
+            <span class="chip" id="anaChip">—</span>
+          </div>
+          <div class="ana-scroll" id="anaScroll">
+            <div class="empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17l6-6 4 4 7-7"/></svg>
+              左侧点击赛道展开，再点一圈查看分析
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 设置 ========== -->
+      <section class="view" id="view-settings">
+        <div class="set-group">
+          <span class="glbl">外观</span>
+          <div class="set-row"><span>主题</span>
+            <div class="seg" id="themeSeg">
+              <button data-theme-btn="dark">夜战 · 黑</button>
+              <button data-theme-btn="light">昼白 · 白</button>
+            </div>
+          </div>
+          <div class="set-row"><span>界面语言</span><span class="v">简体中文</span></div>
+        </div>
+        <div class="set-group">
+          <span class="glbl">监测</span>
+          <div class="set-row"><span>推送频率</span><span class="v">100 Hz</span></div>
+          <div class="set-row"><span>服务地址</span><span class="v">ws://127.0.0.1:8008</span></div>
+          <div class="set-row"><span>启动后自动开始监测</span><button class="switch on" id="swAuto" aria-label="自动监测"></button></div>
+        </div>
+        <div class="set-group">
+          <span class="glbl">数据</span>
+          <div class="set-row"><span>数据目录</span><span class="v">./records/</span></div>
+          <div class="set-row"><span>已记录</span><span class="v" id="setStat">—</span></div>
+          <div style="margin-top:10px"><button class="btn btn-danger" id="clearBtn">清空历史数据</button></div>
+        </div>
+        <div class="set-group">
+          <span class="glbl">关于</span>
+          <div class="set-row"><span>版本</span><span class="v">0.1.0 · 原型演示</span></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="statusbar">
+      <span id="statLeft">未连接 · ws://127.0.0.1:8008</span>
+      <span class="r"><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 切换页面</span><span><kbd>T</kbd> 主题</span><span>演示数据</span></span>
+    </footer>
+  </div>
+</div>
+</div>
+
+<script>
+'use strict';
+/* ============ utils ============ */
+const $=(s,r)=>(r||document).querySelector(s);
+const $$=(s,r)=>Array.prototype.slice.call((r||document).querySelectorAll(s));
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+function fmtLap(ms){ if(ms==null||!isFinite(ms)) return '--:--.---'; const m=Math.floor(ms/60000),s=Math.floor(ms%60000/1000),t=Math.floor(ms%1000); return m+':'+String(s).padStart(2,'0')+'.'+String(t).padStart(3,'0'); }
+function fmtShort(ms){ const s=Math.floor(ms/1000); return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }
+function fmtDelta(ms){ return (ms>=0?'+':'−')+(Math.abs(ms)/1000).toFixed(3); }
+function hash1(n){ const s=Math.sin(n*127.1+0.7)*43758.5453; return s-Math.floor(s); }
+function vnoise(x){ const i=Math.floor(x),f=x-i,a=hash1(i),b=hash1(i+1),u=f*f*(3-2*f); return lerp(a,b,u)*2-1; }
+function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function mixHex(h1,h2,t){ const p=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)]; const a=p(h1),b=p(h2); return 'rgb('+a.map((v,i)=>Math.round(lerp(v,b[i],t))).join(',')+')'; }
+const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ============ theme ============ */
+function setTheme(t){
+  document.documentElement.dataset.theme=t;
+  try{ localStorage.setItem('acc-theme',t); }catch(e){}
+  $$('[data-theme-btn]').forEach(b=>b.classList.toggle('active',b.dataset.themeBtn===t));
+  $('#themeBtn').classList.toggle('on',t==='light');
+  redrawOnTheme();
+}
+$('#themeBtn').addEventListener('click',()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
+$$('[data-theme-btn]').forEach(b=>b.addEventListener('click',()=>setTheme(b.dataset.themeBtn)));
+(function(){ const t=document.documentElement.dataset.theme||'dark'; $$('[data-theme-btn]').forEach(b=>b.classList.toggle('active',b.dataset.themeBtn===t)); $('#themeBtn').classList.toggle('on',t==='light'); })();
+
+/* ============ routing ============ */
+const VIEWS=['monitor','history','settings'];
+function switchView(name){
+  if(VIEWS.indexOf(name)<0) name='monitor';
+  $$('.tab').forEach(b=>{ const on=b.dataset.view===name; b.classList.toggle('active',on); if(on) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current'); });
+  $$('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+name));
+  if(name==='history') renderHistory();
+  try{ history.replaceState(null,'','#'+name); }catch(e){}
+}
+$$('.tab').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
+switchView((function(){ const h=(location.hash||'').replace('#',''); return VIEWS.indexOf(h)>=0?h:'monitor'; })());
+
+/* ============ track model ============ */
+const BASE_WPTS=[[55,236],[200,242],[330,236],[405,218],[448,158],[428,104],[376,66],[312,86],[262,56],[198,78],[150,58],[102,86],[64,128],[90,188],[132,222]];
+function catmullRomClosed(pts,sps){ const n=pts.length,out=[];
+  for(let i=0;i<n;i++){ const p0=pts[(i-1+n)%n],p1=pts[i],p2=pts[(i+1)%n],p3=pts[(i+2)%n];
+    for(let j=0;j<sps;j++){ const t=j/sps,t2=t*t,t3=t2*t;
+      out.push({x:0.5*((2*p1[0])+(-p0[0]+p2[0])*t+(2*p0[0]-5*p1[0]+4*p2[0]-p3[0])*t2+(-p0[0]+3*p1[0]-3*p2[0]+p3[0])*t3),
+                y:0.5*((2*p1[1])+(-p0[1]+p2[1])*t+(2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*t2+(-p0[1]+3*p1[1]-3*p2[1]+p3[1])*t3)}); } }
+  return out; }
+function resampleClosed(pts,n){ const cum=[0];
+  for(let i=0;i<pts.length;i++){ const a=pts[i],b=pts[(i+1)%pts.length]; cum.push(cum[i]+Math.hypot(b.x-a.x,b.y-a.y)); }
+  const L=cum[cum.length-1],out=[]; let j=0;
+  for(let i=0;i<n;i++){ const target=L*i/n; while(j<cum.length-2&&cum[j+1]<target) j++;
+    const t=(target-cum[j])/((cum[j+1]-cum[j])||1), a=pts[j%pts.length], b=pts[(j+1)%pts.length];
+    out.push({x:lerp(a.x,b.x,t),y:lerp(a.y,b.y,t)}); }
+  return {pts:out,L:L}; }
+function smoothArr(a,w){ const n=a.length,o=new Array(n);
+  for(let i=0;i<n;i++){ let s=0,c=0; for(let k=-w;k<=w;k++){ s+=a[(i+k+n)%n]; c++; } o[i]=s/c; } return o; }
+function cumTime(arr,ds){ const t=new Array(arr.length+1); t[0]=0; for(let i=0;i<arr.length;i++) t[i+1]=t[i]+ds/arr[i]; return t; }
+function applyKinematics(v,ds,passes){ const n=v.length;
+  for(let p=0;p<passes;p++){ for(let i=0;i<n;i++){ const q=(i-1+n)%n; v[i]=Math.min(v[i],Math.sqrt(v[q]*v[q]+2*10.5*ds)); }
+    for(let i=n-1;i>=0;i--){ const q=(i+1)%n; v[i]=Math.min(v[i],Math.sqrt(v[q]*v[q]+2*27*ds)); } } }
+function pedalsOf(arr,ds){ const n=arr.length,br=new Array(n),th=new Array(n),g=new Array(n);
+  for(let i=0;i<n;i++){ const p=(i+1)%n,dv=arr[p]-arr[i],a=dv/ds*arr[i]; g[i]=clamp(a/9.81,-2.75,1.3); br[i]=clamp(-a/27,0,1); th[i]=clamp(a/10.5,0,1); }
+  return {br:br,th:th,g:g}; }
+function trackWpts(seed){ return BASE_WPTS.map((p,i)=>{ const a=i*0.85+seed, r=12+9*hash1(seed*7+i*3.1);
+  return [clamp(p[0]+Math.cos(a)*r,44,444), clamp(p[1]+Math.sin(a)*r*0.62,46,250)]; }); }
+function buildModel(seed,lenM,targetLap){
+  const wpts=trackWpts(seed), dense=catmullRomClosed(wpts,22), rs=resampleClosed(dense,560);
+  const pts=rs.pts,n=pts.length,ds=lenM/n;
+  const tang=pts.map((p,i)=>{ const q=pts[(i+1)%n],r=pts[(i-1+n)%n],dx=q.x-r.x,dy=q.y-r.y,m=Math.hypot(dx,dy)||1; return {x:dx/m,y:dy/m}; });
+  const norm=tang.map(t=>({x:-t.y,y:t.x}));
+  const kap=new Array(n);
+  for(let i=0;i<n;i++){ const t0=tang[(i-1+n)%n],t1=tang[i]; kap[i]=Math.abs(Math.atan2(t0.x*t1.y-t0.y*t1.x,t0.x*t1.x+t0.y*t1.y))/ds; }
+  const ks=smoothArr(smoothArr(kap,3),3);
+  /* 按赛道真实 GT3 参考圈速标定：调弯道限速系数与极速，使整圈时间贴近目标 */
+  function profile(vmKmh,kc){ const v=new Array(n);
+    for(let i=0;i<n;i++) v[i]=(vmKmh/3.6)*(1-clamp(ks[i]*kc,0,0.72));
+    applyKinematics(v,ds,4); return v; }
+  let best=null;
+  [300,318,330,342].forEach(vm=>{
+    let lo=40,hi=320;
+    if(targetLap){ for(let it=0;it<20;it++){ const mid=(lo+hi)/2; (cumTime(profile(vm,mid),ds)[n]>targetLap)?(hi=mid):(lo=mid); } }
+    else hi=220;
+    const v=profile(vm,hi), t=cumTime(v,ds)[n], err=Math.abs(t-(targetLap||t));
+    if(!best||err<best.err) best={v:v,t:t,err:err};
+  });
+  const v=best.v;
+  const ghost=pts.map((p,i)=>({x:p.x+norm[i].x*(5*vnoise(i/95+seed)),y:p.y+norm[i].y*(5*vnoise(i/95+seed))}));
+  const d='M'+pts.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join('L')+'Z';
+  const dGhost='M'+ghost.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join('L')+'Z';
+  return {pts:pts,ghost:ghost,norm:norm,ks:ks,n:n,ds:ds,v:v,T:cumTime(v,ds),d:d,dGhost:dGhost,lenM:lenM};
+}
+/* 每圈：在基准速度曲线上按"路段损失"生成，圈速由曲线积分得出，保证自洽 */
+function lapProfile(model,rank,kind,seed){
+  const n=model.n,v=new Array(n);
+  for(let i=0;i<n;i++){
+    let loss;
+    if(kind==='out') loss=0.055+0.045*Math.abs(vnoise(i/26+seed));
+    else if(rank===0) loss=0.0012*Math.abs(vnoise(i/52+seed*3.3));
+    else loss=(0.006+0.0062*rank)*(0.28+0.8*Math.abs(vnoise(i/38+rank*11+seed)));
+    v[i]=model.v[i]*(1-clamp(loss,0,0.34));
+  }
+  applyKinematics(v,model.ds,3);
+  const T=cumTime(v,model.ds);
+  return {v:v,T:T,P:pedalsOf(v,model.ds),ms:T[n]*1000,rank:rank,kind:kind};
+}
+const PLAN=[['out'],['ok',5],['ok',4],['ok',3],['ok',2],['ok',1],['pb',0],['ok',1],['ok',2],['bad',2],['ok',3],['ok',4],['ok',5],['ok',6]];
+/* target = 该赛道 GT3 参考圈速（秒），用于标定合成赛道的速度曲线 */
+const TRACKS=[
+  {id:'spa',   name:'斯帕-弗朗科尔尚', short:'SPA',         lenM:7004, seed:1.7,  target:137.5, car:'Mercedes-AMG GT3 EVO', date:'10-17', n:12},
+  {id:'monza', name:'蒙扎',            short:'MONZA',       lenM:5793, seed:5.4,  target:107.8, car:'Ferrari 296 GT3',      date:'10-16', n:10},
+  {id:'zand',  name:'赞德福特',        short:'ZANDVOORT',   lenM:4259, seed:9.1,  target:95.6,  car:'Porsche 992 GT3 R',    date:'10-16', n:14},
+  {id:'silv',  name:'银石',            short:'SILVERSTONE', lenM:5891, seed:13.8, target:118.2, car:'McLaren 720S GT3 EVO', date:'10-14', n:11},
+  {id:'barc',  name:'巴塞罗那',        short:'BARCELONA',   lenM:4657, seed:21.5, target:105.4, car:'BMW M4 GT3',           date:'10-12', n:9}
+];
+TRACKS.forEach((tk,ti)=>{
+  tk.model=buildModel(tk.seed,tk.lenM,tk.target);
+  tk.laps=[];
+  for(let i=0;i<tk.n;i++){
+    const spec=PLAN[i%PLAN.length];
+    const kind=spec[0]==='out'?'out':(spec[0]==='bad'?'invalid':'ok');
+    const rank=(kind==='out'?-1:(spec[1]!=null?spec[1]:i));
+    const lp=lapProfile(tk.model,rank,kind,tk.seed*3+i);
+    lp.no=i+1; lp.label='L'+lp.no;
+    tk.laps.push(lp);
+  }
+  const valid=tk.laps.filter(l=>l.kind!=='out'&&l.kind!=='invalid');
+  tk.pb=valid.reduce((m,l)=>!m||l.ms<m.ms?l:m,null);
+  tk.validCount=valid.length;
+});
+const CUR_TRACK=TRACKS[0];
+
+/* ============ 监测页 ============ */
+const mon={on:false,p:0,lapMs:0,steer:0,last:0,recMs:0,lastLap:null,frames:0,running:false};
+const TIRES=[{c:'FL',t:88,p:27.4,b:512},{c:'FR',t:89,p:27.5,b:498},{c:'RL',t:84,p:27.2,b:466},{c:'RR',t:84,p:27.2,b:481}];
+const RPM_SEGS=20, rpmBar=$('#rpmBar');
+for(let i=0;i<RPM_SEGS;i++){ const s=document.createElement('div'); s.className='rpm-seg'+(i<12?' s-good':(i<16?' s-warn':' s-hot')); rpmBar.appendChild(s); }
+const rpmSegs=$$('.rpm-seg',rpmBar);
+const GEAR_TOPS=[0,72,108,142,178,215,258,340];
+function gearFor(k){ let g=1; while(g<7&&k>GEAR_TOPS[g]) g++; return g; }
+function rpmFor(k,g){ const lo=g===1?0:GEAR_TOPS[g-1],hi=GEAR_TOPS[g]; return 2400+clamp((k-lo)/(hi-lo||1),0,1)*(7600-2400); }
+function buildLiveMap(){
+  const svg=$('#liveMap'); let h='<path class="map-base" d="'+CUR_TRACK.model.d+'"/><path class="map-inline" d="'+CUR_TRACK.model.d+'"/>';
+  const m=CUR_TRACK.model;
+  for(let k=0;k<m.n;k+=Math.floor(m.n/10)){ const p=m.pts[k]; h+='<circle class="map-corner" cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="2"/>'; }
+  const sp=m.pts[0];
+  h+='<line x1="'+(sp.x-8)+'" y1="'+(sp.y-8)+'" x2="'+(sp.x+8)+'" y2="'+(sp.y+8)+'" stroke="'+cssVar('--signal')+'" stroke-width="2.5"/>';
+  h+='<circle class="map-dot-glow" id="mapGlow" cx="0" cy="0" r="9"/><circle class="map-dot" id="mapDot" cx="0" cy="0" r="3.8"/>';
+  svg.innerHTML=h;
+}
+function tireClass(t){ return t<75?'cold':(t>105?'hot':'good'); }
+function renderTires(){
+  $('#tireGrid').innerHTML=TIRES.map(t=>{
+    const cls=tireClass(t.t), bcls=t.b>640?'hot':(t.b<380?'cold':'');
+    return '<div class="tire-card"><div class="tire-head"><span class="tire-corner">'+t.c+'</span><span class="tire-pres">'+t.p.toFixed(1)+'</span></div>'+
+      '<div class="tire-temp"><span class="t-block '+cls+'"></span><span class="t-val">'+t.t.toFixed(0)+'°</span></div>'+
+      '<div class="tire-brake"><span>'+t.b.toFixed(0)+'°</span><div class="b-bar"><i class="'+bcls+'" style="width:'+clamp(t.b/800*100,3,100).toFixed(0)+'%"></i></div></div></div>';
+  }).join('');
+}
+function setMon(on){
+  mon.on=on;
+  $('#startBtn').classList.toggle('on',on);
+  $('#startBtn').classList.toggle('rec',on);
+  $('#startBtnT').textContent=on?'停止监测':'开始监测';
+  const sbSub=$('#startBtnS'); sbSub.hidden=!on; sbSub.textContent=on?fmtShort(mon.recMs):'';
+  $('#startBtn').querySelector('svg').innerHTML=on?'<rect x="7" y="7" width="10" height="10" rx="1"/>':'<path d="M8 5.5v13l11-6.5L8 5.5z"/>';
+  $('#liveWrap').hidden=!on;
+  $('#liveOff').hidden=on;
+  $('#monDot').className='sdot '+(on?'good':'off');
+  $('#monTitle').textContent=on?'监测中 · '+CUR_TRACK.name:'未开始监测';
+  $('#monLine1').innerHTML='<span style="color:var(--text-faint)">车辆</span><span>'+(on?CUR_TRACK.car:'—')+'</span>';
+  $('#monLine2').innerHTML='<span style="color:var(--text-faint)">数据集</span><span>'+(on?CUR_TRACK.laps.length+' 圈 · 已存 '+(mon.frames>0?(mon.frames/1000).toFixed(1)+'k':'0')+' 帧':'—')+'</span>';
+  $('#statLeft').textContent=on?'已连接 · 100 Hz · '+CUR_TRACK.name:'未连接 · ws://127.0.0.1:8008';
+  if(on&&!mon.running){ mon.last=performance.now(); mon.running=true; requestAnimationFrame(tick); }
+  if(!on) mon.running=false;
+}
+$('#startBtn').addEventListener('click',()=>setMon(!mon.on));
+function tick(){
+  if(!mon.on){ mon.running=false; return; }
+  const now=performance.now(), dtMs=Math.min(80,now-mon.last); mon.last=now;
+  const M=CUR_TRACK.model, pb=CUR_TRACK.pb, i=Math.floor(mon.p*M.n)%M.n;
+  const jitter=0.010*vnoise(now/900)+0.006*Math.sin(now/620);
+  const vRef=pb.v[i]*1.002*(1+jitter);
+  const kmh=vRef*3.6;
+  mon.p+=(vRef*dtMs/1000)/M.lenM;
+  if(mon.p>=1){ mon.p-=1; mon.lastLap=mon.lapMs; mon.lapMs=0; }
+  mon.lapMs+=dtMs; mon.recMs+=dtMs; mon.frames+=dtMs*0.1;
+  $('#spdVal').textContent=Math.round(kmh);
+  const g=gearFor(kmh); $('#gearVal').textContent=g;
+  const rpm=rpmFor(kmh,g)+(Math.random()*40-20);
+  $('#rpmVal').textContent=Math.round(rpm).toString().replace(/\B(?=(\d{3})+(?!\d))/g,' ')+' rpm';
+  const lit=Math.round(rpm/7600*RPM_SEGS);
+  rpmSegs.forEach((s,k)=>s.classList.toggle('on',k<lit));
+  rpmBar.classList.toggle('flash',rpm>7350&&!reduceMotion);
+  const th=clamp(pb.P.th[i]*(1+0.2*jitter),0,1), br=clamp(pb.P.br[i]*(1+0.2*jitter),0,1);
+  $('#thrFill').style.width=(th*100).toFixed(1)+'%'; $('#thrVal').textContent=Math.round(th*100)+'%';
+  $('#brkFill').style.width=(br*100).toFixed(1)+'%'; $('#brkVal').textContent=Math.round(br*100)+'%';
+  const st=clamp(-(M.ks[(i+16)%M.n]-M.ks[(i-16+M.n)%M.n])*9000+(Math.random()*24-12),-300,300);
+  mon.steer=lerp(mon.steer,st,0.2);
+  const sh=mon.steer/450*50, sf=$('#steerFill');
+  sf.style.left=(50+Math.min(0,sh))+'%'; sf.style.width=Math.abs(sh)+'%';
+  $('#steerVal').textContent=Math.round(mon.steer)+'°';
+  const delta=mon.lapMs-pb.T[i]*1000;
+  const dv=$('#dltaVal'); dv.textContent=fmtDelta(delta); dv.className='dlta-val mono '+(delta>=0?'hot':'good');
+  $('#curLap').textContent=fmtLap(mon.lapMs);
+  $('#lastLap').textContent=fmtLap(mon.lastLap);
+  $('#pbLap').textContent=fmtLap(pb.ms);
+  const pt=M.pts[i], dot=$('#mapDot'), glow=$('#mapGlow');
+  if(dot){ dot.setAttribute('cx',pt.x.toFixed(1)); dot.setAttribute('cy',pt.y.toFixed(1)); glow.setAttribute('cx',pt.x.toFixed(1)); glow.setAttribute('cy',pt.y.toFixed(1)); }
+  $('#mapProg').style.width=(mon.p*100).toFixed(1)+'%';
+  $('#mapPct').textContent=Math.round(mon.p*100)+'%';
+  $('#mapNext').textContent='S'+(mon.p<1/3?'1':(mon.p<2/3?'2':'3'))+' · 已完成 '+(mon.p*M.lenM/1000).toFixed(2)+' / '+(M.lenM/1000).toFixed(1)+' km';
+  const load=clamp(br+M.ks[i]*160,0,1);
+  TIRES.forEach((t,k)=>{ const f=t.c[0]==='F'; t.t=lerp(t.t,(f?96:88)+load*10+(f?6:0)+Math.sin(now/900+k*2)*1.6,0.02); t.b=lerp(t.b,(f?540:460)+load*160+k*8,0.02); t.p=Math.min(29.6,t.p+0.000004*dtMs*(f?1.4:1)); });
+  mon.tireMs=(mon.tireMs||0)+dtMs; if(mon.tireMs>240){ mon.tireMs=0; renderTires(); }
+  $('#startBtnS').textContent=fmtShort(mon.recMs);
+  requestAnimationFrame(tick);
+}
+
+/* ============ 历史页 ============ */
+let selTrack=null, selLap=null, cursorP=0.42, selCorner=null;
+function renderTrackList(){
+  $('#trackCount').textContent='监测识别 '+TRACKS.length;
+  $('#trackList').innerHTML=TRACKS.map(tk=>{
+    const live=(tk===CUR_TRACK&&mon.on);
+    const open=(tk===selTrack);
+    const laps=tk.laps.map(l=>{
+      const d=l.ms-tk.pb.ms;
+      const best=(l===tk.pb);
+      const tag=l.kind==='out'?'<span class="tag out">出场</span>':(l.kind==='invalid'?'<span class="tag bad">无效</span>':(best?'<span class="tag pb">PB</span>':''));
+      const cls=(l.kind!=='ok'?'invalid ':'')+(best?'best ':'');
+      return '<button class="lap-item '+cls+(selLap===l?'active':'')+'" data-lid="'+l.no+'">'+
+        '<span class="lap-no">L'+l.no+'</span><span class="lap-time">'+fmtLap(l.ms)+'</span>'+
+        '<span class="mono" style="font-size:10px;color:var(--text-faint)">'+(l.kind==='ok'?(best?'':(d>0?'+':'−')+(Math.abs(d)/1000).toFixed(3)):'')+'</span>'+
+        tag+'</button>';
+    }).join('');
+    return '<div class="track-group'+(open?' open':'')+'">'+
+      '<div class="track-row">'+
+        '<button class="track-item '+(selTrack===tk?'active':'')+'" data-tid="'+tk.id+'">'+
+          '<span class="chev"></span>'+
+          '<div class="track-body">'+
+            '<div class="track-name">'+(live?'<span class="live-dot" title="正在监测"></span>':'')+tk.name+'</div>'+
+            '<div class="track-meta"><b>'+tk.laps.length+' 圈</b><span>PB '+(tk.pb?fmtLap(tk.pb.ms):'—')+'</span><span>'+tk.date+'</span></div>'+
+          '</div>'+
+        '</button>'+
+        '<button class="track-kebab" data-kebab="'+tk.id+'" aria-label="更多操作" title="更多操作">⋮</button>'+
+        '<div class="track-menu" data-menu="'+tk.id+'">'+
+          '<button class="danger" data-del="'+tk.id+'">删除此赛道</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="lap-list"'+(open?'':' hidden')+'>'+laps+'</div>'+
+    '</div>';
+  }).join('');
+  $$('#trackList .track-item').forEach(b=>b.addEventListener('click',()=>{
+    const tk=TRACKS.find(t=>t.id===b.dataset.tid);
+    selTrack=(selTrack===tk)?null:tk; selLap=null; renderHistory();
+  }));
+  $$('#trackList .track-kebab').forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation();
+    const id=b.dataset.kebab, menu=$('[data-menu="'+id+'"]'), open=menu.classList.contains('show');
+    $$('.track-menu').forEach(m=>m.classList.remove('show'));
+    $$('.track-kebab').forEach(k=>k.classList.remove('open'));
+    if(!open){ menu.classList.add('show'); b.classList.add('open'); }
+  }));
+  $$('#trackList [data-del]').forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation(); deleteTrack(b.dataset.del);
+  }));
+}
+function deleteTrack(id){
+  const idx=TRACKS.findIndex(t=>t.id===id);
+  if(idx<0) return;
+  TRACKS.splice(idx,1);
+  if(selTrack&&selTrack.id===id){ selTrack=null; selLap=null; }
+  renderHistory();
+  const total=TRACKS.reduce((s,t)=>s+t.laps.length,0);
+  const st=$('#setStat'); if(st) st.textContent=TRACKS.length+' 条赛道 · '+total+' 圈';
+}
+document.addEventListener('click',e=>{
+  if(!e.target.closest('.track-kebab')&&!e.target.closest('.track-menu')){
+    $$('.track-menu').forEach(m=>m.classList.remove('show'));
+    $$('.track-kebab').forEach(k=>k.classList.remove('open'));
+  }
+});
+function renderHistory(){
+  renderTrackList(); renderAnalysis();
+}
+function sectorsOf(T,n){ const i1=Math.floor(n/3),i2=Math.floor(2*n/3); return [T[i1],T[i2]-T[i1],T[n]-T[i2]]; }
+function renderAnalysis(){
+  const head=$('#anaHead'), scroll=$('#anaScroll');
+  if(!selTrack||!selLap){ head.hidden=true; scroll.innerHTML='<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17l6-6 4 4 7-7"/></svg>左侧点击赛道展开，再点一圈查看分析</div>'; return; }
+  head.hidden=false;
+  const tk=selTrack, lp=selLap, pb=tk.pb, M=tk.model, n=M.n;
+  const d=lp.ms-pb.ms;
+  const kindTxt=lp.kind==='out'?'出场圈 · 不计统计':(lp.kind==='invalid'?'无效圈 · 四轮出界':(lp===pb?'本赛道最快圈':'有效圈'));
+  $('#anaTitle').textContent=tk.name+' · '+lp.label;
+  $('#anaSub').textContent=tk.car+' · '+tk.date+' · '+(tk.lenM/1000).toFixed(1)+' km';
+  $('#anaChip').textContent=kindTxt;
+  const sL=sectorsOf(lp.T,n), sP=sectorsOf(pb.T,n);
+  const i1=Math.floor(n/3), i2=Math.floor(2*n/3);
+  scroll.innerHTML=
+    '<div class="ana-card"><h4>圈速概要<span class="en">SUMMARY</span></h4>'+
+      '<div class="ana-split">'+
+        '<div class="mini-map" id="miniMapWrap"><svg viewBox="0 0 480 290" id="miniMap"></svg>'+
+          '<div class="map-hint" id="mapHint">点击地图选择一个弯</div></div>'+
+        '<div class="sum-right">'+
+          '<div class="kv-grid sum-main">'+
+            '<div class="kv lap"><span class="k">圈速</span><span class="v sig">'+fmtLap(lp.ms)+'</span></div>'+
+            '<div class="kv"><span class="k">对 PB</span><span class="v '+(lp===pb?'':(d>0?'hot':'good'))+'">'+(lp===pb?'—':fmtDelta(d))+'</span></div>'+
+            '<div class="kv"><span class="k">PB</span><span class="v">'+fmtLap(pb.ms)+'</span></div>'+
+          '</div>'+
+          '<div class="sector-box" id="sectorBox">'+
+            '<div class="sb-head"><span id="sbTitle">弯对比 · 整圈</span></div>'+
+            '<div class="kv-grid sector-grid" id="sbGrid"></div>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+    '</div>'+
+    '<div class="ana-card"><h4>时序曲线<span class="en">SPEED / PEDALS · X = 赛道进度</span></h4>'+
+      '<div class="legend"><span><i style="background:var(--signal)"></i>本圈</span><span><i style="background:repeating-linear-gradient(90deg,var(--text-dim) 0 4px,transparent 4px 7px)"></i>PB 圈</span></div>'+
+      '<div class="chart-wrap" id="chartWrap"><div class="cursor-line" id="cursorLine"></div></div>'+
+      '<div class="cursor-readout" id="readout" style="display:flex;gap:14px;flex-wrap:wrap;font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-top:7px"></div></div>'+
+    '<div class="ana-card"><h4>踏板热力图<span class="en">PEDAL HEATMAP</span></h4><canvas id="heatCanvas"></canvas>'+
+      '<div class="heat-legend"><span>全油门</span><span class="bar"></span><span>滑行</span><span class="bar"></span><span>重刹</span></div></div>'+
+    '<div class="ana-card"><h4>圈速差距图<span class="en">DELTA MAP</span></h4><svg viewBox="0 0 480 290" id="deltaMap" style="width:100%;height:auto;display:block"></svg>'+
+      '<div class="delta-sum" id="deltaSum"></div></div>';
+  drawMiniMap(M);
+  bindMiniMap(lp,pb,M);
+  renderSectorBox(lp,pb,M,selCorner);
+  renderCharts(lp,pb,M);
+  drawHeatmap(lp,M);
+  drawDeltaMap(lp,pb,M);
+  updateCursor(cursorP,lp,pb,M);
+  const wrap=$('#chartWrap');
+  wrap.addEventListener('mousemove',e=>{ const r=wrap.getBoundingClientRect(),m={l:38,r:10},iw=r.width-m.l-m.r; updateCursor(clamp((e.clientX-r.left-m.l)/iw,0,1),lp,pb,M); });
+  wrap.addEventListener('mouseleave',()=>{ $('#cursorLine').style.display='none'; });
+}
+function drawMiniMap(M){
+  const svg=$('#miniMap');
+  let h='<path class="map-base" d="'+M.d+'" stroke-width="16"/>';
+  h+='<path d="'+M.d+'" fill="none" stroke="var(--line-2)" stroke-width="1.4" stroke-dasharray="2 4"/>';
+  const sp=M.pts[0];
+  h+='<line x1="'+(sp.x-10)+'" y1="'+(sp.y-10)+'" x2="'+(sp.x+10)+'" y2="'+(sp.y+10)+'" stroke="'+cssVar('--signal')+'" stroke-width="3"/>';
+  for(let k=0;k<M.n;k+=Math.floor(M.n/10)){ const p=M.pts[k]; h+='<circle class="map-corner" cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="3.4"/>'; }
+  h+='<circle id="miniDot" cx="0" cy="0" r="9" fill="none" stroke="'+cssVar('--signal')+'" stroke-width="2"/>';
+  svg.innerHTML=h;
+}
+function bindMiniMap(lp,pb,M){
+  const svg=$('#miniMap'); if(!svg) return;
+  svg.onclick=function(e){
+    const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
+    const loc=pt.matrixTransform(svg.getScreenCTM().inverse());
+    let best=0,bd=1e9;
+    for(let i=0;i<M.n;i++){ const dx=M.pts[i].x-loc.x,dy=M.pts[i].y-loc.y,dd=dx*dx+dy*dy; if(dd<bd){bd=dd;best=i;} }
+    selCorner=best/M.n;
+    const dot=$('#miniDot'); if(dot){ dot.setAttribute('cx',M.pts[best].x.toFixed(1)); dot.setAttribute('cy',M.pts[best].y.toFixed(1)); }
+    renderSectorBox(lp,pb,M,selCorner);
+    cursorP=selCorner; updateCursor(cursorP,lp,pb,M);
+  };
+}
+function renderSectorBox(lp,pb,M,cor){
+  const box=$('#sectorBox'); if(!box) return;
+  const sL=sectorsOf(lp.T,M.n), sP=sectorsOf(pb.T,M.n);
+  const rows=[['S1',sL[0],sL[0]-sP[0]],['S2',sL[1],sL[1]-sP[1]],['S3',sL[2],sL[2]-sP[2]]];
+  let title, ptDelta, ptLabel;
+  if(cor==null){
+    title='弯对比 · 整圈';
+    ptDelta=lp.ms-pb.ms; ptLabel='整圈 Δ';
+  } else {
+    const sec=cor<1/3?'S1':(cor<2/3?'S2':'S3');
+    title='弯对比 · '+sec+' · 进度 '+(cor*100).toFixed(0)+'%';
+    const i=Math.floor(cor*M.n)%M.n; ptDelta=(lp.T[i]-pb.T[i])*1000; ptLabel='游标点 Δ';
+  }
+  $('#sbTitle').textContent=title;
+  let html='';
+  rows.forEach(r=>{
+    html+='<div class="kv"><span class="k">'+r[0]+'</span><span class="v">'+r[1].toFixed(3)+'</span></div>'+
+          '<div class="kv"><span class="k">'+r[0]+' Δ</span><span class="v '+(r[2]>0?'hot':'good')+'">'+fmtDelta(r[2]*1000)+'</span></div>';
+  });
+  html+='<div class="kv"><span class="k">'+ptLabel+'</span><span class="v '+(ptDelta>0?'hot':'good')+'">'+fmtDelta(ptDelta)+'</span></div>';
+  $('#sbGrid').innerHTML=html;
+}
+function panelSVG(cfg,W,H){
+  const m={l:38,r:10,t:8,b:2}, iw=W-m.l-m.r;
+  const BAND=13, yBot=H-BAND-1, ih=yBot-m.t;
+  const x=p=>m.l+p*iw, y=v=>m.t+(1-(v-cfg.min)/(cfg.max-cfg.min))*ih;
+  let s='<svg class="chart-svg" viewBox="0 0 '+W+' '+H+'" height="'+H+'">';
+  // 弯道灰白分隔带（x轴下方）：每 1/10 进度一格，灰白交替，标弯道号
+  const NC=10;
+  for(let c=0;c<NC;c++){
+    const cx0=m.l+c*iw/NC, cx1=m.l+(c+1)*iw/NC;
+    s+='<rect x="'+cx0.toFixed(1)+'" y="'+(yBot+1).toFixed(1)+'" width="'+(cx1-cx0).toFixed(1)+'" height="'+BAND+'" fill="'+(c%2?'var(--chart-band-b)':'var(--chart-band-a)')+'"/>';
+    s+='<text x="'+((cx0+cx1)/2).toFixed(1)+'" y="'+(H-3).toFixed(1)+'" text-anchor="middle" font-family="var(--font-mono)" font-size="7.5" fill="var(--text-faint)">'+(c+1)+'</text>';
+  }
+  // 横向网格
+  for(let k=0;k<=3;k++){ const v=cfg.min+(cfg.max-cfg.min)*k/3, yy=y(v).toFixed(1);
+    s+='<line x1="'+m.l+'" y1="'+yy+'" x2="'+(W-m.r)+'" y2="'+yy+'" stroke="var(--grid-line)"/>';
+    s+='<text x="'+(m.l-6)+'" y="'+(yy+3.5)+'" text-anchor="end" font-family="var(--font-mono)" font-size="8.5" fill="var(--text-faint)">'+v.toFixed(0)+'</text>'; }
+  // x轴
+  s+='<line x1="'+m.l+'" y1="'+yBot+'" x2="'+(W-m.r)+'" y2="'+yBot+'" stroke="var(--line-2)"/>';
+  // 分段（S1/S2/S3）虚线
+  [1/3,2/3].forEach(p=>{ s+='<line x1="'+x(p).toFixed(1)+'" y1="'+m.t+'" x2="'+x(p).toFixed(1)+'" y2="'+yBot+'" stroke="var(--line-2)" stroke-dasharray="3 3"/>'; });
+  // 分段标签（带上方）
+  s+='<text x="'+(m.l+iw/6).toFixed(1)+'" y="'+(yBot-3).toFixed(1)+'" text-anchor="middle" font-family="var(--font-mono)" font-size="8" fill="var(--text-dim)">S1</text>';
+  s+='<text x="'+(m.l+iw/2).toFixed(1)+'" y="'+(yBot-3).toFixed(1)+'" text-anchor="middle" font-family="var(--font-mono)" font-size="8" fill="var(--text-dim)">S2</text>';
+  s+='<text x="'+(m.l+iw*5/6).toFixed(1)+'" y="'+(yBot-3).toFixed(1)+'" text-anchor="middle" font-family="var(--font-mono)" font-size="8" fill="var(--text-dim)">S3</text>';
+  cfg.series.forEach(se=>{
+    let d='';
+    for(let i=0;i<cfg.n;i+=3){ d+=(i===0?'M':'L')+x(i/cfg.n).toFixed(1)+','+y(se.fn(i)).toFixed(1)+' '; }
+    s+='<path d="'+d+'" fill="none" stroke="'+se.color+'" stroke-width="'+(se.dash?1.4:1.8)+'" '+(se.dash?'stroke-dasharray="4 3" opacity=".9"':'')+' stroke-linejoin="round"/>';
+  });
+  s+='<text x="'+(m.l-6)+'" y="'+(m.t+8)+'" text-anchor="end" font-family="var(--font-display)" font-weight="600" font-size="9" fill="var(--text-dim)">'+cfg.title+'</text>';
+  s+='</svg>';
+  return s;
+}
+function renderCharts(lp,pb,M){
+  const wrap=$('#chartWrap');
+  $$('.chart-panel',wrap).forEach(e=>e.remove());
+  const W=Math.max(240,wrap.clientWidth||420), n=M.n;
+  const spd=document.createElement('div'); spd.className='chart-panel';
+  spd.innerHTML=panelSVG({title:'速度',min:0,max:340,n:n,series:[
+    {fn:i=>pb.v[i]*3.6,color:'var(--text-dim)',dash:true},
+    {fn:i=>lp.v[i]*3.6,color:'var(--signal)'}
+  ]},W,110);
+  const ped=document.createElement('div'); ped.className='chart-panel';
+  ped.innerHTML=panelSVG({title:'踏板',min:0,max:105,n:n,series:[
+    {fn:i=>pb.P.th[i]*100,color:'var(--good)',dash:true},
+    {fn:i=>lp.P.th[i]*100,color:'var(--good)'},
+    {fn:i=>pb.P.br[i]*100,color:'var(--hot)',dash:true},
+    {fn:i=>lp.P.br[i]*100,color:'var(--hot)'}
+  ]},W,96);
+  wrap.appendChild(spd); wrap.appendChild(ped);
+}
+function updateCursor(p,lp,pb,M){
+  const i=Math.floor(p*M.n)%M.n;
+  const rd=$('#readout');
+  if(rd) rd.innerHTML='<span>进度 <b style="color:var(--text)">'+(p*100).toFixed(1)+'%</b></span>'+
+    '<span>速度 <b style="color:var(--text)">'+(lp.v[i]*3.6).toFixed(0)+' km/h</b></span>'+
+    '<span>油门 <b style="color:var(--good)">'+(lp.P.th[i]*100).toFixed(0)+'%</b></span>'+
+    '<span>刹车 <b style="color:var(--hot)">'+(lp.P.br[i]*100).toFixed(0)+'%</b></span>'+
+    '<span>G <b style="color:var(--text)">'+lp.P.g[i].toFixed(2)+'</b></span>'+
+    '<span>计时 <b style="color:var(--text)">'+fmtLap(lp.T[i]*1000)+'</b></span>';
+  const line=$('#cursorLine'), wrap=$('#chartWrap');
+  if(line&&wrap){ const W=wrap.clientWidth||420,m={l:38,r:10},iw=W-m.l-m.r; line.style.display='block'; line.style.left=(m.l+p*iw)+'px'; }
+  const dot=$('#miniDot'); if(dot){ const pt=M.pts[i]; dot.setAttribute('cx',pt.x.toFixed(1)); dot.setAttribute('cy',pt.y.toFixed(1)); }
+}
+function heatColor(i,P){ const b=P.br[i],t=P.th[i];
+  if(b>0.16) return mixHex('#E8B400','#A80E0E',clamp(b*1.7,0,1));
+  if(t>0.55) return mixHex('#E8B400','#0B6B2A',clamp((t-0.55)/0.45,0,1));
+  return '#E8B400'; }
+function drawHeatmap(lp,M){
+  const cv=$('#heatCanvas'); if(!cv) return;
+  const ctx=cv.getContext('2d');
+  const w=cv.clientWidth||420, h=Math.round(w*0.62), dpr=window.devicePixelRatio||1;
+  cv.width=w*dpr; cv.height=h*dpr; cv.style.height=h+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
+  const s=Math.min((w-24)/480,(h-20)/290), ox=(w-480*s)/2, oy=(h-290*s)/2;
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.strokeStyle=cssVar('--line'); ctx.lineWidth=11;
+  ctx.beginPath(); M.pts.forEach((p,i)=>i===0?ctx.moveTo(ox+p.x*s,oy+p.y*s):ctx.lineTo(ox+p.x*s,oy+p.y*s)); ctx.closePath(); ctx.stroke();
+  for(let i=0;i<M.n;i+=3){ const a=M.pts[i], b=M.pts[(i+3)%M.n];
+    ctx.strokeStyle=heatColor(i,lp.P); ctx.lineWidth=8;
+    ctx.beginPath(); ctx.moveTo(ox+a.x*s,oy+a.y*s); ctx.lineTo(ox+b.x*s,oy+b.y*s); ctx.stroke(); }
+  ctx.strokeStyle=cssVar('--text-dim'); ctx.globalAlpha=.5; ctx.lineWidth=1.6; ctx.setLineDash([4,4]);
+  ctx.beginPath(); M.ghost.forEach((p,i)=>i===0?ctx.moveTo(ox+p.x*s,oy+p.y*s):ctx.lineTo(ox+p.x*s,oy+p.y*s)); ctx.closePath(); ctx.stroke();
+  ctx.setLineDash([]); ctx.globalAlpha=1;
+  const st=M.pts[0];
+  ctx.strokeStyle=cssVar('--signal'); ctx.lineWidth=2.4;
+  ctx.beginPath(); ctx.moveTo(ox+(st.x-9)*s,oy+(st.y-9)*s); ctx.lineTo(ox+(st.x+9)*s,oy+(st.y+9)*s); ctx.stroke();
+}
+function drawDeltaMap(lp,pb,M){
+  const svg=$('#deltaMap'); if(!svg) return;
+  let h='<path class="map-base" d="'+M.d+'"/>';
+  const step=4;
+  for(let i=0;i<M.n;i+=step){
+    const j=(i+step)%M.n, slope=(lp.T[j]-lp.T[i])-(pb.T[j]-pb.T[i]);
+    const a=M.pts[i], b=M.pts[j];
+    if(slope>0.0009){ h+='<line x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="'+cssVar('--hot')+'" stroke-width="'+clamp(3+slope*1200,3,8).toFixed(1)+'" stroke-linecap="round"/>'; }
+    else if(slope<-0.0009){ h+='<line x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="'+cssVar('--good')+'" stroke-width="3" stroke-linecap="round" opacity=".85"/>'; }
+  }
+  let worst=0,worstI=0;
+  for(let i=0;i<M.n;i++){ const j=(i+50)%M.n; const dd=(lp.T[j]-lp.T[i])-(pb.T[j]-pb.T[i]); if(dd>worst){worst=dd;worstI=i;} }
+  const wp=M.pts[worstI];
+  h+='<circle cx="'+wp.x.toFixed(1)+'" cy="'+wp.y.toFixed(1)+'" r="9" fill="none" stroke="'+cssVar('--hot')+'" stroke-width="1.5"/>';
+  h+='<text x="'+(wp.x+13).toFixed(1)+'" y="'+(wp.y-8).toFixed(1)+'" font-family="var(--font-mono)" font-size="10" fill="'+cssVar('--hot')+'">慢 '+worst.toFixed(2)+' s</text>';
+  svg.innerHTML=h;
+  const total=lp.ms-pb.ms;
+  $('#deltaSum').innerHTML=(lp===pb?'这就是本赛道最快圈，可对比更早的圈复盘。'
+    :'合计慢 <b>+'+(total/1000).toFixed(3)+' s</b> · 单段最大损失 <b>'+worst.toFixed(2)+' s</b>（图中已圈出）<br>绿色段比 PB 圈更快，可重点复盘刹车点与弯心速度。');
+}
+function redrawOnTheme(){
+  if(selTrack&&selLap){ renderCharts(selLap,selTrack.pb,selTrack.model); drawHeatmap(selLap,selTrack.model); drawDeltaMap(selLap,selTrack.pb,selTrack.model); }
+  buildLiveMap(); renderTires();
+}
+
+/* ============ settings ============ */
+$('#swAuto').addEventListener('click',function(){ this.classList.toggle('on'); });
+$('#clearBtn').addEventListener('click',()=>{ $('#clearBtn').textContent='原型演示 · 未删除'; setTimeout(()=>$('#clearBtn').textContent='清空历史数据',1600); });
+
+/* ============ init ============ */
+(function init(){
+  selTrack=TRACKS[0]; selLap=TRACKS[0].laps[6]||TRACKS[0].laps[0];
+  buildLiveMap(); renderTires();
+  const total=TRACKS.reduce((s,t)=>s+t.laps.length,0);
+  $('#setStat').textContent=TRACKS.length+' 条赛道 · '+total+' 圈';
+})();
+
+/* ============ keyboard ============ */
+document.addEventListener('keydown',e=>{
+  if(e.target&&/INPUT|TEXTAREA/.test(e.target.tagName)) return;
+  const k=e.key.toLowerCase();
+  if(k>='1'&&k<='3') switchView(VIEWS[+k-1]);
+  else if(k==='t') setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
+});
+
+/* ============ 预览用：窗口自适应缩放（仅当预览区小于 1000x680 时生效） ============ */
+(function fitWindow(){
+  const win=$('#win'), desk=$('.desktop');
+  function fit(){
+    const s=Math.min(1,(desk.clientWidth-32)/1000,(desk.clientHeight-32)/680);
+    win.style.transform=s<0.999?('scale('+s.toFixed(4)+')'):'none';
+    win.style.margin=(s<0.999?((1-s)*340)+'px '+((1-s)*500)+'px':'');
+  }
+  fit(); window.addEventListener('resize',fit);
+})();
+</script>
+</body>
+</html>

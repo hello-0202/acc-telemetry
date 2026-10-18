@@ -1,0 +1,60 @@
+# ---------------- 依赖 / 前端构建 ----------------
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# ---------------- Rust / Tauri ----------------
+src-tauri/target/
+src-tauri/gen/schemas/
+# sidecar 是打包生成的，克隆后需先构建再复制过来
+src-tauri/binaries/*.exe
+
+# ---------------- Python / PyInstaller ----------------
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+python-server/build/
+python-server/dist/
+# 采集脚本的原始采样和导出的地图，属于本机数据
+python-server/tools/track_data/
+
+# ---------------- 本地数据库 / 日志 ----------------
+*.db
+*.db-wal
+*.db-shm
+crash_log.txt
+logs/
+*.log
+
+# ---------------- 临时文件 ----------------
+.tmp-*
+tmp/
+*.tmp
+
+# ---------------- 本地工具状态 ----------------
+.workbuddy/
+
+# ---------------- 环境变量 / 密钥 ----------------
+.env
+.env.*
+!.env.example
+
+# ---------------- 编辑器 / 系统 ----------------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
