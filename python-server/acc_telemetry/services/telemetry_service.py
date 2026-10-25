@@ -62,6 +62,7 @@ class TelemetryService:
         self._state = "IDLE"
         self._track_id: str | None = None
         self._session_id: str | None = None
+        self._session_type: str | None = None
         # 当前 session 已记录的圈数；出场圈不计入编号
         self._lap_seq = 0
 
@@ -115,6 +116,7 @@ class TelemetryService:
         self._state = "IDLE"
         self._track_id = None
         self._session_id = None
+        self._session_type = None
 
     async def shutdown(self) -> None:
         await self.stop()
@@ -178,6 +180,7 @@ class TelemetryService:
         db_ok = True
 
         now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        session_type = getattr(static, "session_type", "unknown") or "unknown"
 
         def persist() -> None:
             self.tracks.upsert(
@@ -193,6 +196,7 @@ class TelemetryService:
                 track_id=track.id,
                 car_name=car_name,
                 date=now,
+                session_type=session_type,
             )
 
         try:
@@ -219,12 +223,14 @@ class TelemetryService:
 
         self._track_id = track.id
         self._session_id = session_id
+        self._session_type = session_type
         self._lap_seq = 0
         max_rpm = static.max_rpm or 0
         payload = {
             "type": "session",
             "track": track_payload,
             "car": {"id": car_id, "name": car_name},
+            "sessionType": session_type,
             "carSpec": {
                 "maxRpm": max_rpm,
                 "gearCount": gear_count,
@@ -295,6 +301,14 @@ class TelemetryService:
                 await asyncio.sleep(SAMPLE_INTERVAL)
                 continue
 
+            # 会话类型可能晚于「开会话」才写进共享内存（ACC 菜单 / 回放里是 -1），
+            # 一旦读到真实类型就把会话行和此前标成 unknown 的圈补写上。
+            if self._session_type in (None, "unknown"):
+                snap_type = getattr(snap, "session_type", "unknown") or "unknown"
+                if snap_type != "unknown":
+                    self._session_type = snap_type
+                    await self._promote_session_type(session_id, snap_type)
+
             results = processor.consume(snap)
             reset_detected = processor.consume_reset()
             for result in results:
@@ -303,11 +317,24 @@ class TelemetryService:
                     continue
                 self._lap_seq += 1
                 result.no = self._lap_seq
+                result.session_type = getattr(snap, "session_type", "unknown") or "unknown"
+                if result.session_type != "unknown":
+                    self._session_type = result.session_type
                 payload = await self._persist_lap(session_id, result, send)
                 await send(payload)
                 await self._maybe_record_track_map(result, send)
             if reset_detected:
-                return True
+                snapshot_type = getattr(snap, "session_type", "unknown") or "unknown"
+                type_changed = (
+                    snapshot_type != "unknown"
+                    and self._session_type not in (None, "unknown")
+                    and snapshot_type != self._session_type
+                )
+                if type_changed:
+                    # 排位 → 正赛：圈数归零但仍是同一条记录，只更新当前类型
+                    self._session_type = snapshot_type
+                else:
+                    return True
 
             if processor.active and tick_start >= next_frame:
                 await send(self._frame_payload(snap, processor, self._lap_seq + 1))
@@ -328,6 +355,15 @@ class TelemetryService:
             hz = FRAME_HZ
         hz = max(5, min(60, hz))
         return 1.0 / hz
+
+    async def _promote_session_type(self, session_id: str, session_type: str) -> None:
+        """把「未标注」的会话补写成真实类型（只补 unknown，不覆盖已有值）。"""
+        try:
+            changed = await asyncio.to_thread(self.sessions.set_type, session_id, session_type)
+            if changed:
+                logger.info("session %s type promoted to %s", session_id, session_type)
+        except Exception as exc:  # noqa: BLE001 - 补写失败不影响采集
+            logger.warning("session type promote failed: %s", exc)
 
     async def _persist_lap(self, session_id: str, result: LapResult, send: Send) -> dict:
         persisted = True
@@ -353,6 +389,7 @@ class TelemetryService:
             "s1": result.s1,
             "s2": result.s2,
             "s3": result.s3,
+            "sessionType": result.session_type,
             "pb": bool(result.kind == "ok" and pb_ms is not None and pb_ms == result.ms),
             "pbMs": pb_ms,
             "sampleCount": len(result.samples),
@@ -421,6 +458,10 @@ class TelemetryService:
             "brake": round(snap.brake, 3),
             "steer": round(snap.steer, 3),
             "progress": round(snap.progress, 5),
+            "airTemp": round(float(getattr(snap, "air_temp", 0.0)), 1),
+            "roadTemp": round(float(getattr(snap, "road_temp", 0.0)), 1),
+            "rainIntensity": int(getattr(snap, "rain_intensity", 0)),
+            "trackGrip": int(getattr(snap, "track_grip", 0)),
             "wheels": [
                 {
                     "corner": corners[i],

@@ -6,7 +6,10 @@ from collections.abc import Sequence
 
 from ..db import Database
 
-LAP_FIELDS = ("id", "session_id", "no", "ms", "kind", "valid", "s1", "s2", "s3", "created_at")
+LAP_FIELDS = (
+    "id", "session_id", "no", "ms", "kind", "valid",
+    "s1", "s2", "s3", "session_type", "created_at",
+)
 
 
 class LapRepository:
@@ -18,8 +21,10 @@ class LapRepository:
         with self.db.connection() as conn:
             conn.execute(
                 """
-                INSERT INTO laps (id, session_id, no, ms, kind, valid, s1, s2, s3)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO laps (
+                    id, session_id, no, ms, kind, valid, s1, s2, s3, session_type
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     lap["id"],
@@ -31,6 +36,7 @@ class LapRepository:
                     lap.get("s1"),
                     lap.get("s2"),
                     lap.get("s3"),
+                    lap.get("session_type") or "unknown",
                 ),
             )
             if samples:
@@ -40,8 +46,8 @@ class LapRepository:
                         lap_id, idx, p, speed, rpm, gear, throttle, brake, steer,
                         fl_p, fl_t, fl_bt, fr_p, fr_t, fr_bt,
                         rl_p, rl_t, rl_bt, rr_p, rr_t, rr_bt,
-                        t_ms, g_long, g_lat
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        t_ms, g_long, g_lat, wx, wy
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     [
                         (
@@ -69,6 +75,8 @@ class LapRepository:
                             s.get("t_ms"),
                             s.get("g_long"),
                             s.get("g_lat"),
+                            s.get("wx"),
+                            s.get("wy"),
                         )
                         for s in samples
                     ],
@@ -79,7 +87,7 @@ class LapRepository:
             rows = conn.execute(
                 """
                 SELECT l.id, l.session_id, l.no, l.ms, l.kind, l.valid,
-                       l.s1, l.s2, l.s3, l.created_at
+                       l.s1, l.s2, l.s3, l.session_type, l.created_at
                   FROM laps l
                  WHERE l.session_id = ?
                  ORDER BY l.no ASC
@@ -93,7 +101,8 @@ class LapRepository:
             row = conn.execute(
                 """
                 SELECT l.id, l.session_id, l.no, l.ms, l.kind, l.valid,
-                       l.s1, l.s2, l.s3, l.created_at, s.date AS session_date
+                       l.s1, l.s2, l.s3, l.session_type, l.created_at,
+                       s.date AS session_date
                   FROM laps l
                   JOIN sessions s ON s.id = l.session_id
                  WHERE s.track_id = ? AND l.no = ?
@@ -108,7 +117,8 @@ class LapRepository:
         with self.db.connection() as conn:
             row = conn.execute(
                 """
-                SELECT id, session_id, no, ms, kind, valid, s1, s2, s3, created_at
+                SELECT id, session_id, no, ms, kind, valid, s1, s2, s3,
+                       session_type, created_at
                   FROM laps
                  WHERE session_id = ? AND no = ?
                  ORDER BY created_at DESC LIMIT 1
@@ -121,7 +131,8 @@ class LapRepository:
         with self.db.connection() as conn:
             row = conn.execute(
                 """
-                SELECT id, session_id, no, ms, kind, valid, s1, s2, s3, created_at
+                SELECT id, session_id, no, ms, kind, valid, s1, s2, s3,
+                       session_type, created_at
                   FROM laps
                  WHERE session_id = ? AND kind = 'ok' AND valid = 1
                  ORDER BY ms ASC LIMIT 1
@@ -146,7 +157,7 @@ class LapRepository:
             row = conn.execute(
                 """
                 SELECT l.id, l.session_id, l.no, l.ms, l.kind, l.valid,
-                       l.s1, l.s2, l.s3, l.created_at
+                       l.s1, l.s2, l.s3, l.session_type, l.created_at
                   FROM laps l
                   JOIN sessions s ON s.id = l.session_id
                  WHERE s.track_id = ? AND l.kind = 'ok' AND l.valid = 1
@@ -193,5 +204,6 @@ class LapRepository:
             "s1": row["s1"],
             "s2": row["s2"],
             "s3": row["s3"],
+            "session_type": row["session_type"] or "unknown",
             "created_at": row["created_at"],
         }

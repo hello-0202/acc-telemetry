@@ -20,27 +20,30 @@ CREATE TABLE IF NOT EXISTS tracks (
     spline      TEXT NOT NULL DEFAULT '[]',
     sectors     TEXT NOT NULL DEFAULT '[0.3333,0.6667]',
     date        TEXT,
-    map_source  TEXT NOT NULL DEFAULT 'generated'   -- generated / recorded
+    map_source  TEXT NOT NULL DEFAULT 'generated',  -- generated / recorded
+    geometry    TEXT                                -- fastlane.ai 解析出的真实赛道几何（JSON）
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
-    id        TEXT PRIMARY KEY,
-    track_id  TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
-    car_name  TEXT,
-    date      TEXT NOT NULL
+    id           TEXT PRIMARY KEY,
+    track_id     TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+    car_name     TEXT,
+    date         TEXT NOT NULL,
+    session_type TEXT NOT NULL DEFAULT 'unknown'  -- practice / qualify / race / hotlap ...
 );
 
 CREATE TABLE IF NOT EXISTS laps (
-    id         TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-    no         INTEGER NOT NULL,
-    ms         INTEGER NOT NULL,
-    kind       TEXT NOT NULL CHECK (kind IN ('ok','invalid','out')),
-    valid      INTEGER NOT NULL CHECK (valid IN (0,1)),
-    s1         INTEGER,
-    s2         INTEGER,
-    s3         INTEGER,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    id           TEXT PRIMARY KEY,
+    session_id   TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    no           INTEGER NOT NULL,
+    ms           INTEGER NOT NULL,
+    kind         TEXT NOT NULL CHECK (kind IN ('ok','invalid','out')),
+    valid        INTEGER NOT NULL CHECK (valid IN (0,1)),
+    s1           INTEGER,
+    s2           INTEGER,
+    s3           INTEGER,
+    session_type TEXT NOT NULL DEFAULT 'unknown',  -- 该圈所属的排位 / 正赛 / 练习…
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     UNIQUE (session_id, no)
 );
 
@@ -61,12 +64,9 @@ CREATE TABLE IF NOT EXISTS samples (
     t_ms       REAL,
     g_long     REAL,
     g_lat      REAL,
+    wx         REAL,   -- 世界坐标 X（米），用于历史走线/热力图
+    wy         REAL,   -- 世界坐标 Z（米），ACC 平面坐标为 x-z
     PRIMARY KEY (lap_id, idx)
-);
-
-CREATE TABLE IF NOT EXISTS config (
-    key   TEXT PRIMARY KEY,
-    value TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_track_date ON sessions(track_id, date DESC);
@@ -80,7 +80,7 @@ SAMPLE_COLUMNS = (
     "lap_id", "idx", "p", "speed", "rpm", "gear", "throttle", "brake", "steer",
     "fl_p", "fl_t", "fl_bt", "fr_p", "fr_t", "fr_bt",
     "rl_p", "rl_t", "rl_bt", "rr_p", "rr_t", "rr_bt",
-    "t_ms", "g_long", "g_lat",
+    "t_ms", "g_long", "g_lat", "wx", "wy",
 )
 
 
@@ -127,6 +127,37 @@ class Database:
                     conn.execute(
                         "ALTER TABLE tracks ADD COLUMN map_source TEXT NOT NULL DEFAULT 'generated'"
                     )
+                if "geometry" not in columns:
+                    conn.execute("ALTER TABLE tracks ADD COLUMN geometry TEXT")
+
+                # 会话类型迁移：旧库没有 session_type，统一标为 unknown
+                session_columns = {
+                    row[1] for row in conn.execute("PRAGMA table_info(sessions)")
+                }
+                if "session_type" not in session_columns:
+                    conn.execute(
+                        "ALTER TABLE sessions ADD COLUMN session_type TEXT "
+                        "NOT NULL DEFAULT 'unknown'"
+                    )
+
+                # 圈级会话类型：同一记录可能包含排位赛与正赛两段
+                lap_columns = {
+                    row[1] for row in conn.execute("PRAGMA table_info(laps)")
+                }
+                if "session_type" not in lap_columns:
+                    conn.execute(
+                        "ALTER TABLE laps ADD COLUMN session_type TEXT "
+                        "NOT NULL DEFAULT 'unknown'"
+                    )
+
+                # 采样坐标迁移：旧库没有 wx/wy，历史热力图回退到中心线
+                sample_columns = {
+                    row[1] for row in conn.execute("PRAGMA table_info(samples)")
+                }
+                if "wx" not in sample_columns:
+                    conn.execute("ALTER TABLE samples ADD COLUMN wx REAL")
+                if "wy" not in sample_columns:
+                    conn.execute("ALTER TABLE samples ADD COLUMN wy REAL")
 
                 # v2 迁移：不再保存出场圈，并按 session 重新从 1 编号
                 version = conn.execute("PRAGMA user_version").fetchone()[0]

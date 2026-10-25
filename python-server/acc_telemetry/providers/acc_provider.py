@@ -11,7 +11,7 @@ from ctypes import wintypes
 from pyACCSharedMemory.acc_data import ACCConstants, ACCGraphics, ACCPhysics, ACCStatic
 from pyACCSharedMemory.acc_mmap import MMapControl
 
-from .base import GameNotRunning, Snapshot, StaticInfo
+from .base import GameNotRunning, Snapshot, StaticInfo, session_type_name
 
 FILE_MAP_READ = 0x0004
 
@@ -186,6 +186,13 @@ class AccSharedMemoryProvider:
             in_pit_lane=bool(g.isInPitLane),
             in_pit=bool(g.isInPit),
             status=int(g.status),
+            heading=heading,
+            session_type=session_type_name(getattr(g, "session", -1)),
+            # 温度在 physics 块，降雨 / 抓地力在 graphics 块
+            air_temp=float(getattr(p, "airTemp", 0.0)),
+            road_temp=float(getattr(p, "roadTemp", 0.0)),
+            rain_intensity=int(getattr(g, "rainIntensity", 0)),
+            track_grip=int(getattr(g, "trackGripStatus", 0)),
         )
 
     def read_static(self) -> StaticInfo:
@@ -193,6 +200,16 @@ class AccSharedMemoryProvider:
             raise GameNotRunning("静态共享内存尚未打开")
         self._static.update()
         s = self._static.data
+
+        # 练习 → 排位 → 正赛会在同一次游戏运行内切换，session 类型来自 graphics 块
+        session_type = "unknown"
+        if self._gfx is not None:
+            try:
+                self._gfx.update()
+                session_type = session_type_name(getattr(self._gfx.data, "session", -1))
+            except Exception:
+                session_type = "unknown"
+
         return StaticInfo(
             track_name=str(s.trackName).strip(),
             track_configuration=str(getattr(s, "trackConfiguration", "")).strip(),
@@ -200,4 +217,5 @@ class AccSharedMemoryProvider:
             max_rpm=int(s.maxRpm),
             max_fuel=float(s.maxFuel),
             sector_count=int(s.sectorCount),
+            session_type=session_type,
         )

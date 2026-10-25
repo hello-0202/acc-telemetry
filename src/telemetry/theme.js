@@ -6,13 +6,13 @@ export const themeVersion = ref(0); // bumped on every theme/accent change so co
 
 // 主题色（强调色）预设，同时决定按钮、标签、开关等 --signal 相关颜色
 export const ACCENTS = [
-  { id: 'purple', name: '深紫', color: '#4E3686' },
-  { id: 'blue', name: '天蓝', color: '#5DA4D9' },
-  { id: 'green', name: '草绿', color: '#80D87F' },
-  { id: 'yellow', name: '亮黄', color: '#FBE960' },
-  { id: 'orange', name: '橙', color: '#EE724C' },
-  { id: 'red', name: '红', color: '#E23349' },
-  { id: 'white', name: '白', color: '#FFFFFF' },
+  { id: 'red', name: '红', color: '#D6002B' },
+  { id: 'orange', name: '橙', color: '#D65D00' },
+  { id: 'lime', name: '青柠', color: '#A1D600' },
+  { id: 'green', name: '绿', color: '#00D659' },
+  { id: 'cyan', name: '青', color: '#00B3D6' },
+  { id: 'violet', name: '蓝紫', color: '#4000D6' },
+  { id: 'purple', name: '品红', color: '#CF00D6' },
 ];
 export const accentName = ref(ACCENTS[0].id);
 

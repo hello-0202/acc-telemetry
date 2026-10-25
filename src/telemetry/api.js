@@ -154,3 +154,15 @@ export function saveConfig(values) {
     body: JSON.stringify(values),
   });
 }
+
+// 世界坐标赛道路径（fastlane.ai 解析结果），静态缓存
+const geometryCache = new Map();
+
+export async function getTrackGeometry(trackId) {
+  if (geometryCache.has(trackId)) return geometryCache.get(trackId);
+  const data = await request(
+    `/api/tracks/${encodeURIComponent(trackId)}/geometry`
+  );
+  geometryCache.set(trackId, data);
+  return data;
+}

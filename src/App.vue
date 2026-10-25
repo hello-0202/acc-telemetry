@@ -1,14 +1,62 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import MonitorView from './components/MonitorView.vue';
 import HistoryView from './components/HistoryView.vue';
 import SettingsView from './components/SettingsView.vue';
 import { themeName, toggleTheme } from './telemetry/theme.js';
 import { ui } from './telemetry/store.js';
+import { getConfig, getHealth } from './telemetry/api.js';
+import { applyPrefs, prefs } from './telemetry/prefs.js';
+import { telemetry } from './telemetry/useTelemetry.js';
 
 const VIEWS = ['monitor', 'history', 'settings'];
 const view = ref('monitor');
+let unlistenClose = null;
+
+/* ------------------- 全局连接状态 ------------------- */
+// 周期探测后端 /health，驱动全局置灰与提示；监控页自身仍用 WS 状态。
+const HEALTH_INTERVAL_MS = 3000;
+let healthTimer = null;
+let healthBusy = false;
+const noticeDismissed = ref(false);
+
+async function pollHealth() {
+  if (healthBusy) return;
+  healthBusy = true;
+  try {
+    const health = await getHealth();
+    ui.backendOnline = true;
+    ui.gameRunning = !!health.gameRunning;
+  } catch (e) {
+    ui.backendOnline = false;
+    ui.gameRunning = false;
+  } finally {
+    healthBusy = false;
+  }
+}
+
+const offline = computed(() =>
+  ui.backendOnline === false ||
+  ui.gameRunning === false ||
+  telemetry.status === 'error'
+);
+
+const noticeText = computed(() => {
+  if (ui.backendOnline === false) return '本地服务未连接，请确认后端服务已启动（端口 8008）';
+  if (telemetry.status === 'error' && telemetry.error) return telemetry.error;
+  if (ui.gameRunning === false) return '未检测到 ACC 游戏，请先启动游戏并进入比赛';
+  return '';
+});
+
+const showNotice = computed(
+  () => offline.value && !noticeDismissed.value && !!noticeText.value
+);
+
+// 状态恢复后重置「已关闭」，下次断开时重新提醒
+watch(offline, (value) => {
+  if (!value) noticeDismissed.value = false;
+});
 
 // 浏览器里直接预览时没有 Tauri 运行时，窗口操作直接忽略
 const appWindow = (typeof window !== 'undefined' && window.__TAURI_INTERNALS__)
@@ -42,9 +90,35 @@ onMounted(() => {
   const h = (location.hash || '').replace('#', '');
   if (VIEWS.indexOf(h) >= 0) view.value = h;
   window.addEventListener('keydown', onKey);
+
+  // 读取后端配置，决定关闭窗口时是否隐藏到托盘
+  getConfig().then(applyPrefs).catch(() => { /* 后端未启动时保持默认值 */ });
+
+  // 常驻探测服务与游戏状态
+  pollHealth();
+  healthTimer = setInterval(pollHealth, HEALTH_INTERVAL_MS);
+  if (appWindow) {
+    appWindow
+      .onCloseRequested(async (event) => {
+        if (!prefs.backgroundResident) return;
+        event.preventDefault();
+        try {
+          await appWindow.hide();
+        } catch (e) {
+          console.error('hide window failed:', e);
+        }
+      })
+      .then((fn) => { unlistenClose = fn; })
+      .catch(() => { /* 旧版 Tauri 或权限缺失时忽略 */ });
+  }
 });
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey);
+  if (unlistenClose) unlistenClose();
+  if (healthTimer !== null) {
+    clearInterval(healthTimer);
+    healthTimer = null;
+  }
 });
 </script>
 
@@ -54,7 +128,7 @@ onBeforeUnmount(() => {
       <!-- 自定义标题栏：data-tauri-drag-region 让它可以拖动窗口 -->
       <div class="win-bar" data-tauri-drag-region>
         <div class="win-id" data-tauri-drag-region>
-          <img class="brand-logo" src="/logo.png" alt="" data-tauri-drag-region /><span class="name" data-tauri-drag-region>ACC 遥测 · Telemetry</span>
+          <img class="brand-logo" src="/logo.png" alt="" data-tauri-drag-region /><span class="name" data-tauri-drag-region>ACC · Telemetry</span>
         </div>
         <div class="wbtns">
           <span class="wb" role="button" title="最小化" @click="windowAction('minimize')"><svg viewBox="0 0 10 10"><rect x="0" y="4.4" width="10" height="1.2" fill="currentColor" /></svg></span>
@@ -91,18 +165,23 @@ onBeforeUnmount(() => {
         <main class="stage">
           <MonitorView :class="{ active: view === 'monitor' }" />
           <HistoryView :class="{ active: view === 'history' }" :visible="view === 'history'" />
-          <SettingsView :class="{ active: view === 'settings' }" />
+          <SettingsView :class="{ active: view === 'settings' }" :visible="view === 'settings'" />
         </main>
 
         <!-- statusbar -->
         <footer class="statusbar">
-          <span>{{ ui.statLeft }}</span>
           <span class="r">
             <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 切换页面</span>
             <span><kbd>T</kbd> 主题</span>
-            <span>{{ ui.monOn ? '实时数据' : '历史数据' }}</span>
           </span>
         </footer>
+      </div>
+
+      <!-- 断开 / 游戏未启动提示 -->
+      <div class="offline-toast" v-if="showNotice" role="alert">
+        <span class="od"></span>
+        <span class="ot">{{ noticeText }}</span>
+        <button class="ox" type="button" aria-label="关闭提示" @click="noticeDismissed = true">×</button>
       </div>
     </div>
   </div>

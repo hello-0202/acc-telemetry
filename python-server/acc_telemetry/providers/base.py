@@ -10,6 +10,28 @@ class GameNotRunning(RuntimeError):
     """ACC 进程 / 共享内存段不存在。"""
 
 
+# ACC graphics.session 枚举 → 稳定字符串，入库和前端展示都依赖它
+SESSION_TYPE_NAMES = {
+    -1: "unknown",
+    0: "practice",
+    1: "qualify",
+    2: "race",
+    3: "hotlap",
+    4: "timeattack",
+    5: "drift",
+    6: "drag",
+    7: "hotstint",
+    8: "hotstintsuperpole",
+}
+
+
+def session_type_name(value: int | None) -> str:
+    try:
+        return SESSION_TYPE_NAMES.get(int(value), "unknown")  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return "unknown"
+
+
 @dataclass(frozen=True, slots=True)
 class Snapshot:
     t_mono: float
@@ -43,6 +65,13 @@ class Snapshot:
     in_pit_lane: bool
     in_pit: bool
     status: int
+    heading: float = 0.0
+    session_type: str = "unknown"
+    # 场景信息：温度来自 physics 块，降雨/抓地力来自 graphics 块
+    air_temp: float = 0.0
+    road_temp: float = 0.0
+    rain_intensity: int = 0
+    track_grip: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +82,7 @@ class StaticInfo:
     max_rpm: int
     max_fuel: float
     sector_count: int
+    session_type: str = "unknown"
 
 
 class TelemetryProvider(Protocol):

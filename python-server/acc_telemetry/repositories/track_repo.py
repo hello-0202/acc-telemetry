@@ -32,16 +32,16 @@ class TrackRepository:
                     name     = excluded.name,
                     length_m = COALESCE(excluded.length_m, tracks.length_m),
                     spline   = CASE
-                                 WHEN tracks.map_source = 'recorded'
-                                      AND excluded.map_source != 'recorded'
+                                 WHEN tracks.map_source IN ('recorded', 'fastlane')
+                                      AND excluded.map_source NOT IN ('recorded', 'fastlane')
                                    THEN tracks.spline
                                  WHEN excluded.spline NOT IN ('', '[]')
                                    THEN excluded.spline
                                  ELSE tracks.spline
                                END,
                     sectors  = excluded.sectors,
-                    map_source = CASE WHEN tracks.map_source = 'recorded'
-                                      THEN 'recorded' ELSE excluded.map_source END,
+                    map_source = CASE WHEN tracks.map_source IN ('recorded', 'fastlane')
+                                      THEN tracks.map_source ELSE excluded.map_source END,
                     date     = CASE WHEN tracks.date IS NULL OR excluded.date > tracks.date
                                     THEN excluded.date ELSE tracks.date END
                 """,
@@ -59,11 +59,27 @@ class TrackRepository:
     def get(self, track_id: str) -> dict | None:
         with self.db.connection() as conn:
             row = conn.execute(
-                "SELECT id, name, length_m, spline, sectors, date, map_source "
+                "SELECT id, name, length_m, spline, sectors, date, map_source, geometry "
                 "FROM tracks WHERE id = ?",
                 (track_id,),
             ).fetchone()
         return self._decode(row) if row else None
+
+    def set_geometry(self, track_id: str, geometry: dict) -> None:
+        """保存 fastlane.ai 解析出的真实赛道几何。"""
+        with self.db.connection() as conn:
+            conn.execute(
+                "UPDATE tracks SET geometry = ? WHERE id = ?",
+                (json.dumps(geometry, ensure_ascii=False), track_id),
+            )
+
+    def set_spline(self, track_id: str, spline: list[list[float]], source: str) -> None:
+        """用真实几何更新 480x290 折线；source='fastlane' 后不再被近似形状覆盖。"""
+        with self.db.connection() as conn:
+            conn.execute(
+                "UPDATE tracks SET spline = ?, map_source = ? WHERE id = ?",
+                (json.dumps(spline, ensure_ascii=False), source, track_id),
+            )
 
     def list_summaries(self) -> list[dict]:
         sql = """
@@ -137,6 +153,10 @@ class TrackRepository:
             sectors = json.loads(row["sectors"] or "[0.3333,0.6667]")
         except (TypeError, ValueError):
             sectors = [1 / 3, 2 / 3]
+        try:
+            geometry = json.loads(row["geometry"]) if row["geometry"] else None
+        except (TypeError, ValueError):
+            geometry = None
         return {
             "id": row["id"],
             "name": row["name"],
@@ -145,4 +165,5 @@ class TrackRepository:
             "sectors": sectors,
             "date": row["date"],
             "map_source": row["map_source"],
+            "geometry": geometry,
         }

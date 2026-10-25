@@ -16,7 +16,7 @@ class SampleRepository:
                 SELECT idx, p, speed, rpm, gear, throttle, brake, steer,
                        fl_p, fl_t, fl_bt, fr_p, fr_t, fr_bt,
                        rl_p, rl_t, rl_bt, rr_p, rr_t, rr_bt,
-                       t_ms, g_long, g_lat
+                       t_ms, g_long, g_lat, wx, wy
                   FROM samples WHERE lap_id = ? ORDER BY idx ASC
                 """,
                 (lap_id,),

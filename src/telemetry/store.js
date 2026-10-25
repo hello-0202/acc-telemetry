@@ -6,4 +6,7 @@ export const ui = reactive({
   monOn: false,
   liveTrackId: null,
   liveSessionId: null,
+  // 全局连接 / 游戏状态（App.vue 轮询 /health 写入）
+  backendOnline: null, // null=检测中
+  gameRunning: null,
 });

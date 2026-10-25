@@ -41,6 +41,95 @@ def spline_is_degenerate(spline: Sequence[Sequence[float]]) -> bool:
     return min(span_x, span_y) / longest < 0.03
 
 
+def _resample_closed(
+    points: Sequence[Sequence[float]], n: int
+) -> list[list[float]]:
+    """把闭合折线等弧长重采样为 n 个点。"""
+    if len(points) < 2 or n < 2:
+        return []
+    cumulative = [0.0]
+    for i in range(len(points)):
+        a = points[i]
+        b = points[(i + 1) % len(points)]
+        cumulative.append(
+            cumulative[-1] + ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
+        )
+    total = cumulative[-1]
+    if total <= 0:
+        return []
+    out: list[list[float]] = []
+    j = 0
+    for i in range(n):
+        target = total * i / n
+        while j < len(cumulative) - 2 and cumulative[j + 1] < target:
+            j += 1
+        span = (cumulative[j + 1] - cumulative[j]) or 1.0
+        t = (target - cumulative[j]) / span
+        a = points[j % len(points)]
+        b = points[(j + 1) % len(points)]
+        out.append(
+            [
+                round(a[0] + (b[0] - a[0]) * t, 2),
+                round(a[1] + (b[1] - a[1]) * t, 2),
+            ]
+        )
+    return out
+
+
+def build_spline_from_geometry(
+    geometry: dict,
+    n: int = 240,
+    width: float = VIEW_W,
+    height: float = VIEW_H,
+    padding: float = PADDING,
+) -> list[list[float]] | None:
+    """把 fastlane.ai 的真实世界坐标转成 480x290 视口内的中心线折线。
+
+    与 `build_spline_from_samples` 的区别：这里使用赛道中心线，不依赖实跑数据，
+    因此第一次进入赛道就能得到准确形状。
+    """
+    points = geometry.get("points") if isinstance(geometry, dict) else None
+    if not points or len(points) < 32:
+        return None
+
+    rows = []
+    min_x = min_z = float("inf")
+    max_x = max_z = float("-inf")
+    for p in points:
+        try:
+            x, z = float(p["x"]), float(p["z"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        nx = -float(p.get("dir_z", 0.0))
+        nz = float(p.get("dir_x", 0.0))
+        l = max(0.0, float(p.get("l", 0.0)))
+        r = max(0.0, float(p.get("r", 0.0)))
+        rows.append((x, z))
+        for px, pz in ((x, z), (x + nx * l, z + nz * l), (x - nx * r, z - nz * r)):
+            min_x = min(min_x, px)
+            max_x = max(max_x, px)
+            min_z = min(min_z, pz)
+            max_z = max(max_z, pz)
+
+    if len(rows) < 32:
+        return None
+
+    span_x = max(max_x - min_x, 1e-6)
+    span_z = max(max_z - min_z, 1e-6)
+    if min(span_x, span_z) / max(span_x, span_z) < 0.03:
+        return None
+
+    scale = min((width - 2 * padding) / span_x, (height - 2 * padding) / span_z)
+    offset_x = (width - span_x * scale) / 2
+    offset_y = (height - span_z * scale) / 2
+    # 世界 Z 向上，屏幕 Y 向下 → 翻转
+    screen = [
+        (offset_x + (x - min_x) * scale, offset_y + (max_z - z) * scale)
+        for x, z in rows
+    ]
+    return _resample_closed(screen, n)
+
+
 def build_spline_from_samples(
     samples: Sequence[dict],
     n: int = 160,

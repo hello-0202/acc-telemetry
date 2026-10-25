@@ -31,6 +31,8 @@ class LapResult:
     s3: int | None
     samples: list[dict[str, Any]]
     started_partial: bool
+    # 记录完成该圈时 ACC 的会话类型（练习 / 排位 / 正赛），用于历史列表二次分类
+    session_type: str = "unknown"
 
 
 def _valid_ms(value: int | None) -> int | None:
@@ -68,6 +70,9 @@ class LapProcessor:
         self._max_progress = 0.0
         self._last_boundary_mono = 0.0
         self._reset_detected = False
+        # 上一圈落库时的圈速 / 圈计数器，用于挡掉「同一圈被判定两次」的重复记录
+        self._last_finalized_ms: int | None = None
+        self._last_finalized_laps = -1
 
     # ------------------------------------------------------------------ 状态
     @property
@@ -159,6 +164,7 @@ class LapProcessor:
         )
         if time_reset:
             if self._max_progress > 0.90:
+                # 已跑完大半圈：视为过线（出场圈有时不增加 completedLaps），落库本圈
                 result = self._finalize(snap)
                 if result is not None:
                     results.append(result)
@@ -166,7 +172,16 @@ class LapProcessor:
                 self._started_partial = False
                 self._started_in_pit = snap.in_pit_lane or snap.in_pit
                 self._invalid_latched = not snap.valid_lap
+            elif self._max_progress > 0.3:
+                # 飞驰圈中途计时器抖动（ACC 偶发把 lap_time 瞬间归零）：这是误报，
+                # 正跑着的圈不能丢、会话也不能重开，只平滑恢复计时器基准。
+                self._last_lap_time_ms = snap.lap_time_ms
+                self._last_progress = snap.progress
+                self._last_completed_laps = snap.completed_laps
+                self._append_sample(snap)
+                return results
             else:
+                # 起步段计时器真实归零（pit 出场 / 重开），丢弃当前半圈并重启会话
                 self._reset_detected = True
                 self._no = int(snap.completed_laps) + 1
                 self._started_partial = False
@@ -207,7 +222,11 @@ class LapProcessor:
         self._last_completed_laps = snap.completed_laps
         self._last_lap_time_ms = snap.lap_time_ms
         self._last_progress = snap.progress
-        self._max_progress = snap.progress
+        # 过线瞬间 ACC 常常先加 completedLaps、下一帧才把 normalizedCarPosition
+        # 绕回 0。这时如果照抄 ~1.0 的旧进度，几秒后「进度回绕」条件会再次成立，
+        # 同一圈会被判定两次（用还没更新的 iLastTime 重复落库）。
+        # 新圈的起点进度只可能是小值，大于 0.5 一律按 0 起算。
+        self._max_progress = snap.progress if snap.progress < 0.5 else 0.0
         self._last_boundary_mono = snap.t_mono
 
     def _append_sample(self, snap: Snapshot) -> None:
@@ -247,6 +266,11 @@ class LapProcessor:
         ms = _valid_ms(snap.last_lap_ms) or _valid_ms(self._last_lap_time_ms)
         if ms is None:
             return None
+        # ACC 的 iLastTime 在下一次过线前一直保留旧值：圈速和上一圈完全相同、
+        # 圈计数器又没有前进，说明并没有真的跑完新的一圈（边界被重复触发 /
+        # 中途重置 / 回放），直接丢弃，避免同一圈落库两次。
+        if ms == self._last_finalized_ms and snap.completed_laps <= self._last_finalized_laps:
+            return None
         # 采样过少说明是误判的边界（历史数据里出现过只有 1 个点的“圈”）
         if len(self._samples) < 10:
             return None
@@ -262,6 +286,8 @@ class LapProcessor:
             kind = "ok"
 
         s1, s2, s3 = self._sector_times_for(ms)
+        self._last_finalized_ms = ms
+        self._last_finalized_laps = snap.completed_laps
         return LapResult(
             no=self._no,
             ms=ms,

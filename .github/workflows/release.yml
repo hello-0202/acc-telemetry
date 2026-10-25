@@ -1,0 +1,58 @@
+name: Release
+
+# 打 tag（vX.Y.Z）并推送到 origin 时自动构建 Windows 安装包并创建 GitHub Release。
+# 例：git tag v1.0.0 && git push origin v1.0.0
+on:
+  push:
+    tags:
+      - "v*"
+
+# 创建 Release 需要写权限
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # 玩家面向 Windows，因此在 Windows runner 上构建
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      # 构建 Python 遥测 sidecar（telemetry_core.exe），并放到 Tauri externalBin 期望的位置
+      - name: Build Python telemetry sidecar
+        shell: bash
+        run: |
+          cd python-server
+          python -m venv .venv
+          .venv/Scripts/python -m pip install -r requirements.txt pyinstaller
+          .venv/Scripts/python -m PyInstaller telemetry_core.spec --noconfirm --workpath build_new --distpath dist_new
+          cp dist_new/telemetry_core.exe ../src-tauri/binaries/telemetry_core-x86_64-pc-windows-msvc.exe
+
+      # 由 tauri-action 执行 npm run build + cargo build + 打包安装包，并创建 GitHub Release
+      - name: Build and publish (draft)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "ACC Telemetry ${{ github.ref_name }}"
+          releaseBody: "See the CHANGELOG.md for details."
+          releaseDraft: true # 先建草稿，你确认无误后再手动发布
+          prerelease: false

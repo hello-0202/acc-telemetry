@@ -1,11 +1,12 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
-import { cssVar, fmtDelta, fmtLap, reduceMotion, tireClass } from '../telemetry/model.js';
+import { fmtDelta, fmtLap, gripText, rainText, reduceMotion, tireClass } from '../telemetry/model.js';
 import { themeVersion } from '../telemetry/theme.js';
 import { ui } from '../telemetry/store.js';
 import { start as startTelemetry, stop as stopTelemetry, telemetry, gearText } from '../telemetry/useTelemetry.js';
 import { modelFromSpline } from '../telemetry/adapt.js';
-import { getBaseUrl } from '../telemetry/api.js';
+import { getBaseUrl, getTrackGeometry } from '../telemetry/api.js';
+import TrackCanvasMap from './TrackCanvasMap.vue';
 
 function wsLabel() {
   return getBaseUrl().replace(/^http/, 'ws');
@@ -26,11 +27,10 @@ const monOn = computed(() => userStarted.value);
 const startOn = userStarted;
 const iconPlay = computed(() => !userStarted.value);
 const startLabel = computed(() => userStarted.value ? '停止监测' : '开始监测');
+// 副标题只显示实测帧率；连接中的过渡文字不出现，避免启动瞬间文字闪动
 const startSub = computed(() => {
-  if (telemetry.status === 'streaming') return telemetry.fps + ' Hz';
-  if (telemetry.status === 'connecting') return '连接中…';
-  if (userStarted.value) return '默认数据';
-  return '';
+  if (telemetry.status !== 'streaming' || !frame.value || !telemetry.fps) return '';
+  return telemetry.fps + ' Hz';
 });
 
 const spd = computed(() => (frame.value ? Math.round(frame.value.speed) : 0));
@@ -83,14 +83,27 @@ const mapNext = computed(() => {
   return sector + ' · 已完成 ' + ((p * len) / 1000).toFixed(2) + ' / ' + (len / 1000).toFixed(1) + ' km';
 });
 
-const monDotGood = computed(() => telemetry.status === 'streaming' && !!frame.value);
-const monTitle = computed(() => {
-  if (telemetry.status === 'streaming' && session.value) return '监测中 · ' + session.value.track.name;
-  if (telemetry.status === 'error') return telemetry.error || '连接出错 · 显示默认数据';
-  if (telemetry.status === 'connecting') return '正在连接… · 显示默认数据';
-  if (userStarted.value) return '等待数据 · 显示默认数据';
-  return '未开始监测';
+// 服务连接指示灯（绿=已连接 / 红=断开）
+const dotClass = computed(() => {
+  if (telemetry.status === 'streaming' && frame.value) return 'good';
+  if (telemetry.status === 'error') return 'hot';
+  if (telemetry.status === 'connecting' || (userStarted.value && !frame.value)) return 'warn';
+  return 'off';
 });
+const connText = computed(() => {
+  if (telemetry.status === 'streaming' && frame.value) return '已连接';
+  if (telemetry.status === 'error') return '连接断开';
+  if (telemetry.status === 'connecting') return '连接中…';
+  if (userStarted.value) return '等待数据';
+  return '未连接';
+});
+const connTitle = computed(() => {
+  if (telemetry.status === 'error') return telemetry.error || '后端连接已断开';
+  if (telemetry.status === 'streaming') return '本地后端已连接 · ' + wsLabel();
+  if (telemetry.status === 'connecting') return '正在连接 ' + wsLabel();
+  return '未连接 · ' + wsLabel();
+});
+const trackText = computed(() => session.value?.track?.name || '—');
 const carText = computed(() => session.value?.car?.name || '—');
 
 const datasetText = computed(() => {
@@ -98,6 +111,22 @@ const datasetText = computed(() => {
   if (!session.value) return '默认数据 · 0 Hz';
   return telemetry.lapsThisSession + ' 圈 · ' + telemetry.fps + ' Hz';
 });
+
+// 场景信息随帧下发；没有实时帧时保持占位符，避免误报 0 度
+const airTempText = computed(() => {
+  const v = Number(frame.value?.airTemp);
+  return frame.value && Number.isFinite(v) ? v.toFixed(1) + ' °C' : '—';
+});
+const roadTempText = computed(() => {
+  const v = Number(frame.value?.roadTemp);
+  return frame.value && Number.isFinite(v) ? v.toFixed(1) + ' °C' : '—';
+});
+const weatherText = computed(() =>
+  frame.value ? rainText(frame.value.rainIntensity) : '—'
+);
+const gripTextValue = computed(() =>
+  frame.value ? gripText(frame.value.trackGrip) : '—'
+);
 
 /* ----------------------------- tires ----------------------------- */
 const tires = reactive([
@@ -124,17 +153,45 @@ watch(frame, (f) => {
 /* ----------------------------- mini map ----------------------------- */
 const liveMapSvg = ref(null);
 const mapModel = ref(null);
+const trackGeometry = ref(null);
+
+const canvasCar = computed(() => {
+  const f = frame.value;
+  if (!f || f.x == null || f.z == null) return null;
+  return { x: f.x, z: f.z };
+});
+
+async function loadTrackGeometry(s) {
+  trackGeometry.value = null;
+  const trackId = s?.track?.id;
+  if (!trackId || s?.track?.geometryAvailable === false) return;
+  try {
+    const geometry = await getTrackGeometry(trackId);
+    if (session.value?.track?.id === trackId) {
+      trackGeometry.value = geometry;
+    }
+  } catch (e) {
+    // 没有 fastlane.ai 或接口不可用 → 回退到内置/录制 SVG 地图
+  }
+}
 
 function buildMapSvg(M) {
   if (!M || !M.n) return '';
-  let html = '<path class="map-base" d="' + M.d + '"/><path class="map-inline" d="' + M.d + '"/>';
+  // 底图只画路面粗线（.map-base），不再叠加中线虚线（按需求去掉底图里的线）
+  let html = '<path class="map-base" d="' + M.d + '"/>';
   const step = Math.max(1, Math.floor(M.n / 10));
   for (let k = 0; k < M.n; k += step) {
     const p = M.pts[k];
     html += '<circle class="map-corner" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="2"/>';
   }
+  // 起跑线：垂直于赛道方向的横线；样式与圈速概要（.map-sf line）一致——墨色（黑）单线
   const start = M.pts[0];
-  html += '<line x1="' + (start.x - 8) + '" y1="' + (start.y - 8) + '" x2="' + (start.x + 8) + '" y2="' + (start.y + 8) + '" stroke="' + cssVar('--signal-text') + '" stroke-width="2.5"/>';
+  const next = M.pts[1] || start;
+  const dx = next.x - start.x, dy = next.y - start.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const half = 2.75;
+  const nx = (-dy / len) * half, ny = (dx / len) * half;
+  html += '<line class="map-start" x1="' + (start.x - nx) + '" y1="' + (start.y - ny) + '" x2="' + (start.x + nx) + '" y2="' + (start.y + ny) + '"/>';
   html += '<circle class="map-dot-glow" id="mapGlow" cx="' + start.x.toFixed(1) + '" cy="' + start.y.toFixed(1) + '" r="9"/>';
   html += '<circle class="map-dot" id="mapDot" cx="' + start.x.toFixed(1) + '" cy="' + start.y.toFixed(1) + '" r="3.8"/>';
   return html;
@@ -166,6 +223,7 @@ watch(session, (s) => {
   } else {
     mapModel.value = null;
   }
+  loadTrackGeometry(s);
 }, { immediate: true });
 
 /* ----------------------------- actions / ui ----------------------------- */
@@ -238,15 +296,27 @@ watch(
   <section class="view" id="view-monitor">
     <div class="mon-top">
       <div class="panel mon-status">
-        <div class="mon-line"><span class="sdot" :class="monDotGood ? 'good' : (userStarted ? 'warn' : 'off')"></span><span class="mon-title">{{ monTitle }}</span></div>
-        <div class="mon-line"><span style="color:var(--text-faint)">车辆</span><span>{{ carText }}</span></div>
-        <div class="mon-line"><span style="color:var(--text-faint)">数据集</span><span>{{ datasetText }}</span></div>
+        <div class="mon-col">
+          <div class="mon-line">
+            <span class="sdot" :class="dotClass" :title="connTitle"></span>
+            <span class="mon-title">{{ connText }}</span>
+          </div>
+          <div class="mon-line"><span class="k">赛道</span><span class="v" :title="trackText">{{ trackText }}</span></div>
+          <div class="mon-line"><span class="k">车辆</span><span class="v" :title="carText">{{ carText }}</span></div>
+          <div class="mon-line"><span class="k">数据集</span><span class="v">{{ datasetText }}</span></div>
+        </div>
+        <div class="mon-col">
+          <div class="mon-line"><span class="k">环境温度</span><span class="v">{{ airTempText }}</span></div>
+          <div class="mon-line"><span class="k">路面温度</span><span class="v">{{ roadTempText }}</span></div>
+          <div class="mon-line"><span class="k">天气</span><span class="v">{{ weatherText }}</span></div>
+          <div class="mon-line"><span class="k">路面</span><span class="v">{{ gripTextValue }}</span></div>
+        </div>
       </div>
       <div class="mon-action">
         <button class="start-btn" :class="{ on: startOn }" @click="setMon(!monOn)" aria-label="开始监测">
           <svg v-if="iconPlay" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5L8 5.5z" /></svg>
           <svg v-else viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="1" /></svg>
-          <span class="sb-col"><span class="sb-t">{{ startLabel }}</span><span class="sb-s mono" v-show="startSub">{{ startSub }}</span></span>
+          <span class="sb-col"><span class="sb-t">{{ startLabel }}</span><span v-if="startSub" class="sb-s mono">{{ startSub }}</span></span>
         </button>
       </div>
     </div>
@@ -276,7 +346,7 @@ watch(
               <div class="pedal-row"><span class="pedal-name">刹车</span><div class="pedal-track"><div class="pedal-fill brake" :style="{ width: brk + '%' }"></div></div><span class="pedal-val">{{ brk }}%</span></div>
               <div class="pedal-row"><span class="pedal-name">方向盘</span><div class="steer-track"><span class="steer-center"></span><div class="steer-fill" :style="{ left: steerFillLeft + '%', width: steerFillWidth + '%' }"></div></div><span class="pedal-val">{{ steerVal }}°</span></div>
             </div>
-            <div class="panel">
+            <div class="panel tire-panel">
               <div class="tyre-layout">
                 <div class="tire-grid">
                   <div class="tire-card" v-for="t in tires" :key="t.c">
@@ -292,7 +362,13 @@ watch(
         <div class="live-side">
           <div class="panel map-panel">
             <div class="map-fill">
-              <svg class="map-svg" viewBox="0 0 480 290" ref="liveMapSvg" v-html="liveMapStatic"></svg>
+              <TrackCanvasMap
+                v-if="trackGeometry?.points?.length"
+                :points="trackGeometry.points"
+                :car="canvasCar"
+                :theme-version="themeVersion"
+              />
+              <svg v-else class="map-svg" viewBox="0 0 480 290" ref="liveMapSvg" v-html="liveMapStatic"></svg>
             </div>
             <div class="map-progress"><i :style="{ width: mapProg + '%' }"></i></div>
             <div class="map-meta"><span>{{ mapNext }}</span><span>{{ mapPct }}</span></div>

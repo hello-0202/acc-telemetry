@@ -1,10 +1,33 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import sys
+from pathlib import Path
+
+# Windows 上 PATH 里可能先命中 Git/MSYS 的 libssl/libcrypto/libffi，与 CPython
+# 的 _ssl.pyd / _ctypes.pyd 不兼容（"找不到指定的程序" / "找不到指定的模块"）。
+# 显式使用当前 Python 环境自带的运行时 DLL。
+_binaries = []
+for _name in (
+    "libssl-3-x64.dll",
+    "libcrypto-3-x64.dll",
+    "ffi.dll",
+    "ffi-8.dll",
+    "zlib.dll",
+    "libbz2.dll",
+    "liblzma.dll",
+    "sqlite3.dll",
+    "libexpat.dll",
+):
+    for _dir in (Path(sys.prefix) / "Library" / "bin", Path(sys.prefix) / "DLLs"):
+        _candidate = _dir / _name
+        if _candidate.is_file():
+            _binaries.append((str(_candidate), "."))
+            break
 
 a = Analysis(
     ['server.py'],
     pathex=[],
-    binaries=[],
+    binaries=_binaries,
     datas=[],
     hiddenimports=[],
     hookspath=[],

@@ -47,7 +47,8 @@ def main() -> int:
     try:
         import uvicorn
 
-        from acc_telemetry.app import app
+        # 新的生产者-消费者总线架构（backend 包）
+        from backend.api.server import app
 
         # 优先 8008；被占用时自动尝试 8009–8019。
         # uvicorn 绑定失败时抛的是 SystemExit，普通 except Exception 捕获不到，

@@ -112,6 +112,11 @@ function handleMessage(message) {
       break;
     case 'stopped':
       telemetry.status = 'stopped';
+      // 直播结束（游戏退出 / 退到主菜单 / 暂停 / 切赛道）：清掉实时帧，
+      // 不再显示冻结的旧数据；session 保留，恢复直播后由新帧重新填充。
+      telemetry.frame = null;
+      telemetry.deltaMs = null;
+      telemetry.lastLap = null;
       break;
     default:
       break;

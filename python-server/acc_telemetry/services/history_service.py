@@ -43,6 +43,7 @@ class HistoryService:
             "s1": result.s1,
             "s2": result.s2,
             "s3": result.s3,
+            "session_type": result.session_type,
         }
         self.laps.insert_with_samples(lap=lap, samples=result.samples)
         return lap
@@ -86,6 +87,7 @@ class HistoryService:
                     "pbMs": pb_ms,
                     "pbNo": pb["no"] if pb else None,
                     "sessionId": row["session_id"],
+                    "sessionType": row.get("session_type") or "unknown",
                 }
             )
         return output
@@ -117,6 +119,7 @@ class HistoryService:
             "samples": [self._sample_out(s) for s in samples],
             "pbMs": self.laps.pb_ms_for_session(session_id),
             "sessionId": session_id,
+            "sessionType": lap.get("session_type") or session.get("session_type") or "unknown",
         }
 
     # ------------------------------------------------------------------ 删除
@@ -140,6 +143,8 @@ class HistoryService:
             "tMs": sample.get("t_ms"),
             "gLong": sample.get("g_long"),
             "gLat": sample.get("g_lat"),
+            "x": sample.get("wx"),
+            "z": sample.get("wy"),
         }
         for src, dst in SAMPLE_OUT_KEYS:
             out[dst] = sample.get(src)

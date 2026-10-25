@@ -22,8 +22,13 @@ venv/
 env/
 python-server/build/
 python-server/dist/
+# PyInstaller 增量构建产物（构建过程临时生成，体积大）
+python-server/build_new/
+python-server/dist_new/
 # 采集脚本的原始采样和导出的地图，属于本机数据
 python-server/tools/track_data/
+# 测试目录已移除（项目不再包含 pytest 用例）；忽略残留文件以防误提交
+python-server/tests/
 
 # ---------------- 本地数据库 / 日志 ----------------
 *.db
@@ -35,8 +40,11 @@ logs/
 
 # ---------------- 临时文件 ----------------
 .tmp-*
+.tmp_*
 tmp/
 *.tmp
+# 赛道地图调试预览（本地生成，体积大，不入库）
+docs/trackmap-*.html
 
 # ---------------- 本地工具状态 ----------------
 .workbuddy/
