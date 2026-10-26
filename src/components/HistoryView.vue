@@ -148,10 +148,11 @@ const analysisHtml = computed(() => {
           '<button class="pb-toggle' + (showPbLine ? ' on' : '') + '" id="pbLineToggle" type="button">' + (showPbLine ? '隐藏 PB 路线' : '对比 PB 路线') + '</button>' +
           '<button class="pb-toggle' + (showApex ? ' on' : '') + '" id="apexToggle" type="button">' + (showApex ? '隐藏弯心' : '显示弯心') + '</button>' +
         '</span>' +
-        '<span class="heat-legend map-heat-legend" id="heatLegend"' + (showHeat ? '' : ' style="display:none"') + '>' +
-          '<span>全油门</span><span class="bar"></span><span>滑行</span><span class="bar"></span><span>重刹</span></span>' +
         '<span class="zoom-hint" title="拖动空白处平移地图">滚轮缩放 · 拖动游标 · 双击重置</span>' +
       '</h4>' +
+      '<span class="heat-legend map-heat-legend' + (showHeat ? '' : ' off') + '" id="heatLegend">' +
+        '<span>全油门</span><span class="bar"></span><span>滑行</span><span class="bar"></span><span>重刹</span>' +
+      '</span>' +
       '<div class="ana-split">' +
         '<div class="mini-map" id="miniMapWrap"><svg viewBox="0 0 480 290" id="miniMap"></svg>' +
           '<div class="map-readout" id="mapReadout"></div></div>' +
@@ -252,21 +253,31 @@ const errorDetail = computed(() => {
   return i > 0 ? text.slice(i + 1) : '';
 });
 
+// 每次拉列表有自己的序号：刷新可能在事件密集时重入（新记录 + 新圈），
+// 只认最后一次的结果，避免旧响应后到把新列表覆盖回去。
+let tracksSeq = 0;
+
 async function loadTracks() {
+  const seq = (tracksSeq += 1);
   try {
     const list = await listSessions();
+    if (seq !== tracksSeq) return;
     const prevTrackId = selTrack.value?.id;
     const prevLapNo = selLap.value?.no;
+    const prevLapLoaded = !!selLap.value?.T;
+    // 刷新已有记录时静默：右侧分析区已经有内容，不闪「加载中…」
+    const quiet = !!prevTrackId;
     tracks.value = list.map(normalizeTrack);
     errorText.value = '';
     if (prevTrackId) {
       const tk = tracks.value.find((t) => t.id === prevTrackId);
       if (tk) {
         selTrack.value = tk;
-        await loadLapsFor(tk);
+        await loadLapsFor(tk, { silent: quiet });
         if (prevLapNo != null) {
           const lap = tk.laps.find((l) => l.no === prevLapNo);
-          if (lap) await selectLap(lap);
+          // 还是同一圈在看：视角（游标 / 缩放 / 选中弯心）保持不动
+          if (lap) await selectLap(lap, { keepView: quiet && prevLapLoaded });
         }
       } else {
         selTrack.value = null;
@@ -274,6 +285,7 @@ async function loadTracks() {
       }
     }
   } catch (e) {
+    if (seq !== tracksSeq) return;
     errorText.value = '无法连接后端：' + e.message;
     tracks.value = [];
   }
@@ -287,18 +299,23 @@ async function retryLoad() {
   loading.value = false;
 }
 
-async function loadLapsFor(tk) {
-  loading.value = true;
+// silent：监测中的实时刷新，右侧分析区已经有内容了，不要再闪一次「加载中…」
+async function loadLapsFor(tk, { silent = false } = {}) {
+  if (!silent) loading.value = true;
   try {
     const list = await listLaps(tk.id);
-    tk.laps = list.map((l) => ({ ...l, label: `L${l.no}` }));
+    tk.laps = list.map((l) => ({ ...l, label: `L${l.groupNo ?? l.no}` }));
     tk.lapCount = list.length;
     if (list.length) tk.pbMs = list[0].pbMs ?? tk.pbMs;
     tk.lapGroups = buildLapGroups(tk.laps);
     tk.lapsLoaded = true;
-    tk.pb = null;
-    tk.model = null;
-    tk.apexes = undefined;
+    // 静默刷新保留已算好的几何/模型/PB：清空会让分析区先闪一下「缺少赛道几何」，
+    // 紧接着 selectLap 又重算，等于白白闪一次。
+    if (!silent) {
+      tk.pb = null;
+      tk.model = null;
+      tk.apexes = undefined;
+    }
     errorText.value = '';
   } catch (e) {
     errorText.value = '加载圈速失败：' + e.message;
@@ -306,7 +323,7 @@ async function loadLapsFor(tk) {
     tk.lapGroups = null;
     tk.lapsLoaded = true;
   } finally {
-    loading.value = false;
+    if (!silent) loading.value = false;
   }
 }
 
@@ -358,10 +375,12 @@ function ensureApexes(tk, geometry) {
   return tk.apexes;
 }
 
-async function selectLap(lap) {
+// keepView：列表刷新（监测中每来一圈 / 新记录落库）时重取同一圈的详情，
+// 数据要重算，但游标、缩放、选中弯心这些「看的角度」不该被重置掉。
+async function selectLap(lap, { keepView = false } = {}) {
   const tk = selTrack.value;
   if (!tk) return;
-  loading.value = true;
+  if (!keepView) loading.value = true;
   errorText.value = '';
   try {
     const detail = await getLap(tk.id, lap.no);
@@ -391,17 +410,19 @@ async function selectLap(lap) {
       }
     }
     tk.pb = pbLap;
-    selApex.value = null;
-    cursorP.value = 0.42;
-    chartView.x0 = 0; chartView.x1 = 1;
-    mapView.scale = 1; mapView.tx = 0; mapView.ty = 0;
+    if (!keepView) {
+      selApex.value = null;
+      cursorP.value = 0.42;
+      chartView.x0 = 0; chartView.x1 = 1;
+      mapView.scale = 1; mapView.tx = 0; mapView.ty = 0;
+    }
     lineCache = { lp: null, M: null, pts: null };
     nextTick(renderAnalysis);
   } catch (e) {
     errorText.value = '加载圈速数据失败：' + e.message;
     selLap.value = null;
   } finally {
-    loading.value = false;
+    if (!keepView) loading.value = false;
   }
 }
 
@@ -510,7 +531,28 @@ function updateMapCursor(p, lp, M) {
   const pts = activeLine(lp, M);
   const n = pts.length;
   if (!n) { cursor.setAttribute('opacity', '0'); return; }
-  const f = clamp(p, 0, 0.999999) * n;
+  const target = clamp(p, 0, 0.999999);
+
+  // 走线按时间顺序存储，p 非单调（出赛道绕圈时 p 几乎不前进），不能再按
+  // 「进度 × 点数」取下标。lineMono 是 p 严格前进的那些点在 line 里的下标，
+  // 在它上面二分找出「第一个到达该进度的点」：正常段精确落在线上，绕圈段
+  // 停在入圈位置（那几秒本来就没前进，停在原处才是对的）。
+  const mono = lp?.lineMono;
+  if (Array.isArray(mono) && mono.length && Array.isArray(lp?.lineP) && lp.lineP.length === n) {
+    const P = lp.lineP;
+    let lo = 0;
+    let hi = mono.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (P[mono[mid]] < target) lo = mid + 1;
+      else hi = mid;
+    }
+    const at = mono[lo];
+    place(pts[at].x, pts[at].y);
+    return;
+  }
+
+  const f = target * n;
   const i0 = Math.floor(f) % n;
   const i1 = (i0 + 1) % n;
   const t = f - Math.floor(f);
@@ -522,11 +564,14 @@ function updateMapCursor(p, lp, M) {
 
 function updateCursor(p, lp, pb, M) {
   const sc = scrollEl.value; if (!sc) return;
-  // 在相邻采样点之间插值，鼠标每移动一点读数都会连续变化
-  const f = clamp(p, 0, 0.999999) * M.n;
-  const i0 = Math.floor(f) % M.n;
-  const i1 = (i0 + 1) % M.n;
-  const t = f - Math.floor(f);
+  // 在相邻采样点之间插值，鼠标每移动一点读数都会连续变化。
+  // 注意：p 接近 1（右端）时 i0 已是最后一个采样点，i1 不能用 (i0+1)%n 绕回到
+  // 起点，否则会把"终点时间"插值回"起点时间"，让计时读数在右端突然掉回 0 附近
+  // （速度 / 油门 / 刹车 / G 同样会跳变）。到达末尾时直接取最后一个点。
+  const f = clamp(p, 0, 1) * M.n;
+  const i0 = Math.min(Math.floor(f), M.n - 1);
+  const i1 = Math.min(i0 + 1, M.n - 1);
+  const t = clamp(f - i0, 0, 1);
   const L = (arr) => arr[i0] + (arr[i1] - arr[i0]) * t;
   const kmh = L(lp.v) * 3.6;
   const thr = L(lp.P.th) * 100;
@@ -606,6 +651,17 @@ function bindMiniMap(svg, lp, pb, M) {
     const near = nearestLineIndex(pts, loc.x, loc.y);
     return { index: near.index, px: near.dist * (ctm.a || 1) };
   };
+  // 走线是按时间等距抽稀的：直道点疏、慢弯点密，所以「下标 / 点数」并不等于赛道
+  // 进度（实测最大差 4%，折算 170 m）。放大后这点偏差会被一起放大，游标就明显
+  // 离开鼠标。命中点自带真实进度，直接用它。
+  const progressAtIndex = (i) => {
+    const P = lp?.lineP;
+    if (Array.isArray(P) && P.length === pointCount) {
+      const v = Number(P[i]);
+      if (Number.isFinite(v)) return clamp(v, 0, 0.999999);
+    }
+    return i / Math.max(1, pointCount);
+  };
   const setCursor = (p) => {
     // 手动拖离弯心后取消弯心选中，弯对比面板回到 PB 圈
     if (selApex.value) { selApex.value = null; refreshApexViews(); }
@@ -636,7 +692,7 @@ function bindMiniMap(svg, lp, pb, M) {
       mode = 'scrub';
       svg.__dragged = false;
       try { svg.setPointerCapture(e.pointerId); } catch (e2) { /* ignore */ }
-      setCursor(near.index / pointCount);
+      setCursor(progressAtIndex(near.index));
       return;
     }
     mode = 'pan';
@@ -650,7 +706,7 @@ function bindMiniMap(svg, lp, pb, M) {
       const ctm = group().getScreenCTM();
       if (!ctm || !pointCount) return;
       const near = nearAt(viewPoint(e), ctm);
-      setCursor(near.index / pointCount);
+      setCursor(progressAtIndex(near.index));
       return;
     }
     if (mode === 'pan') {
@@ -678,7 +734,7 @@ function bindMiniMap(svg, lp, pb, M) {
       const ctm = group().getScreenCTM();
       if (ctm) {
         const near = nearAt(viewPoint(e), ctm);
-        if (near.px <= 120) setCursor(near.index / pointCount);
+        if (near.px <= 120) setCursor(progressAtIndex(near.index));
       }
     }
     mode = null;
@@ -701,7 +757,7 @@ function bindMiniMap(svg, lp, pb, M) {
     const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
     const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
     const old = mapView.scale;
-    const z = clamp(old * (e.deltaY > 0 ? 0.83 : 1.2), 1, 8);
+    const z = clamp(old * (e.deltaY > 0 ? 0.83 : 1.2), 1, 10);
     mapView.tx = loc.x - (loc.x - mapView.tx) * (z / old);
     mapView.ty = loc.y - (loc.y - mapView.ty) * (z / old);
     mapView.scale = z;
@@ -713,6 +769,61 @@ function bindMiniMap(svg, lp, pb, M) {
     applyMapTransform(svg);
   };
   svg.style.cursor = 'crosshair';
+}
+
+// 地图读数面板（#mapReadout）可在 miniMap 内任意拖动；位置跨圈次 / 赛道重建保持。
+// 因为分析卡片走 v-html，#mapReadout 每次重建，故每次在 bindMiniMap 之后重新绑定。
+let readoutDragPos = null;
+function bindReadoutDrag() {
+  const sc = scrollEl.value; if (!sc) return;
+  const wrap = sc.querySelector('#miniMapWrap');
+  const rd = sc.querySelector('#mapReadout');
+  if (!wrap || !rd) return;
+
+  // 重建后恢复上次拖动位置（否则回到 CSS 默认的左下角）
+  if (readoutDragPos) {
+    rd.style.left = readoutDragPos.left + 'px';
+    rd.style.top = readoutDragPos.top + 'px';
+    rd.style.right = 'auto';
+    rd.style.bottom = 'auto';
+  }
+
+  let dragging = false, sx = 0, sy = 0, sl = 0, st = 0;
+  const onDown = (e) => {
+    dragging = true;
+    const wr = wrap.getBoundingClientRect();
+    const rr = rd.getBoundingClientRect();
+    sx = e.clientX; sy = e.clientY;
+    sl = rr.left - wr.left; st = rr.top - wr.top;
+    rd.classList.add('dragging');
+    try { rd.setPointerCapture(e.pointerId); } catch (_) {}
+    e.stopPropagation();
+    e.preventDefault();
+  };
+  const onMove = (e) => {
+    if (!dragging) return;
+    const wr = wrap.getBoundingClientRect();
+    const rr = rd.getBoundingClientRect();
+    let left = sl + (e.clientX - sx);
+    let top = st + (e.clientY - sy);
+    left = Math.max(0, Math.min(left, wr.width - rr.width));
+    top = Math.max(0, Math.min(top, wr.height - rr.height));
+    rd.style.left = left + 'px';
+    rd.style.top = top + 'px';
+    rd.style.right = 'auto';
+    rd.style.bottom = 'auto';
+    readoutDragPos = { left, top };
+  };
+  const onUp = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    rd.classList.remove('dragging');
+    try { rd.releasePointerCapture(e.pointerId); } catch (_) {}
+  };
+  rd.addEventListener('pointerdown', onDown);
+  rd.addEventListener('pointermove', onMove);
+  rd.addEventListener('pointerup', onUp);
+  rd.addEventListener('pointercancel', onUp);
 }
 
 // 选中弯心时，如果时序图处于放大状态且弯心在可视区外，把它移到中间
@@ -920,6 +1031,7 @@ function renderAnalysis() {
   if (vb) { mapView.x = vb.x; mapView.y = vb.y; mapView.w = vb.w; mapView.h = vb.h; }
   applyMapTransform(mini);
   bindMiniMap(mini, lp, pb, M);
+  bindReadoutDrag();
   renderSectorBox(lp, pb, M, selApex.value);
   keepScroll(() => renderCharts(wrap, lp, pb, M, showPb, chartView));
   bindChartZoom(wrap, lp, pb, M);
@@ -987,7 +1099,7 @@ function renderAnalysis() {
       heatToggle.classList.toggle('on', showHeat);
       heatToggle.textContent = showHeat ? '隐藏热力' : '显示热力';
       const legend = sc.querySelector('#heatLegend');
-      if (legend) legend.style.display = showHeat ? '' : 'none';
+      if (legend) legend.classList.toggle('off', !showHeat);
       refreshApexViews();
     };
   }
@@ -995,18 +1107,37 @@ function renderAnalysis() {
   wrap.onmouseleave = function () { const cl = sc.querySelector('#cursorLine'); if (cl) cl.style.display = 'none'; };
 }
 
-watch(analysisHtml, () => nextTick(renderAnalysis));
-watch(() => props.visible, (v) => {
-  if (v) {
-    loadTracks().then(() => nextTick(renderAnalysis));
-  }
-});
-watch(() => telemetry.historyRevision, () => {
-  if (props.visible) {
+// 监测中的实时刷新：一次记录变化会连发多条事件（session → history 落库 → lap），
+// 去抖合并成一次列表重载，避免同一瞬间反复重建右侧分析区。
+// 只在页面可见时刷新；切回本页时由 visible 的 watch 兜底。
+const RELOAD_DEBOUNCE_MS = 200;
+let reloadTimer = null;
+
+function scheduleReload() {
+  if (!props.visible || reloadTimer !== null) return;
+  reloadTimer = setTimeout(() => {
+    reloadTimer = null;
+    if (!props.visible) return;
     invalidateLapCache();
     loadTracks();
+  }, RELOAD_DEBOUNCE_MS);
+}
+
+function cancelReload() {
+  if (reloadTimer === null) return;
+  clearTimeout(reloadTimer);
+  reloadTimer = null;
+}
+
+watch(analysisHtml, () => nextTick(renderAnalysis));
+watch(() => props.visible, (v) => {
+  if (!v) {
+    cancelReload();
+    return;
   }
+  loadTracks().then(() => nextTick(renderAnalysis));
 });
+watch(() => telemetry.historyRevision, scheduleReload);
 
 // 窗口尺寸变化后重绘时序曲线（SVG 固定 viewBox，不重绘会保持旧宽度）
 let resizeTimer = null;
@@ -1028,6 +1159,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick);
   window.removeEventListener('resize', onResize);
   if (resizeTimer !== null) clearTimeout(resizeTimer);
+  cancelReload();
 });
 function onDocClick(e) {
   if (!e.target.closest('.track-kebab') && !e.target.closest('.track-menu')) menuOpenId.value = null;
@@ -1080,7 +1212,7 @@ function onDocClick(e) {
                   <button class="lap-item" v-for="l in g.laps" :key="l.no"
                     :class="[l.kind !== 'ok' ? 'invalid' : '', l.pb ? 'best' : '', selLap === l ? 'active' : '']"
                     @click="selectLap(l)">
-                    <span class="lap-no">L{{ l.no }}</span>
+                    <span class="lap-no">L{{ l.groupNo ?? l.no }}</span>
                     <span class="lap-time">{{ fmtLap(l.ms) }}</span>
                     <span class="mono lap-delta" v-if="lapDeltaText(l)">{{ lapDeltaText(l) }}</span>
                     <span class="tag" v-if="l.kind !== 'ok'" :class="l.kind === 'out' ? 'out' : 'bad'">{{ l.kind === 'out' ? '出场' : '无效' }}</span>
@@ -1097,7 +1229,7 @@ function onDocClick(e) {
               <button class="lap-item" v-for="l in tk.laps" :key="l.no"
                 :class="[l.kind !== 'ok' ? 'invalid' : '', l.pb ? 'best' : '', selLap === l ? 'active' : '']"
                 @click="selectLap(l)">
-                <span class="lap-no">L{{ l.no }}</span>
+                <span class="lap-no">L{{ l.groupNo ?? l.no }}</span>
                 <span class="lap-time">{{ fmtLap(l.ms) }}</span>
                 <span class="mono lap-delta" v-if="lapDeltaText(l)">{{ lapDeltaText(l) }}</span>
                 <span class="tag" v-if="l.kind !== 'ok'" :class="l.kind === 'out' ? 'out' : 'bad'">{{ l.kind === 'out' ? '出场' : '无效' }}</span>

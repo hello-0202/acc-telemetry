@@ -69,7 +69,20 @@ class LapProcessor:
         self._last_progress = 0.0
         self._max_progress = 0.0
         self._last_boundary_mono = 0.0
+        # 本圈已见到的最大圈计时。ACC 过线前会先发一帧「计时已归零、进度还是
+        # 1.0」的残留帧，它会把 _last_lap_time_ms 覆盖成 ≈0；若再过线时
+        # completedLaps 没有前进（出场圈不计圈），回绕判定就会因为
+        # `max(_last_lap_time_ms, lap_time) > 5s` 不成立而漏掉这次过线，
+        # 直到 5 秒后才补判——L1 开头约 5 秒的走线因此丢失。
+        self._max_lap_time_ms = 0
         self._reset_detected = False
+        # 第一圈 priming：开始监测后第一帧可能已经在圈中（app 启动 / 点击开始的
+        # 延迟里车又跑了约 5 秒）。此刻直接 begin 会把半圈当成第一圈、丢掉开头
+        # 一段轨迹。于是先进入 priming，只跟踪进度与圈计数，等第一次过线再从
+        # t≈0 起第一圈；只有在起跑线附近（t≲3s 且 p≲0.02）才直接 begin，
+        # 以免把正常「从出场圈起点开始记录」也误判成半圈。
+        self._priming = True
+        self._priming_base_laps = -1
         # 上一圈落库时的圈速 / 圈计数器，用于挡掉「同一圈被判定两次」的重复记录
         self._last_finalized_ms: int | None = None
         self._last_finalized_laps = -1
@@ -110,6 +123,46 @@ class LapProcessor:
     # ------------------------------------------------------------------ 主循环
     def consume(self, snap: Snapshot) -> list[LapResult]:
         if not self._active:
+            # 第一圈 priming：开始监测后第一帧往往已在圈中（app 启动 / 点击开始的
+            # 延迟里车又跑了约 5 秒）。此刻直接 begin 会把半圈当第一圈、丢掉开头
+            # 一段轨迹。于是先进入 priming，只跟踪进度与圈计数，等第一次过线
+            # （completedLaps 增加或进度回绕）再从 t≈0 起第一圈；但若第一帧就在
+            # 起跑线附近（t≲3s 且 p≲0.02），说明是从出场圈起点开始记录，直接 begin、
+            # 正常保留出场圈，不丢轨迹。
+            if self._priming:
+                if self._priming_base_laps < 0:
+                    self._priming_base_laps = snap.completed_laps
+                    self._max_progress = 0.0
+                    self._last_progress = snap.progress
+                    self._last_lap_time_ms = snap.lap_time_ms
+
+                prev_t = self._last_lap_time_ms
+                # 「就在起跑线附近」每帧都判：ACC 过线后常常先加 completedLaps
+                # /把圈计时归零，下一帧才把 normalizedCarPosition 绕回 0。
+                # 只判第一帧的话，回放首帧 p≈0.999 就会漏掉这个起点，
+                # 一直卡到下一圈，白丢一整圈。
+                at_lap_start = snap.lap_time_ms <= 3_000 and snap.progress <= 0.02
+                counter_boundary = snap.completed_laps > self._priming_base_laps
+                wrap_boundary = (
+                    self._max_progress > 0.90
+                    and snap.progress < 0.20
+                    and (snap.t_mono - self._last_boundary_mono) > 2.0
+                )
+                # 圈计时大幅归零（出场圈 / 重开计时器）：同上，也是圈起点
+                timer_reset = (
+                    prev_t > 10_000
+                    and snap.lap_time_ms + 5_000 < prev_t
+                    and snap.progress < 0.20
+                )
+                if at_lap_start or counter_boundary or wrap_boundary or timer_reset:
+                    self._priming = False
+                    self.begin(snap)
+                    return []
+
+                self._max_progress = max(self._max_progress, snap.progress)
+                self._last_progress = snap.progress
+                self._last_lap_time_ms = snap.lap_time_ms
+                return []
             self.begin(snap)
             return []
 
@@ -137,10 +190,15 @@ class LapProcessor:
         # 2) 圈边界。ACC 的 completedLaps 有时会滞后（尤其出场圈不计圈），
         #    所以同时用「进度回绕」和「圈计时器归零」兜底。
         counter_boundary = snap.completed_laps > self._last_completed_laps
+        # 用「本圈见过的最大圈计时」而不是 _last_lap_time_ms 做 5 秒门槛：
+        # ACC 过线前会先发一帧计时已归零、进度仍为 1.0 的残留帧，把
+        # _last_lap_time_ms 覆盖成 ≈0。出场圈过线时 completedLaps 常常不前进，
+        # 若此时再看 _last_lap_time_ms，回绕判定就会漏掉这次过线，5 秒后才补判，
+        # 首圈开头约 5 秒的走线被丢掉（实测坏圈首点固定 t≈5050ms）。
         wrap_boundary = (
             self._max_progress > 0.90
             and snap.progress < 0.20
-            and max(self._last_lap_time_ms, snap.lap_time_ms) > 5_000
+            and max(self._max_lap_time_ms, snap.lap_time_ms) > 5_000
             and (snap.t_mono - self._last_boundary_mono) > 2.0
         )
         if counter_boundary or wrap_boundary:
@@ -205,10 +263,28 @@ class LapProcessor:
         if not snap.valid_lap:
             self._invalid_latched = True
 
+        # 过线后 ACC 往往还会再给一两帧**旧进度**（p≈1.0，而圈计时已归零）。
+        # 若照抄这帧：_max_progress 会被重新抬回 0.99，于是约 5 秒后
+        # 「进度回绕」（p<0.2）条件再次成立 → 误判出第二个圈边界，
+        # 这一圈开头的采样被整段丢掉（历史现象：首圈首点固定 t≈5000ms，
+        # L1 前 5 秒没有走线）。这里把「过线刚发生 + 我们自己估计的进度还很小
+        # + 却报了一个很大的 p」的帧当作旧值跳过，不写采样也不抬 _max_progress。
+        if (
+            snap.progress > 0.90
+            and self._max_progress < 0.50
+            and (snap.t_mono - self._last_boundary_mono) < 1.0
+        ):
+            self._last_lap_time_ms = snap.lap_time_ms
+            self._last_completed_laps = snap.completed_laps
+            return results
+
         self._append_sample(snap)
         self._last_lap_time_ms = snap.lap_time_ms
         self._last_progress = snap.progress
         self._max_progress = max(self._max_progress, snap.progress)
+        lap_ms = int(snap.lap_time_ms)
+        if 0 <= lap_ms <= MAX_LAP_MS:  # 哨兵值不能抬高 5 秒门槛
+            self._max_lap_time_ms = max(self._max_lap_time_ms, lap_ms)
         self._last_completed_laps = snap.completed_laps
         return results
 
@@ -227,6 +303,10 @@ class LapProcessor:
         # 同一圈会被判定两次（用还没更新的 iLastTime 重复落库）。
         # 新圈的起点进度只可能是小值，大于 0.5 一律按 0 起算。
         self._max_progress = snap.progress if snap.progress < 0.5 else 0.0
+        # 新圈计时上限从 0 起算：过线帧若还带着旧圈的计时（completedLaps 滞后
+        # 或残留帧），不能让它成为下一圈的 5 秒门槛依据。
+        lap_ms = int(snap.lap_time_ms)
+        self._max_lap_time_ms = lap_ms if 0 <= lap_ms < 5_000 else 0
         self._last_boundary_mono = snap.t_mono
 
     def _append_sample(self, snap: Snapshot) -> None:
@@ -344,53 +424,43 @@ class LapProcessor:
         return s1, s2, s3
 
     def _downsample(self) -> list[dict[str, Any]]:
+        """按**时间**（采样序号）等距抽稀，保留真实的进度 p 和世界坐标。
+
+        以前是按进度 p 分 1200 个桶、桶内所有字段取平均。出赛道绕圈时车的
+        p 几乎不前进，整圈轨迹会全部落进同一个桶、被平均成一个"质心点"，
+        圆圈在落库那一刻就没了（RBR L5 实测：129 秒的圈只存下 4338 m 折线）。
+        抽稀不改数值、只降采样率，绕圈形状才能保下来。
+
+        代价：p 不再单调（绕圈、打转、倒车都会让 p 回退）。凡是要按 p 查值的
+        地方（曲线图、PB 参考、自动生成赛道形状）都得先过
+        `sample_util.monotonic_progress()`。
+        """
         if not self._samples:
             return []
-        bins: list[list[dict[str, Any]]] = [[] for _ in range(self.bins)]
-        for sample in self._samples:
-            index = min(self.bins - 1, int(float(sample["p"]) * self.bins))
-            bins[index].append(sample)
+        total = len(self._samples)
+        if total <= self.bins:
+            picked = list(self._samples)
+        else:
+            step = total / self.bins
+            picked = [
+                self._samples[min(total - 1, int((i + 0.5) * step))]
+                for i in range(self.bins)
+            ]
 
-        known = [i for i, bucket in enumerate(bins) if bucket]
-        if not known:
-            return []
-
-        series: dict[str, list[float | None]] = {}
-        for name in SAMPLE_FIELDS:
-            values: list[float | None] = [None] * self.bins
-            for i, bucket in enumerate(bins):
-                if not bucket:
-                    continue
-                nums = [float(s[name]) for s in bucket if s.get(name) is not None]
-                if nums:
-                    values[i] = sum(nums) / len(nums)
-            series[name] = values
-
-        # 只在已知桶之间做线性插值；首尾空桶（不完整圈）直接裁掉
-        for values in series.values():
-            previous = None
-            for i in range(self.bins):
-                if values[i] is None:
-                    continue
-                if previous is not None and i - previous > 1:
-                    start, end = values[previous], values[i]  # type: ignore[assignment]
-                    for k in range(previous + 1, i):
-                        values[k] = start + (end - start) * (k - previous) / (i - previous)
-                previous = i
-
-        first, last = known[0], known[-1]
         out: list[dict[str, Any]] = []
-        for i in range(first, last + 1):
+        for sample in picked:
             row: dict[str, Any] = {
                 "idx": len(out),
-                "p": round((i + 0.5) / self.bins, 6),
+                "p": round(float(sample["p"]), 6),
             }
             for name in SAMPLE_FIELDS:
-                value = series[name][i]
-                if name in ("rpm", "gear"):
-                    row[name] = int(round(value)) if value is not None else 0
+                value = sample.get(name)
+                if value is None:
+                    row[name] = 0 if name in ("rpm", "gear") else None
+                elif name in ("rpm", "gear"):
+                    row[name] = int(round(float(value)))
                 else:
-                    row[name] = round(value, 4) if value is not None else None
+                    row[name] = round(float(value), 4)
             for required in REQUIRED_FIELDS:
                 if row.get(required) is None:
                     row[required] = 0

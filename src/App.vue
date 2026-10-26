@@ -6,9 +6,9 @@ import HistoryView from './components/HistoryView.vue';
 import SettingsView from './components/SettingsView.vue';
 import { themeName, toggleTheme } from './telemetry/theme.js';
 import { ui } from './telemetry/store.js';
-import { getConfig, getHealth } from './telemetry/api.js';
-import { applyPrefs, prefs } from './telemetry/prefs.js';
-import { telemetry } from './telemetry/useTelemetry.js';
+import { getHealth } from './telemetry/api.js';
+import { loadPrefs, prefs } from './telemetry/prefs.js';
+import { telemetry, clearConnectError } from './telemetry/useTelemetry.js';
 
 const VIEWS = ['monitor', 'history', 'settings'];
 const view = ref('monitor');
@@ -17,40 +17,84 @@ let unlistenClose = null;
 /* ------------------- 全局连接状态 ------------------- */
 // 周期探测后端 /health，驱动全局置灰与提示；监控页自身仍用 WS 状态。
 const HEALTH_INTERVAL_MS = 3000;
+// 启动宽限期：sidecar 冷启动实测要 5.8~6.2 秒（PyInstaller 解压 + 服务起来），
+// 而前端一挂载就探测，第一次必然失败。这段时间内的「离线」不算数，
+// 否则每次打开软件都会先弹一条「本地服务未连接」的假警告。
+const BOOT_GRACE_MS = 10000;
+const bootGrace = ref(true);
+let bootTimer = null;
 let healthTimer = null;
 let healthBusy = false;
+let healthPending = false;
 const noticeDismissed = ref(false);
 
 async function pollHealth() {
-  if (healthBusy) return;
+  if (healthBusy) {
+    // 正在探测时记一笔，等本轮结束后立刻补一次，避免宽限结束时拿不到新结果
+    healthPending = true;
+    return;
+  }
   healthBusy = true;
   try {
     const health = await getHealth();
     ui.backendOnline = true;
     ui.gameRunning = !!health.gameRunning;
+    // 后端已可达：之前因为「启动时序竞争」留下的连接错误立刻作废，
+    // 否则界面会一直挂着「无法连接本地后端」，直到用户手动点一次开始。
+    clearConnectError();
+    // 不必死等满宽限期：探到后端就能正常判定了
+    if (bootGrace.value) endBootGrace();
   } catch (e) {
     ui.backendOnline = false;
     ui.gameRunning = false;
   } finally {
     healthBusy = false;
+    if (healthPending) {
+      healthPending = false;
+      pollHealth();
+    }
+  }
+}
+
+function endBootGrace(reprobe = false) {
+  if (!bootGrace.value) return;
+  bootGrace.value = false;
+  ui.booting = false;
+  if (bootTimer !== null) {
+    clearTimeout(bootTimer);
+    bootTimer = null;
+  }
+  if (reprobe) {
+    // 宽限期到点仍离线：把宽限期内那次「离线」结果作废重探一次，
+    // 让弹窗判定基于启动完成之后的真实状态；探测中则等本轮结束自动补一次。
+    ui.backendOnline = null;
+    pollHealth();
   }
 }
 
 const offline = computed(() =>
   ui.backendOnline === false ||
   ui.gameRunning === false ||
-  telemetry.status === 'error'
+  telemetry.status === 'error' ||
+  // 自动监测已开启但还没进赛道：也提示一下，否则用户会以为没在记录
+  telemetry.status === 'waiting'
 );
 
 const noticeText = computed(() => {
   if (ui.backendOnline === false) return '本地服务未连接，请确认后端服务已启动（端口 8008）';
   if (telemetry.status === 'error' && telemetry.error) return telemetry.error;
-  if (ui.gameRunning === false) return '未检测到 ACC 游戏，请先启动游戏并进入比赛';
+  // 自动监测在后台待命时，游戏没开是预期状态（指示灯已显示「等待游戏」），
+  // 不必每次打开软件都弹一条；只有用户手动点了开始才明确提示。
+  if (ui.gameRunning === false && ui.manualStart) {
+    return '未检测到 ACC 游戏，请先启动游戏并进入比赛';
+  }
+  // 已开自动监测、游戏也在跑，但还没进赛道（拿不到赛道/车辆信息）：静默等待即可
+  if (telemetry.status === 'waiting') return '等待进入赛道，进入后会自动开始记录';
   return '';
 });
 
 const showNotice = computed(
-  () => offline.value && !noticeDismissed.value && !!noticeText.value
+  () => !bootGrace.value && offline.value && !noticeDismissed.value && !!noticeText.value
 );
 
 // 状态恢复后重置「已关闭」，下次断开时重新提醒
@@ -91,8 +135,13 @@ onMounted(() => {
   if (VIEWS.indexOf(h) >= 0) view.value = h;
   window.addEventListener('keydown', onKey);
 
-  // 读取后端配置，决定关闭窗口时是否隐藏到托盘
-  getConfig().then(applyPrefs).catch(() => { /* 后端未启动时保持默认值 */ });
+  // 读取后端配置（自动开始 / 后台常驻等），MonitorView 复用同一个 Promise 做自动开始
+  loadPrefs();
+
+  // 启动宽限期：这段时间内的离线状态不弹提示（sidecar 还没起来）。
+  // 探到后端就绪会提前结束；到点仍离线才作废旧结果重探一次。
+  ui.booting = true;
+  bootTimer = setTimeout(() => endBootGrace(true), BOOT_GRACE_MS);
 
   // 常驻探测服务与游戏状态
   pollHealth();
@@ -118,6 +167,10 @@ onBeforeUnmount(() => {
   if (healthTimer !== null) {
     clearInterval(healthTimer);
     healthTimer = null;
+  }
+  if (bootTimer !== null) {
+    clearTimeout(bootTimer);
+    bootTimer = null;
   }
 });
 </script>

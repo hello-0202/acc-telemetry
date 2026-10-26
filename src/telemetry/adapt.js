@@ -175,6 +175,21 @@ function lerpField(a, b, key, t) {
   return av + (bv - av) * t;
 }
 
+// samples 按时间顺序存储，p（赛道进度）因此不保证单调：出赛道绕圈、打转、
+// 倒车都会让 p 回退。曲线图是横轴 = 进度，必须先滤成 p 严格递增的序列再插值，
+// 否则绕圈段的点会把整条速度曲线搅乱。本来 p 就单调的老数据过一遍无损。
+function monotonicProgress(samples) {
+  const out = [];
+  let last = -1;
+  for (const s of samples) {
+    const p = Number(s.p);
+    if (!Number.isFinite(p) || p <= last) continue;
+    last = p;
+    out.push(s);
+  }
+  return out;
+}
+
 export function lapFromDetail(detail, n = DETAIL_POINTS, model = null) {
   const samples = Array.isArray(detail.samples) ? detail.samples : [];
   const ms = Number(detail.ms) || 0;
@@ -189,13 +204,16 @@ export function lapFromDetail(detail, n = DETAIL_POINTS, model = null) {
   const Y = new Array(count).fill(0);
   let gpsPoints = 0;
 
-  if (samples.length) {
+  // 曲线数据源：滤成 p 单调递增（绕圈段整段跳过）
+  const curve = monotonicProgress(samples);
+
+  if (curve.length) {
     let cursor = 0;
     for (let i = 0; i < count; i += 1) {
       const p = (i + 0.5) / count;
-      while (cursor + 1 < samples.length && samples[cursor + 1].p < p) cursor += 1;
-      const a = samples[cursor];
-      const b = samples[Math.min(cursor + 1, samples.length - 1)];
+      while (cursor + 1 < curve.length && curve[cursor + 1].p < p) cursor += 1;
+      const a = curve[cursor];
+      const b = curve[Math.min(cursor + 1, curve.length - 1)];
       const span = b.p - a.p || 1;
       const t = clamp((p - a.p) / span, 0, 1);
 
@@ -246,9 +264,52 @@ export function lapFromDetail(detail, n = DETAIL_POINTS, model = null) {
     }
   }
 
+  // 地图走线直接用 samples 的时间顺序，不经过进度采样。
+  // 按进度 p 取点会把「出赛道绕圈」压成一个点：那几秒里车的 p 几乎不前进，
+  // 一圈圆的轨迹全落进同一个 p 区间（旧实现的根因）。时间序则原样保留形状。
+  const line = [];
+  const lineP = [];
+  // 游标按进度找位置时用：p 严格前进的那些点在 line 里的下标（单调，可二分）
+  const lineMono = [];
+  if (model?.toScreen) {
+    let lastP = -1;
+    for (const s of samples) {
+      const wx = Number(s.x);
+      const wz = Number(s.z);
+      if (!Number.isFinite(wx) || !Number.isFinite(wz)) continue;
+      const screen = model.toScreen(wx, wz);
+      const raw = Number(s.p);
+      const p = Number.isFinite(raw) ? raw : lastP;
+      // 踏板值一并带在点上：热力图要按「同一批点」逐点对齐着色，
+      // 而 P.th / P.br 是按进度等分的另一套下标，时间序轨迹用它们会错位。
+      const thv = Number(s.throttle);
+      const brv = Number(s.brake);
+      line.push({
+        x: screen.x,
+        y: screen.y,
+        th: Number.isFinite(thv) ? thv : 0,
+        br: Number.isFinite(brv) ? brv : 0,
+      });
+      lineP.push(p);
+      if (p > lastP) {
+        lastP = p;
+        lineMono.push(line.length - 1);
+      }
+    }
+  }
+  if (!line.length) {
+    // 没有世界坐标（老记录）：退回按进度等分的轨迹，保持旧行为
+    for (let i = 0; i < count; i += 1) {
+      line.push({ x: X[i], y: Y[i] });
+      lineP.push((i + 0.5) / count);
+      lineMono.push(i);
+    }
+  }
+
   return {
     no: detail.no,
-    label: `L${detail.no}`,
+    // 组内序号：同一条历史记录可能横跨排位/正赛，显示时按类型各自从 L1 起算
+    label: `L${detail.groupNo ?? detail.no}`,
     ms,
     kind: detail.kind,
     valid: detail.valid,
@@ -260,7 +321,10 @@ export function lapFromDetail(detail, n = DETAIL_POINTS, model = null) {
     P: { th, br, g },
     X,
     Y,
-    line: X.map((x, i) => ({ x, y: Y[i] })),
+    line,
+    // line 每点的进度（与 line 等长，可能非单调）与「进度前进」的下标表
+    lineP,
+    lineMono,
     hasGps: gpsPoints > count * 0.8,
     samples,
   };

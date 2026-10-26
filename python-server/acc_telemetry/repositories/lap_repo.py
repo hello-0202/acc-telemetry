@@ -180,6 +180,50 @@ class LapRepository:
             ).fetchone()
         return int(row["pb"]) if row and row["pb"] is not None else None
 
+    def pb_lap_for_type(self, track_id: str, session_type: str) -> dict | None:
+        """该赛道、该会话类型（排位 / 正赛…）的最快圈，用于按类型各自算 PB。"""
+        with self.db.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT l.id, l.session_id, l.no, l.ms, l.kind, l.valid,
+                       l.s1, l.s2, l.s3, l.session_type, l.created_at
+                  FROM laps l
+                  JOIN sessions s ON s.id = l.session_id
+                 WHERE s.track_id = ? AND l.session_type = ?
+                   AND l.kind = 'ok' AND l.valid = 1
+                 ORDER BY l.ms ASC, s.date DESC LIMIT 1
+                """,
+                (track_id, session_type),
+            ).fetchone()
+        return self._decode(row) if row else None
+
+    def pb_ms_for_type(self, track_id: str, session_type: str) -> int | None:
+        """该赛道、该会话类型的最快圈速（毫秒）。"""
+        with self.db.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT MIN(l.ms) AS pb
+                  FROM laps l
+                  JOIN sessions s ON s.id = l.session_id
+                 WHERE s.track_id = ? AND l.session_type = ?
+                   AND l.kind = 'ok' AND l.valid = 1
+                """,
+                (track_id, session_type),
+            ).fetchone()
+        return int(row["pb"]) if row and row["pb"] is not None else None
+
+    def group_no(self, session_id: str, session_type: str, no: int) -> int:
+        """某圈在其所属会话类型内的序号（按完成顺序 no 升序累计），用于分组后重新编号。"""
+        with self.db.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM laps
+                 WHERE session_id = ? AND session_type = ? AND no <= ?
+                """,
+                (session_id, session_type, no),
+            ).fetchone()
+        return int(row["n"]) if row and row["n"] is not None else 0
+
     def count_for_track(self, track_id: str) -> int:
         with self.db.connection() as conn:
             row = conn.execute(

@@ -4,7 +4,7 @@
 // attributes (presentation attributes don't support var()).
 // ============================================================================
 import { cssVar, clamp, lerp, mixHex, fmtLap, fmtDelta, smoothLoop, uiScale } from './model.js';
-import { apexColor, mapInk } from './apex.js';
+import { mapInk } from './apex.js';
 
 const c = (n) => cssVar(n);
 
@@ -142,10 +142,29 @@ export function drawMiniMap(svg, M, opts = {}) {
   // 先按赛道本体算取景框：弯心标签摆放要贴着这个框，不能再反过来把框撑大
   const vb = contentViewBox(M, mapOpts);
 
+  // 预留出左上角比例尺的区域（约 104×26 元素像素，含余量），换算回 viewBox 坐标，
+  // 让弯名标签避开这里——页面放大后赛道顶角顶到左上角时，比例尺才会和标签打架。
+  let scaleExclude = null;
+  const rect0 = svg.getBoundingClientRect ? svg.getBoundingClientRect() : null;
+  if (vb && rect0 && rect0.width && rect0.height) {
+    const s0 = Math.min(rect0.width / vb.width, rect0.height / vb.height);
+    if (s0 > 0) {
+      const ox0 = (rect0.width - vb.width * s0) / 2;
+      const oy0 = (rect0.height - vb.height * s0) / 2;
+      const RE_W = 104, RE_H = 26;
+      scaleExclude = {
+        x0: vb.x + (0 - ox0) / s0,
+        y0: vb.y + (0 - oy0) / s0,
+        x1: vb.x + (RE_W - ox0) / s0,
+        y1: vb.y + (RE_H - oy0) / s0,
+      };
+    }
+  }
+
   svg.innerHTML =
     '<g id="mapZoom">' + road + center + lapLine + heat + pbLine +
       startFinish + arrow + '</g>' +
-    apexOverlayMarkup(M, { ...mapOpts, box: vb }) +
+    apexOverlayMarkup(M, { ...mapOpts, box: vb, exclude: scaleExclude }) +
     cursorOverlayMarkup() +
     scaleBarMarkup(M);
 
@@ -223,7 +242,11 @@ const SCALE_STEPS = [5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000];
 
 function scaleBarMarkup(M) {
   if (!M.mPerUnit || !Number.isFinite(M.mPerUnit)) return '';
+  // 底板：比例尺画在地图内容之上（#mapScale 是最后一个子元素），
+  // 但页面放大后赛道本体顶角会顶到左上角，淡灰标尺压在白路上几乎看不见。
+  // 加一块与卡片背景同色、带细边框的底板，无论底下是白路还是弯名标签都清晰可读。
   return '<g id="mapScale" class="map-scale" pointer-events="none" data-mperunit="' + M.mPerUnit + '">' +
+    '<rect class="map-scale-bg" rx="2.5"/>' +
     '<line class="map-scale-bar"/>' +
     '<line class="map-scale-tick" x1="0" y1="-3" x2="0" y2="3"/>' +
     '<line class="map-scale-tick" y1="-3" y2="3"/>' +
@@ -257,10 +280,32 @@ export function layoutScaleBar(svg, view) {
     text.setAttribute('x', (width / 2).toFixed(2));
     text.textContent = meters >= 1000 ? (meters / 1000) + ' km' : meters + ' m';
   }
-  // 摆到 viewBox 左下角：跟随当前可视区域，不随地图平移
+  // 底板盖住刻度线 + 上方文字 + 端点，留一点余量；随比例尺一起缩放
+  const bg = g.querySelector('.map-scale-bg');
+  if (bg) {
+    bg.setAttribute('x', (-4).toFixed(2));
+    bg.setAttribute('y', (-14).toFixed(2));
+    bg.setAttribute('width', (width + 8).toFixed(2));
+    bg.setAttribute('height', '20');
+  }
+  // 固定在 SVG 元素可视区的左上角（而不是 viewBox 内容包围盒的左上角）。
+  // viewBox 是紧贴赛道的包围盒，不同赛道长宽比不同 → preserveAspectRatio
+  // （默认 xMidYMid meet）的居中留白也不同；若直接按 viewBox 原点摆，
+  // 比例尺在每张图上会飘到不同位置。这里换算 letterbox 偏移，
+  // 把比例尺钉到元素左上角（固定约 10px / 14px 边距），每张图位置一致。
   const vb = svg.viewBox?.baseVal;
+  const rect = svg.getBoundingClientRect ? svg.getBoundingClientRect() : null;
   if (vb && vb.width) {
-    const x = vb.x + 10, y = vb.y + vb.height - 12;
+    let x = vb.x + 10, y = vb.y + 14;
+    if (rect && rect.width && rect.height) {
+      const s = Math.min(rect.width / vb.width, rect.height / vb.height);
+      if (s > 0) {
+        const ox = (rect.width - vb.width * s) / 2;
+        const oy = (rect.height - vb.height * s) / 2;
+        x = vb.x + (10 - ox) / s;
+        y = vb.y + (14 - oy) / s;
+      }
+    }
     g.setAttribute('transform', 'translate(' + x.toFixed(2) + ' ' + y.toFixed(2) + ')');
   }
 }
@@ -430,8 +475,7 @@ function contentViewBox(M, opts = {}) {
 
 // 弯心标签放在 mapZoom 之外：缩放地图时只更新位置，字号和圆点保持恒定。
 // 标签位置按“就近 + 互不重叠”挑一个候选方向，密集弯（Lesmo / Ascari）也不会叠字。
-const APEX_LABEL_FONT = 11.5;
-const APEX_TITLE_FONT = 9.5;
+const APEX_LABEL_FONT = 14;
 const APEX_LABEL_H = 11;
 const APEX_CANDIDATES = [
   { dx: 9, dy: -5, anchor: 'start' },
@@ -452,27 +496,18 @@ function labelBox(it, cnd, w) {
 
 // 标签宽度估算：弯号用大字号，弯名小一号跟在后面
 function apexLabelWidth(it) {
-  const code = String(it.name || '').length * APEX_LABEL_FONT * 0.6;
-  const title = it.title
-    ? String(it.title).length * APEX_TITLE_FONT * 0.56 + 4
-    : 0;
-  return code + title + 6;
-}
-
-/** 弯名只在够宽的卡片上显示；mapWidth 由 drawMiniMap 传入。 */
-function labelTitle(a, opts = {}) {
-  const w = opts.mapWidth;
-  if (w != null && w < 600) return '';
-  return String(a.title || '');
+  return String(it.name || '').length * APEX_LABEL_FONT * 0.6 + 6;
 }
 
 function boxesOverlap(a, b, gap = 2) {
   return !(a.x1 + gap < b.x0 || b.x1 + gap < a.x0 || a.y1 + gap < b.y0 || b.y1 + gap < a.y0);
 }
 
-function placeApexLabels(items, frame = null) {
+function placeApexLabels(items, frame = null, exclude = null) {
   const placed = new Map();
   const boxes = [];
+  // 比例尺底板占用的左上角区域：弯名标签不要压在它上面（页面放大后才会出现冲突）
+  if (exclude) boxes.push({ x0: exclude.x0, y0: exclude.y0, x1: exclude.x1, y1: exclude.y1 });
   // 标签要留在取景框里：框现在只按赛道本体收紧，贴边的弯心必须往内侧写，
   // 否则弯名会被裁掉一半。
   const inside = (b) => !frame
@@ -504,9 +539,14 @@ function apexOverlayMarkup(M, opts = {}) {
   const toView = typeof M?.toScreen === 'function'
     ? M.toScreen
     : (x, z) => ({ x, y: z });
-  const apex = apexColor();
   const ink = mapInk();
-  const bg = c('--panel') || 'transparent';
+  // 弯心标注文字与选中高亮统一为深绿 #3F7D0F，深浅主题一致
+  // （原本深色主题用亮柠 --apex、浅色主题用深绿 --apex，两主题颜色不同）。
+  const APEX_FILL = '#3F7D0F';
+  // 弯心标记的描边光晕与圆点底色固定为白色，不再随主题取 --panel：
+  // 深浅主题的路面都是白色，统一成白色描边后两种主题下都清晰且一致
+  // （原本深色主题用深色 --panel 当描边，和浅色主题的白色描边不一致）。
+  const bg = '#FFFFFF';
 
   const items = [];
   for (const a of apexes) {
@@ -514,7 +554,6 @@ function apexOverlayMarkup(M, opts = {}) {
     if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
     items.push({
       name: String(a.name || ''),
-      title: labelTitle(a, opts),
       x: p.x,
       y: p.y,
       selected: selected === a.name,
@@ -522,20 +561,16 @@ function apexOverlayMarkup(M, opts = {}) {
   }
   if (!items.length) return '';
 
-  const placed = placeApexLabels(items, opts.box || null);
+  const placed = placeApexLabels(items, opts.box || null, opts.exclude || null);
   let h = '';
   for (const it of items) {
     const { cnd } = placed.get(it);
     const sel = it.selected;
-    const fill = sel ? ink : apex;
-    // 弯号 + 弯名：弯名小一号跟在后面（有名字表时才会出现）
-    const label = it.title
-      ? '<tspan>' + it.name + '</tspan>' +
-        '<tspan dx="3" font-size="' + APEX_TITLE_FONT + '" font-weight="500" opacity=".85">' + it.title + '</tspan>'
-      : it.name;
-    // 文字用主题底色描边（paint-order=stroke），压在路面 / 热力上都看得清
+    const fill = APEX_FILL;
+    const label = it.name;
+    // 文字用白色描边（paint-order=stroke），压在路面 / 热力上都看得清，深浅主题一致
     h += '<g class="apex-tag" data-x="' + it.x.toFixed(2) + '" data-y="' + it.y.toFixed(2) + '">' +
-      (sel ? '<circle r="9" fill="' + apex + '" opacity=".18"/>' : '') +
+      (sel ? '<circle r="9" fill="' + APEX_FILL + '" opacity=".18"/>' : '') +
       '<circle r="3.4" fill="' + bg + '" fill-opacity=".6" stroke="' + ink + '" stroke-width="' + (sel ? 1.9 : 1.3) + '"/>' +
       '<text x="' + cnd.dx + '" y="' + cnd.dy + '" text-anchor="' + cnd.anchor + '"' +
       ' paint-order="stroke" stroke="' + bg + '" stroke-width="3" stroke-linejoin="round"' +
@@ -588,14 +623,25 @@ function smoothColorRing(list, passes) {
 function thinHeatMarkup(lp, M, pal) {
   const raw = lapLinePoints(lp, M);
   if (!raw || raw.length < 3 || !lp?.P?.th || !lp?.P?.br) return '';
-  const n = Math.min(raw.length, lp.P.th.length, lp.P.br.length);
+  // 走线点自带该处的踏板值（时间序、含出赛道段）→ 与坐标严格逐点对齐；
+  // 老记录没有这两个字段，回退到「按进度等分的 P.th / P.br」。
+  const own = raw[0]?.th != null && raw[0]?.br != null;
+  const n = own
+    ? raw.length
+    : Math.min(raw.length, lp.P.th.length, lp.P.br.length);
   if (n < 3) return '';
 
   // 几何只压掉单点 GPS 抖动；踏板值同样只做 ±1 点平滑，
   // 刹车点 / 开油点的位置和幅度都保持真实，不做时间上的提前量。
   const line = smoothClosedPoints(raw.slice(0, n), 1);
-  const th = smoothClosedArray(lp.P.th.slice(0, n), 1);
-  const br = smoothClosedArray(lp.P.br.slice(0, n), 1);
+  const th = smoothClosedArray(
+    own ? raw.slice(0, n).map((it) => it.th) : lp.P.th.slice(0, n),
+    1
+  );
+  const br = smoothClosedArray(
+    own ? raw.slice(0, n).map((it) => it.br) : lp.P.br.slice(0, n),
+    1
+  );
 
   const { pts, values } = subdivideClosedLoop(line, [th, br], 2);
   const thv = values[0], brv = values[1];
@@ -718,8 +764,11 @@ export function drawHeatmap(cv, lp, M, view = null) {
   const line = lapLinePoints(lp, M);
   const n = line.length;
   const pts = smoothClosedPoints(line, 1);
-  const th = smoothClosedArray(lp.P.th, 2);
-  const br = smoothClosedArray(lp.P.br, 2);
+  // 走线点自带该处的踏板值（时间序、含出赛道段）时逐点对齐；
+  // 老记录没有这两个字段，回退到「按进度等分的 P.th / P.br」。
+  const own = line[0]?.th != null && line[0]?.br != null;
+  const th = smoothClosedArray(own ? line.map((it) => it.th) : lp.P.th, 2);
+  const br = smoothClosedArray(own ? line.map((it) => it.br) : lp.P.br, 2);
 
   // 背景：真实赛道路面（左右边界），旧数据回退到中心线
   if (M.edgeD) {

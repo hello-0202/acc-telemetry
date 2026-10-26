@@ -75,6 +75,7 @@ def create_app(
         app.state.db = db
         app.state.history = history
         app.state.config_repo = config_repo
+        app.state.geometry = geometry
         app.state.provider = provider
         app.state.provider_factory = provider_factory
         app.state.recorder = recorder

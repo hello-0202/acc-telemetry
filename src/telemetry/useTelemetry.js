@@ -21,6 +21,13 @@ export const telemetry = reactive({
 let socket = null;
 let fpsTimer = null;
 let frameCount = 0;
+// 前端是否「期望正在监测」（用户点了开始 / 启动时自动开始）。
+// 停止之后后端可能还会补发一条 GAME_NOT_FOUND，不能据此把状态改成等待。
+let wanted = false;
+// 当前 error 是否只是「连不上后端」（端口探测 / WS 建立失败）。
+// 这类错误在应用刚启动、sidecar 还没解压完时必然会出现一次，
+// 后端一旦可达就该自动作废，而不是把界面永久钉在「连接断开」。
+let connectFailed = false;
 
 function startFpsCounter() {
   stopFpsCounter();
@@ -78,6 +85,25 @@ function handleMessage(message) {
       telemetry.error = null;
       telemetry.lapsThisSession = 0;
       telemetry.status = 'streaming';
+      // 进入新记录（换赛道 / 重开 session / 首次监测）：让历史页立刻重拉列表。
+      // 此时后端可能还没把 session 写进库，真正的通知由后面的 history 事件补上。
+      telemetry.historyRevision += 1;
+      break;
+    case 'history':
+      // 后端已把新 session 写入数据库（或补写了会话类型）。
+      // 只有收到这条才保证拉列表时那一行确实存在，历史页据此实时刷新。
+      telemetry.historyRevision += 1;
+      break;
+    case 'pbref':
+      // 后端按当前会话类型推送 PB 参考圈（排位只对比排位、正赛只对比正赛），
+      // 仅更新 session 的 pbRef/pbMs，不重置实时帧与 delta
+      if (telemetry.session) {
+        telemetry.session = {
+          ...telemetry.session,
+          pbRef: message.pbRef ?? telemetry.session.pbRef,
+          pbMs: message.pbMs ?? telemetry.session.pbMs,
+        };
+      }
       break;
     case 'frame':
       telemetry.frame = message;
@@ -91,6 +117,15 @@ function handleMessage(message) {
       telemetry.historyRevision += 1;
       break;
     case 'error':
+      // 「游戏还没进赛道」不是故障：置为等待态，由监视页的监督循环在游戏就绪后重试，
+      // 否则每次应用启动、或退出赛道回菜单都会弹一条红色错误。
+      if (message.code === 'GAME_NOT_FOUND') {
+        if (wanted) {
+          telemetry.status = 'waiting';
+          telemetry.error = null;
+        }
+        break;
+      }
       telemetry.error = message.message || message.error || '后端返回错误';
       telemetry.status = 'error';
       break;
@@ -133,12 +168,15 @@ function closeSocket() {
 }
 
 export async function start() {
+  wanted = true;
   telemetry.error = null;
   telemetry.warning = null;
 
   // 已有连接时直接复用（例如后端因游戏退出返回 error，但连接仍在）
   if (socket && socket.readyState === WebSocket.OPEN) {
-    telemetry.status = 'connecting';
+    // 已经有会话说明后端还在记录（暂停时重新 start 是空操作）：
+    // 不要把状态退化成「连接中…」，否则会一直挂在那里等不存在的响应
+    if (!telemetry.session) telemetry.status = 'connecting';
     socket.send(JSON.stringify({ cmd: 'start' }));
     return;
   }
@@ -151,6 +189,7 @@ export async function start() {
   try {
     base = await resolveBaseUrl();
   } catch (e) {
+    connectFailed = true;
     telemetry.status = 'error';
     telemetry.error = e.message || '无法连接本地后端';
     return;
@@ -160,6 +199,7 @@ export async function start() {
   try {
     socket = new WebSocket(wsUrl);
   } catch (e) {
+    connectFailed = true;
     telemetry.status = 'error';
     telemetry.error = `无效的 WebSocket 地址：${e.message}`;
     return;
@@ -167,6 +207,7 @@ export async function start() {
 
   socket.onopen = () => {
     if (!socket) return;
+    connectFailed = false;
     socket.send(JSON.stringify({ cmd: 'start' }));
   };
 
@@ -181,6 +222,7 @@ export async function start() {
   };
 
   socket.onerror = () => {
+    connectFailed = true;
     if (telemetry.status !== 'streaming') {
       telemetry.status = 'error';
       telemetry.error = '无法连接 Python 后端，请确认 8008 端口服务已启动';
@@ -190,6 +232,7 @@ export async function start() {
   socket.onclose = () => {
     stopFpsCounter();
     socket = null;
+    connectFailed = true;
     // 后端可能换了端口，下次 start 时重新探测
     resetBaseUrl();
     if (telemetry.status === 'connecting' || telemetry.status === 'streaming') {
@@ -202,6 +245,7 @@ export async function start() {
 }
 
 export function stop() {
+  wanted = false;
   if (socket && socket.readyState === WebSocket.OPEN) {
     try {
       socket.send(JSON.stringify({ cmd: 'stop' }));
@@ -219,7 +263,27 @@ export function stop() {
   }, 200);
 }
 
+/**
+ * 后端已经可达（/health 探测成功）时，作废「连不上后端」这类残留错误。
+ *
+ * 场景：应用刚启动，sidecar 还在解压，前端先尝试连接必然失败；如果不清理，
+ * 界面会一直停在「连接断开 / 无法连接本地后端」，而实际后端早就好了。
+ * 只清理连接类错误——后端主动返回的业务错误（如 GAME_EXITED）保持原样。
+ */
+export function clearConnectError() {
+  if (!connectFailed) return;
+  if (telemetry.status !== 'error') {
+    connectFailed = false;
+    return;
+  }
+  connectFailed = false;
+  telemetry.error = null;
+  // 期望监测但还没接上：回到等待态，由监督循环重新接入
+  telemetry.status = wanted ? 'waiting' : 'idle';
+}
+
 export function disconnect() {
+  wanted = false;
   stopFpsCounter();
   closeSocket();
   telemetry.status = 'idle';

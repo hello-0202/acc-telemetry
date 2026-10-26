@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from ..sample_util import monotonic_progress
+
 VIEW_W = 480.0
 VIEW_H = 290.0
 PADDING = 24.0
@@ -138,11 +140,13 @@ def build_spline_from_samples(
     padding: float = PADDING,
 ) -> list[list[float]] | None:
     """从一圈的降采样点生成地图折线；数据不足或覆盖不全时返回 None。"""
-    points = [
-        (float(s["p"]), float(s["wx"]), float(s["wy"]))
-        for s in samples
+    # samples 按时间存、p 非单调（出赛道绕圈会让 p 回退）。先滤成 p 单调的
+    # 序列，否则绕圈段那一堆点排序后会互相穿插，把赛道形状糊成一团。
+    rows = monotonic_progress(
+        s for s in samples
         if s.get("wx") is not None and s.get("wy") is not None
-    ]
+    )
+    points = [(float(s["p"]), float(s["wx"]), float(s["wy"])) for s in rows]
     if len(points) < MIN_POINTS:
         return None
 

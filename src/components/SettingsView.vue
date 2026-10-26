@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ACCENTS, accentName, setAccent, setTheme, themeName } from '../telemetry/theme.js';
 import { clearHistory, getBaseUrl, getConfig, getHealth, listSessions, saveConfig } from '../telemetry/api.js';
 import { telemetry } from '../telemetry/useTelemetry.js';
@@ -14,6 +14,9 @@ const SAMPLE_LABEL = { 100: '100 Hz 高精', 50: '50 Hz 标准', 20: '20 Hz 省�
 
 const swAuto = ref(true);
 const clearText = ref('清空历史数据');
+const confirmOpen = ref(false);
+const clearing = ref(false);
+const cancelBtn = ref(null);
 const health = ref(null);
 const config = ref(null);
 const sessionCount = ref(0);
@@ -32,6 +35,8 @@ const statusText = computed(() => {
   if (!health.value.dbOk) return '数据库异常';
   return health.value.streaming ? '监测中' : '在线';
 });
+// 后端清空接口在监测中会返回 409，弹窗里提前把按钮禁掉，不用等失败
+const streamingNow = computed(() => !!health.value?.streaming);
 const sampleText = computed(() => SAMPLE_LABEL[prefs.sampleHz] || prefs.sampleHz + ' Hz');
 const sampleHint = computed(() => '精读档位：' + sampleText.value + ' · 调低采样率可降低游戏掉帧风险。');
 const pushText = computed(() => prefs.pushHz + ' Hz');
@@ -92,17 +97,50 @@ function toggleAuto() {
   patch({ autoStart: !swAuto.value });
 }
 
-async function clearData() {
-  if (!window.confirm('确定清空所有赛道历史数据？此操作不可恢复。')) return;
+/* 清空历史：先开自绘确认弹窗，确认后才真正请求删除 */
+function openConfirm() {
+  if (clearing.value) return;
+  confirmOpen.value = true;
+  // 破坏性操作默认聚焦「取消」，回车不会误删
+  nextTick(() => cancelBtn.value?.focus());
+}
+
+function closeConfirm() {
+  if (clearing.value) return;
+  confirmOpen.value = false;
+}
+
+async function confirmClear() {
+  if (clearing.value) return;
+  clearing.value = true;
   try {
     await clearHistory();
+    confirmOpen.value = false;
     clearText.value = '已清空';
     await refresh();
   } catch (e) {
+    confirmOpen.value = false;
     clearText.value = e.status === 409 ? '监测中无法清空' : '清空失败';
     errorText.value = e.status === 409 ? '请先停止监测' : ('清空失败：' + e.message);
   } finally {
+    clearing.value = false;
     setTimeout(() => { clearText.value = '清空历史数据'; }, 1600);
+  }
+}
+
+/* 弹窗内的键盘操作；阻止冒泡，避免 1/2/3、T 在弹窗打开时切页换主题 */
+function onDialogKey(e) {
+  e.stopPropagation();
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeConfirm();
+    return;
+  }
+  if (e.key === 'Enter') {
+    // 焦点在按钮上时交给按钮原生行为，否则「取消」按钮会被回车变成确认
+    if (e.target && e.target.closest && e.target.closest('button')) return;
+    e.preventDefault();
+    confirmClear();
   }
 }
 
@@ -136,6 +174,8 @@ watch(() => props.visible, (visible) => {
     startPolling();
   } else {
     stopPolling();
+    // 切走页面时把弹窗收掉（Teleport 到 body，不会随页面一起隐藏）
+    if (!clearing.value) confirmOpen.value = false;
   }
 });
 watch(() => telemetry.status, refresh);
@@ -220,7 +260,7 @@ watch(() => telemetry.historyRevision, refresh);
       <div class="set-row"><span>后端状态</span><span class="v">{{ statusText }}</span></div>
       <div class="set-row"><span>当前推流</span><span class="v">{{ pushText }}</span></div>
       <div class="set-row"><span>服务地址</span><span class="v">{{ serverText }}</span></div>
-      <div class="set-row"><span>启动后自动开始监测</span>
+      <div class="set-row"><span title="应用启动、或退出赛道后重新进入时，自动开始记录">自动开始监测</span>
         <button class="switch" :class="{ on: swAuto }" @click="toggleAuto" aria-label="自动监测"></button>
       </div>
     </div>
@@ -231,12 +271,68 @@ watch(() => telemetry.historyRevision, refresh);
       <div class="set-row"><span>配置文件</span><span class="v" :title="configPath">{{ configPath }}</span></div>
       <div class="set-row"><span>已记录</span><span class="v">{{ totalLapsText }}</span></div>
       <div v-if="errorText" class="set-row"><span></span><span class="v" style="color:var(--hot)">{{ errorText }}</span></div>
-      <div style="margin-top:0.77rem"><button class="btn btn-danger" @click="clearData">{{ clearText }}</button></div>
+      <div style="margin-top:0.77rem"><button class="btn btn-danger" @click="openConfirm">{{ clearText }}</button></div>
     </div>
 
     <div class="set-group">
       <span class="glbl">关于</span>
       <div class="set-row"><span>版本</span><span class="v">{{ versionText }}</span></div>
     </div>
+
+    <!-- 清空历史数据的确认弹窗：Teleport 到 body，避免被 .view 的 transform 影响定位 -->
+    <Teleport to="body">
+      <div v-if="confirmOpen" class="dlg-mask" @click.self="closeConfirm">
+        <div
+          class="dlg"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="dlg-title"
+          aria-describedby="dlg-desc"
+          @keydown="onDialogKey"
+        >
+          <div class="dlg-stripe" aria-hidden="true"></div>
+
+          <div class="dlg-head">
+            <span class="dlg-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 4.2 3.2 19.8h17.6L12 4.2z" />
+                <path d="M12 10.2v3.9" />
+                <circle cx="12" cy="17.2" r="1.05" fill="currentColor" stroke="none" />
+              </svg>
+            </span>
+            <div class="dlg-ttl">
+              <h3 id="dlg-title">清空历史数据</h3>
+              <div class="dlg-en">IRREVERSIBLE · LOCAL DATABASE</div>
+            </div>
+          </div>
+
+          <div class="dlg-body" id="dlg-desc">
+            <p>将从本机数据库中永久删除 <strong>{{ totalLapsText }}</strong>的全部数据。</p>
+
+            <ul class="dlg-list">
+              <li>所有圈速、分段计时与完成圈记录</li>
+              <li>逐帧遥测采样（速度 / 踏板 / 走线）</li>
+              <li>PB 记录与历史圈对比基准</li>
+            </ul>
+
+            <div class="dlg-keep"><b>保留</b>赛道地图缓存、设置项与界面偏好不受影响。</div>
+
+            <div v-if="streamingNow" class="dlg-warn">
+              <b>正在监测中</b>请先在「监测」页停止，否则无法清空。
+            </div>
+          </div>
+
+          <div class="dlg-foot">
+            <button ref="cancelBtn" type="button" class="btn btn-ghost" :disabled="clearing" @click="closeConfirm">取消</button>
+            <button
+              type="button"
+              class="btn btn-danger"
+              :disabled="clearing || streamingNow"
+              @click="confirmClear"
+            >{{ clearing ? '清空中…' : '确认清空' }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </section>
 </template>

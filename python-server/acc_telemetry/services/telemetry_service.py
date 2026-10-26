@@ -201,8 +201,16 @@ class TelemetryService:
 
         try:
             await asyncio.to_thread(persist)
-            pb_ms = await asyncio.to_thread(self.history.pb_ms, track.id)
-            pb_ref = await asyncio.to_thread(self.history.pb_reference, track.id)
+            if session_type and session_type != "unknown":
+                pb_ms = await asyncio.to_thread(
+                    self.history.pb_ms_for_type, track.id, session_type
+                )
+                pb_ref = await asyncio.to_thread(
+                    self.history.pb_reference_for_type, track.id, session_type
+                )
+            else:
+                pb_ms = await asyncio.to_thread(self.history.pb_ms, track.id)
+                pb_ref = await asyncio.to_thread(self.history.pb_reference, track.id)
         except Exception as exc:  # noqa: BLE001
             db_ok = False
             logger.warning("session persistence failed: %s", exc)
@@ -308,6 +316,7 @@ class TelemetryService:
                 if snap_type != "unknown":
                     self._session_type = snap_type
                     await self._promote_session_type(session_id, snap_type)
+                    await self._emit_pbref(send)
 
             results = processor.consume(snap)
             reset_detected = processor.consume_reset()
@@ -333,6 +342,7 @@ class TelemetryService:
                 if type_changed:
                     # 排位 → 正赛：圈数归零但仍是同一条记录，只更新当前类型
                     self._session_type = snapshot_type
+                    await self._emit_pbref(send)
                 else:
                     return True
 
@@ -375,10 +385,29 @@ class TelemetryService:
             await self._safe_warning(send, f"本圈保存失败：{exc}")
 
         pb_ms: int | None = None
+        pb_ref: dict | None = None
+        stype = result.session_type
         try:
-            pb_ms = await asyncio.to_thread(self.history.pb_ms, self._track_id) if self._track_id else None
+            if self._track_id and stype and stype != "unknown":
+                pb_ms = await asyncio.to_thread(
+                    self.history.pb_ms_for_type, self._track_id, stype
+                )
+                pb_ref = await asyncio.to_thread(
+                    self.history.pb_reference_for_type, self._track_id, stype
+                )
+            elif self._track_id:
+                pb_ms = await asyncio.to_thread(self.history.pb_ms, self._track_id)
+                pb_ref = await asyncio.to_thread(self.history.pb_reference, self._track_id)
         except Exception:
             pb_ms = None
+            pb_ref = None
+
+        # 每完成一圈，把当前类型的 PB 参考推给前端，使 DELTA·对 PB 按类型更新
+        if pb_ref is not None or pb_ms is not None:
+            try:
+                await send({"type": "pbref", "pbMs": pb_ms, "pbRef": pb_ref})
+            except Exception:
+                pass
 
         return {
             "type": "lap",
@@ -395,6 +424,24 @@ class TelemetryService:
             "sampleCount": len(result.samples),
             "persisted": persisted,
         }
+
+    async def _emit_pbref(self, send: Send) -> None:
+        """把当前会话类型对应的 PB 参考圈推给前端（按类型各自算，而非整条赛道）。"""
+        if not self._track_id or self._session_type in (None, "unknown"):
+            return
+        try:
+            pb_ms = await asyncio.to_thread(
+                self.history.pb_ms_for_type, self._track_id, self._session_type
+            )
+            pb_ref = await asyncio.to_thread(
+                self.history.pb_reference_for_type, self._track_id, self._session_type
+            )
+        except Exception:
+            return
+        try:
+            await send({"type": "pbref", "pbMs": pb_ms, "pbRef": pb_ref})
+        except Exception:
+            pass
 
     async def _maybe_record_track_map(self, result: LapResult, send: Send) -> None:
         """用第一个有效圈的世界坐标生成真实赛道形状，之后所有 session 复用。"""

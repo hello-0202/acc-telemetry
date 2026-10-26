@@ -73,13 +73,27 @@ async def health(request: Request) -> dict:
 
 @router.get("/api/tracks/{track_id}/geometry")
 async def track_geometry(track_id: str, request: Request) -> dict:
-    """返回 fastlane.ai 解析出的真实赛道几何（含左右边界数据）。"""
+    """返回 fastlane.ai 解析出的真实赛道几何（含左右边界数据）。
+
+    库里还没有时按需解析一次：首次进入某条赛道（tracks 行还没建）或
+    历史库缺 geometry 时，不能直接 404，否则前端只能画示意形状的默认地图。
+    """
     track = await asyncio.to_thread(
         request.app.state.history.tracks.get, track_id
     )
-    if not track or not track.get("geometry"):
+    geometry = track.get("geometry") if track else None
+    if not geometry:
+        service = getattr(request.app.state, "geometry", None)
+        if service is not None:
+            try:
+                geometry = await asyncio.to_thread(
+                    service.get_or_parse, track_id, track_id
+                )
+            except Exception:  # noqa: BLE001
+                geometry = None
+    if not geometry:
         raise HTTPException(status_code=404, detail="track geometry not found")
-    return track["geometry"]
+    return geometry
 
 
 async def _send_error(websocket: WebSocket, code: str, message: str) -> None:

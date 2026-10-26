@@ -189,11 +189,8 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .start-btn svg{width:1.5385rem;height:1.5385rem;flex:none}
 .sb-col{position:relative;display:flex;flex-direction:column;align-items:flex-start}
 .start-btn .sb-t{font-family:var(--font-display);font-weight:700;font-size:1.1538rem;letter-spacing:.05em}
-/* 副标题绝对定位在标题下方：出现/消失都不参与布局，图标与文字始终垂直居中，启停切换不跳动 */
-.start-btn .sb-s{position:absolute;left:0;top:100%;margin-top:0.0769rem;font-family:var(--font-mono);font-size:0.7308rem;color:var(--text-faint);letter-spacing:.1em;line-height:0.9231rem;white-space:nowrap}
 .start-btn:hover{border-color:var(--signal-text);color:var(--text)}
 .start-btn.on{border-color:var(--signal-text);background:transparent;color:var(--signal-text)}
-.start-btn.on .sb-s{color:var(--text-faint)}
 .start-btn.on.rec{box-shadow:0 0 0 0.3846rem var(--hot-dim);border-color:var(--hot)}
 .live-wrap{flex:1;min-height:0;display:block}
 .live{display:grid;grid-template-columns:1.1fr 1fr;grid-template-rows:minmax(0,1fr);gap:0.9231rem;width:100%;height:100%}
@@ -250,7 +247,9 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .map-dir path{fill:var(--text-faint)}
 /* 比例尺 */
 .map-scale line{stroke:var(--text-faint);stroke-width:1;stroke-linecap:butt;fill:none}
-.map-scale .map-scale-text{font-family:var(--font-mono);font-size:8px;fill:var(--text-faint);letter-spacing:.04em}
+/* 比例尺底板：与卡片背景同色 + 细边框，盖在白路 / 弯名之上仍清晰可见 */
+.map-scale .map-scale-bg{fill:var(--bg-soft);fill-opacity:.9;stroke:var(--line-2);stroke-width:.5}
+.map-scale .map-scale-text{font-family:var(--font-mono);font-size:9px;fill:var(--text-faint);letter-spacing:.04em}
 /* 实时面板 SVG 兜底图的起跑线：与圈速概要 .map-sf line 同宽同色（墨色黑线） */
 .map-start{stroke:var(--map-ink);stroke-width:2.2}
 .map-corner{fill:var(--text-faint)}
@@ -400,8 +399,9 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .elev-cursor-dot{fill:var(--cold);stroke:var(--panel);stroke-width:.8}
 
 
-/* 游标读数：地图左下角，两行紧凑显示 */
-.mini-map .map-readout{position:absolute;left:0.5385rem;bottom:0.5385rem;z-index:2;pointer-events:none;max-width:calc(100% - 1.0769rem);padding:0.2308rem 0.5385rem;border:0.0769rem solid var(--line);background:var(--panel);font-family:var(--font-mono);font-size:0.6923rem;line-height:1.55;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 游标读数：默认地图左下角，可在地图内拖动（改为 pointer-events:auto + grab 光标） */
+.mini-map .map-readout{position:absolute;left:0.5385rem;bottom:0.5385rem;z-index:3;pointer-events:auto;cursor:grab;user-select:none;touch-action:none;max-width:calc(100% - 1.0769rem);padding:0.2308rem 0.5385rem;border:0.0769rem solid var(--line);background:var(--panel);font-family:var(--font-mono);font-size:0.6923rem;line-height:1.55;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini-map .map-readout.dragging{cursor:grabbing}
 /* 圈速大数字固定黑色，不随主题 / 强调色变化；深色主题下改纯白，否则黑字压黑底看不见 */
 .kv.lap .v{font-size:1.8462rem;line-height:1.1;color:#000}
 html[data-theme="dark"] .kv.lap .v{color:#fff}
@@ -437,9 +437,9 @@ html[data-theme="dark"] .kv.lap .v{color:#fff}
 .legend i{display:inline-block;width:1rem;height:0.2308rem;vertical-align:0.1538rem;margin-right:0.3846rem}
 .legend .pb-legend{transition:opacity .15s}
 .legend .pb-legend.off{opacity:.3}
-.zoom-hint{margin-left:auto;font-family:var(--font-mono);font-weight:400;font-size:0.6923rem;color:var(--text-faint);white-space:nowrap}
+.zoom-hint{margin-left:auto;font-family:var(--font-mono);font-weight:400;font-size:0.6rem;color:var(--text-faint);white-space:nowrap}
 /* 当前缩放倍率：滚轮是缩放还是滚动，看这个数字最直观 */
-.zoom-level{margin-left:0.46rem;font-family:var(--font-mono);font-size:0.6923rem;font-weight:600;color:var(--signal-text);min-width:2.4rem;text-align:right}
+.zoom-level{margin-left:0.46rem;font-family:var(--font-mono);font-size:0.6rem;font-weight:600;color:var(--signal-text);min-width:2.4rem;text-align:right}
 /* 「显示 / 隐藏」开关组：按钮样式与间距在两张卡片里保持一致 */
 .toggle-group{margin-left:0.6154rem;display:inline-flex;align-items:center;gap:0.4615rem;flex:none}
 /* 圈速概要：开关紧跟在标题文字右侧，间距只用 h4 自身的 gap */
@@ -454,8 +454,10 @@ html[data-theme="dark"] .kv.lap .v{color:#fff}
 /* 标签和色条交替：.bar 是父级里的第 2、4 个 span */
 .heat-legend .bar:nth-of-type(2){background:linear-gradient(90deg,var(--heat-thr-hi),var(--heat-thr-lo),var(--heat-coast))}
 .heat-legend .bar:nth-of-type(4){background:linear-gradient(90deg,var(--heat-coast),var(--heat-brake-lo),var(--heat-brake-hi))}
-/* 圈速概要标题行里的热力色标 */
-.map-heat-legend{margin:0;white-space:nowrap}
+/* 圈速概要：热力色标单独占一行（不再挤在标题行里把提示挤下去），
+   关闭时保留占位高度（visibility），避免点开关时整张卡片跳动 */
+.heat-legend.off{visibility:hidden}
+.map-heat-legend{margin:0 0 0.4615rem;white-space:nowrap}
 .map-heat-legend .bar{flex:none;width:2.9231rem;height:0.4615rem}
 .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.6154rem;height:100%;color:var(--text-faint);font-family:var(--font-mono);font-size:0.8846rem}
 .empty svg{width:2rem;height:2rem;opacity:.5}
@@ -484,6 +486,31 @@ html[data-theme="dark"] .kv.lap .v{color:#fff}
 .switch{width:2.6154rem;height:1.3846rem;border:0.0769rem solid var(--line-2);background:var(--panel-2);position:relative;flex:none}
 .switch::after{content:"";position:absolute;left:0.1538rem;top:0.1538rem;width:0.9231rem;height:0.9231rem;background:var(--text-faint);transition:.15s}
 .switch.on{border-color:var(--signal)} .switch.on::after{left:1.3846rem;background:var(--signal)}
+
+/* ================= confirm dialog ================= */
+/* 破坏性确认弹窗：遮罩 + 带警示条纹的卡片，Teleport 到 body 后全窗口居中 */
+.dlg-mask{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;padding:1.5385rem;background:rgba(3,5,8,.58);backdrop-filter:blur(2px);animation:dlgFade .14s ease-out}
+html[data-theme="light"] .dlg-mask{background:rgba(24,31,27,.34)}
+.dlg{position:relative;width:min(28rem,100%);background:var(--panel);color:var(--text);border:0.0769rem solid var(--line-2);box-shadow:var(--win-shadow);overflow:hidden;animation:dlgIn .18s cubic-bezier(.2,.8,.25,1)}
+/* 顶部斜纹警示带：一眼看出是不可逆操作 */
+.dlg-stripe{height:0.5385rem;background:repeating-linear-gradient(135deg,var(--hot) 0,var(--hot) 0.5385rem,var(--hot-dim) 0.5385rem,var(--hot-dim) 1.0769rem);border-bottom:0.0769rem solid var(--hot-dim)}
+.dlg-head{display:flex;align-items:flex-start;gap:0.8462rem;padding:1.1538rem 1.2308rem 0}
+.dlg-ico{width:2.3077rem;height:2.3077rem;flex:none;display:flex;align-items:center;justify-content:center;color:var(--hot);background:var(--hot-dim);box-shadow:inset 0 0 0 0.0769rem var(--hot)}
+.dlg-ico svg{width:1.2308rem;height:1.2308rem}
+.dlg-ttl h3{font-family:var(--font-display);font-size:1.0769rem;font-weight:600;line-height:1.3;letter-spacing:.02em}
+.dlg-en{margin-top:0.2308rem;font-family:var(--font-mono);font-size:0.6538rem;letter-spacing:.16em;color:var(--text-faint)}
+.dlg-body{padding:0.9231rem 1.2308rem 0;font-size:0.9231rem;line-height:1.6;color:var(--text-dim)}
+.dlg-body strong{font-family:var(--font-mono);font-weight:600;color:var(--text)}
+.dlg-list{list-style:none;margin:0.8462rem 0 0;border-top:0.0769rem solid var(--line)}
+.dlg-list li{position:relative;padding:0.3846rem 0 0.3846rem 0.9231rem;border-bottom:0.0769rem dashed var(--line);font-size:0.8462rem;color:var(--text-dim)}
+.dlg-list li::before{content:"";position:absolute;left:0;top:0.8846rem;width:0.3077rem;height:0.3077rem;background:var(--hot);opacity:.6}
+.dlg-keep{margin-top:0.8462rem;padding:0.5385rem 0.6923rem;background:var(--panel-2);border-left:0.1538rem solid var(--line-2);font-size:0.8077rem;line-height:1.5;color:var(--text-faint)}
+.dlg-keep b{margin-right:0.4615rem;font-family:var(--font-display);font-weight:600;color:var(--text-dim)}
+.dlg-warn{margin-top:0.5385rem;padding:0.5385rem 0.6923rem;background:var(--warn-dim);border-left:0.1538rem solid var(--warn);font-size:0.8077rem;line-height:1.5;color:var(--warn)}
+.dlg-warn b{margin-right:0.4615rem;font-family:var(--font-display);font-weight:600}
+.dlg-foot{display:flex;justify-content:flex-end;gap:0.6154rem;padding:1.2308rem}
+@keyframes dlgFade{from{opacity:0}to{opacity:1}}
+@keyframes dlgIn{from{opacity:0;transform:translateY(-0.6154rem) scale(.985)}to{opacity:1;transform:none}}
 
 /* ================= statusbar ================= */
 .statusbar{flex:none;display:flex;align-items:center;gap:1.0769rem;padding:0 1.0769rem;height:1.8462rem;border-top:0.0769rem solid var(--line);background:var(--bg-soft);font-family:var(--font-mono);font-size:0.7308rem;color:var(--text-faint)}

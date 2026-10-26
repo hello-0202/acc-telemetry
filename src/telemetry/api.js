@@ -41,6 +41,21 @@ export function resetBaseUrl() {
   resolving = null;
 }
 
+/**
+ * 一轮端口探测：**并行**，不是串行。
+ * 串行时 12 个端口 × 350ms 超时要 ~4s，冷启动期间 sidecar 常常在「已扫过 8008」
+ * 之后才起来，于是第一次探测必然失败；这段失败又会被界面当成「后端断开」。
+ * 并行后单轮 ≈ 一个超时周期，后端就绪后最多 0.4s 就能被探到。
+ */
+async function probeRound(ports) {
+  const hits = await Promise.all(ports.map(async (port) => {
+    const url = await probe(port);
+    return url ? { port, url } : null;
+  }));
+  const found = hits.filter(Boolean).sort((a, b) => a.port - b.port)[0];
+  return found ? found.url : null;
+}
+
 export function resolveBaseUrl() {
   if (baseUrl) return Promise.resolve(baseUrl);
   if (resolving) return resolving;
@@ -52,13 +67,11 @@ export function resolveBaseUrl() {
     ];
     // 首次启动时 sidecar 可能还在解压，稍等后重试一轮
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      for (const port of ports) {
-        const found = await probe(port);
-        if (found) {
-          baseUrl = found;
-          resolving = null;
-          return found;
-        }
+      const found = await probeRound(ports);
+      if (found) {
+        baseUrl = found;
+        resolving = null;
+        return found;
       }
       if (attempt === 0) {
         await new Promise((resolve) => setTimeout(resolve, 400));
