@@ -32,8 +32,19 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-     "externalBin": [
+    "externalBin": [
       "binaries/telemetry_core"
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+    "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZDNEQyRkZCMzdDOTFEQkMKUldTOEhjazMreTlOYkdYOU9FaEl2cXV1VDRndHl1QkR3YXhZZ1lrRmNzdVg5dlBZU29scUpyZ1AK",
+    "endpoints": [
+      "https://github.com/hello-0202/acc-telemetry/releases/latest/download/latest.json"
+    ],
+    "windows": { "installMode": "passive" },
+    "requireSignedVersion": true
+  }
   }
 }

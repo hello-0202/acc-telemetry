@@ -133,7 +133,6 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .offline-toast .ot{min-width:0;line-height:1.35;font-size:0.8462rem}
 .offline-toast .ox{flex:none;width:1.3846rem;height:1.3846rem;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:1.1538rem;line-height:1}
 .offline-toast .ox:hover{color:var(--text);background:var(--panel-2)}
-
 /* ================= topbar ================= */
 .topbar{flex:none;display:flex;align-items:center;justify-content:center;position:relative;padding:0 1.2308rem;height:4.3077rem;border-bottom:0.0769rem solid var(--line);background:var(--bg-soft)}
 .tabs{display:inline-flex;gap:0.1538rem;padding:0.2308rem;background:var(--tab-track);border:0.0769rem solid var(--line);border-radius:0.3846rem;box-shadow:var(--inset)}
@@ -151,6 +150,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .sq-btn:hover{color:var(--text);border-color:var(--text-faint)}
 .sq-btn svg{width:1.1538rem;height:1.1538rem}
 .sq-btn.on{background:var(--signal);border-color:var(--signal);color:var(--signal-ink)}
+@keyframes spin{100%{transform:rotate(360deg)}}
 
 /* ================= stage ================= */
 .stage{flex:1;min-height:0;overflow:hidden;position:relative}
@@ -487,20 +487,30 @@ html[data-theme="dark"] .kv.lap .v{color:#fff}
 .switch::after{content:"";position:absolute;left:0.1538rem;top:0.1538rem;width:0.9231rem;height:0.9231rem;background:var(--text-faint);transition:.15s}
 .switch.on{border-color:var(--signal)} .switch.on::after{left:1.3846rem;background:var(--signal)}
 
+/* 更新分组 */
+.upd-actions{display:flex;align-items:center;gap:0.7692rem;flex:none}
+.upd-state.good{color:var(--good)}
+.upd-state.bad{color:var(--hot)}
+.upd-note{align-items:flex-start}
+.upd-note-main{min-width:0;display:flex;flex-direction:column;gap:0.3077rem}
+.upd-ver{font-family:var(--font-mono);font-size:0.8462rem;color:var(--good);font-weight:700}
+.upd-body{font-size:0.7692rem;color:var(--text-dim);line-height:1.45;white-space:pre-wrap;max-height:8rem;overflow:auto}
+.upd-note .btn{flex:none}
+
 /* ================= confirm dialog ================= */
-/* 破坏性确认弹窗：遮罩 + 带警示条纹的卡片，Teleport 到 body 后全窗口居中 */
+/* 确认弹窗：遮罩 + 居中卡片，Teleport 到 body 后全窗口居中 */
 .dlg-mask{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;padding:1.5385rem;background:rgba(3,5,8,.58);backdrop-filter:blur(2px);animation:dlgFade .14s ease-out}
 html[data-theme="light"] .dlg-mask{background:rgba(24,31,27,.34)}
 .dlg{position:relative;width:min(28rem,100%);background:var(--panel);color:var(--text);border:0.0769rem solid var(--line-2);box-shadow:var(--win-shadow);overflow:hidden;animation:dlgIn .18s cubic-bezier(.2,.8,.25,1)}
-/* 顶部斜纹警示带：一眼看出是不可逆操作 */
-.dlg-stripe{height:0.5385rem;background:repeating-linear-gradient(135deg,var(--hot) 0,var(--hot) 0.5385rem,var(--hot-dim) 0.5385rem,var(--hot-dim) 1.0769rem);border-bottom:0.0769rem solid var(--hot-dim)}
-.dlg-head{display:flex;align-items:flex-start;gap:0.8462rem;padding:1.1538rem 1.2308rem 0}
-.dlg-ico{width:2.3077rem;height:2.3077rem;flex:none;display:flex;align-items:center;justify-content:center;color:var(--hot);background:var(--hot-dim);box-shadow:inset 0 0 0 0.0769rem var(--hot)}
+.dlg-head{display:flex;align-items:center;gap:0.8462rem;padding:1.1538rem 1.2308rem 0}
+.dlg-ico{width:2.3077rem;height:2.3077rem;flex:none;display:flex;align-items:center;justify-content:center;color:var(--signal-text);background:var(--signal-dim);box-shadow:inset 0 0 0 0.0769rem var(--signal)}
+.dlg-ico.danger{color:var(--hot);background:var(--hot-dim);box-shadow:inset 0 0 0 0.0769rem var(--hot)}
 .dlg-ico svg{width:1.2308rem;height:1.2308rem}
+.dlg-ico svg.spin{animation:spin .9s linear infinite;transform-origin:50% 50%}
 .dlg-ttl h3{font-family:var(--font-display);font-size:1.0769rem;font-weight:600;line-height:1.3;letter-spacing:.02em}
-.dlg-en{margin-top:0.2308rem;font-family:var(--font-mono);font-size:0.6538rem;letter-spacing:.16em;color:var(--text-faint)}
 .dlg-body{padding:0.9231rem 1.2308rem 0;font-size:0.9231rem;line-height:1.6;color:var(--text-dim)}
 .dlg-body strong{font-family:var(--font-mono);font-weight:600;color:var(--text)}
+.dlg-notes{margin-top:0.8462rem;padding:0.5385rem 0.6923rem;max-height:9rem;overflow:auto;background:var(--panel-2);border-left:0.1538rem solid var(--signal);font-family:var(--font-mono);font-size:0.7692rem;line-height:1.6;white-space:pre-wrap;color:var(--text-dim)}
 .dlg-list{list-style:none;margin:0.8462rem 0 0;border-top:0.0769rem solid var(--line)}
 .dlg-list li{position:relative;padding:0.3846rem 0 0.3846rem 0.9231rem;border-bottom:0.0769rem dashed var(--line);font-size:0.8462rem;color:var(--text-dim)}
 .dlg-list li::before{content:"";position:absolute;left:0;top:0.8846rem;width:0.3077rem;height:0.3077rem;background:var(--hot);opacity:.6}
@@ -512,9 +522,22 @@ html[data-theme="light"] .dlg-mask{background:rgba(24,31,27,.34)}
 @keyframes dlgFade{from{opacity:0}to{opacity:1}}
 @keyframes dlgIn{from{opacity:0;transform:translateY(-0.6154rem) scale(.985)}to{opacity:1;transform:none}}
 
+/* 更新结果提示：右下角浮层，不遮挡、不阻断操作 */
+.dlg-mask.dlg-notify{inset:auto 1.2308rem 2.7692rem auto;display:block;padding:0;background:none;backdrop-filter:none;pointer-events:none;animation:none}
+html[data-theme="light"] .dlg-mask.dlg-notify{background:none}
+.dlg-notify .dlg{pointer-events:auto;width:min(23.0769rem, calc(100vw - 2.4616rem));animation:notifyIn .18s cubic-bezier(.2,.8,.25,1)}
+.dlg-notify .dlg-head{padding:1rem 1.1538rem 0}
+.dlg-notify .dlg-ico{width:2rem;height:2rem}
+.dlg-notify .dlg-ico svg{width:1.0769rem;height:1.0769rem}
+.dlg-notify .dlg-body{padding:0.7692rem 1.1538rem 0;font-size:0.8846rem}
+.dlg-notify .dlg-foot{padding:0.9231rem 1.1538rem}
+@keyframes notifyIn{from{opacity:0;transform:translateY(0.6154rem)}to{opacity:1;transform:none}}
+
 /* ================= statusbar ================= */
 .statusbar{flex:none;display:flex;align-items:center;gap:1.0769rem;padding:0 1.0769rem;height:1.8462rem;border-top:0.0769rem solid var(--line);background:var(--bg-soft);font-family:var(--font-mono);font-size:0.7308rem;color:var(--text-faint)}
-.statusbar .r{margin-left:auto;display:flex;gap:1.0769rem}
+.statusbar .r{margin-left:auto;display:flex;gap:1.0769rem;align-items:center}
+.statusbar .update-hint{color:var(--good);font-weight:700;cursor:pointer;user-select:none}
+.statusbar .update-hint:hover{text-decoration:underline}
 kbd{font-family:var(--font-mono);border:0.0769rem solid var(--line-2);padding:0 0.3077rem;color:var(--text-dim)}
 
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}

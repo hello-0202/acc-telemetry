@@ -16,6 +16,8 @@
     "core:window:allow-show",
     "core:window:allow-set-focus",
     "opener:default",
-    "shell:default"
+    "shell:default",
+    "process:default",
+    "process:allow-restart"
   ]
 }

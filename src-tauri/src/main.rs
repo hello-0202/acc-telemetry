@@ -12,6 +12,8 @@ struct Sidecar(Mutex<Option<CommandChild>>);
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // 系统托盘（关闭窗口后用于恢复 / 退出）

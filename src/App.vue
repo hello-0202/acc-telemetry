@@ -1,9 +1,11 @@
 <script setup>
-import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { computed, ref, shallowRef, watch, onMounted, onBeforeUnmount } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { check } from '@tauri-apps/plugin-updater';
 import MonitorView from './components/MonitorView.vue';
 import HistoryView from './components/HistoryView.vue';
 import SettingsView from './components/SettingsView.vue';
+import UpdateDialog from './components/UpdateDialog.vue';
 import { themeName, toggleTheme } from './telemetry/theme.js';
 import { ui } from './telemetry/store.js';
 import { getHealth } from './telemetry/api.js';
@@ -116,6 +118,72 @@ async function windowAction(action) {
   }
 }
 
+/* ------------------- 软件更新检查 ------------------- */
+// 目前只检查新版本，不接入下载/安装（downloadAndInstall）。
+// updateInfo 存的是 plugin-updater 返回的 Update 对象，有值即代表有新版本。
+// 用 shallowRef：Update 内部用私有字段存 Rust 资源句柄，被 Vue 深度代理后方法会失效。
+const updateInfo = shallowRef(null);
+const isCheckingUpdate = ref(false);
+const updateErrorMsg = ref('');
+const updateChecked = ref(false);
+
+// 「启动时自动检查」偏好只影响前端行为，存 localStorage 即可，不必走后端配置。
+const AUTO_CHECK_KEY = 'acc-auto-check-update';
+const autoCheckUpdate = ref(true);
+try {
+  autoCheckUpdate.value = localStorage.getItem(AUTO_CHECK_KEY) !== '0';
+} catch (e) { /* ignore */ }
+
+// 手动检查时打开居中结果弹窗；启动时的静默检查不弹
+const updateDialogOpen = ref(false);
+
+// 不安装时，旧的 Update 句柄要 close 掉，否则 Rust 侧资源一直挂着
+function closeUpdate() {
+  const old = updateInfo.value;
+  updateInfo.value = null;
+  if (old && typeof old.close === 'function') {
+    old.close().catch(() => { /* 已经关闭或权限缺失，忽略 */ });
+  }
+}
+
+async function handleCheckUpdate(manual = false) {
+  if (isCheckingUpdate.value) return;
+  // 浏览器（vite dev）里没有 Tauri 运行时，插件调用必然失败，直接拦掉
+  if (!appWindow) {
+    if (manual) {
+      updateErrorMsg.value = '当前在浏览器环境，无法检查更新。';
+      updateDialogOpen.value = true;
+    }
+    return;
+  }
+
+  if (manual) {
+    updateErrorMsg.value = '';
+    updateDialogOpen.value = true;
+  }
+  isCheckingUpdate.value = true;
+  updateErrorMsg.value = '';
+  try {
+    const update = await check({ timeout: 5000 });
+    updateChecked.value = true;
+    closeUpdate();
+    if (update) updateInfo.value = update;
+  } catch (e) {
+    // GitHub 在国内访问不稳，静默检查失败只记日志，不打扰用户
+    console.error('update check failed:', e);
+    updateErrorMsg.value = '无法连接更新服务器，请检查网络后重试。';
+  } finally {
+    isCheckingUpdate.value = false;
+  }
+}
+
+function toggleAutoCheckUpdate() {
+  autoCheckUpdate.value = !autoCheckUpdate.value;
+  try {
+    localStorage.setItem(AUTO_CHECK_KEY, autoCheckUpdate.value ? '1' : '0');
+  } catch (e) { /* ignore */ }
+}
+
 function switchView(name) {
   if (VIEWS.indexOf(name) < 0) name = 'monitor';
   view.value = name;
@@ -137,6 +205,9 @@ onMounted(() => {
 
   // 读取后端配置（自动开始 / 后台常驻等），MonitorView 复用同一个 Promise 做自动开始
   loadPrefs();
+
+  // 启动时静默检查一次更新（可在设置里关掉）；失败不打扰用户
+  if (autoCheckUpdate.value) handleCheckUpdate(false);
 
   // 启动宽限期：这段时间内的离线状态不弹提示（sidecar 还没起来）。
   // 探到后端就绪会提前结束；到点仍离线才作废旧结果重探一次。
@@ -172,6 +243,7 @@ onBeforeUnmount(() => {
     clearTimeout(bootTimer);
     bootTimer = null;
   }
+  closeUpdate();
 });
 </script>
 
@@ -218,12 +290,23 @@ onBeforeUnmount(() => {
         <main class="stage">
           <MonitorView :class="{ active: view === 'monitor' }" />
           <HistoryView :class="{ active: view === 'history' }" :visible="view === 'history'" />
-          <SettingsView :class="{ active: view === 'settings' }" :visible="view === 'settings'" />
+          <SettingsView
+            :class="{ active: view === 'settings' }"
+            :visible="view === 'settings'"
+            :update-info="updateInfo"
+            :update-checking="isCheckingUpdate"
+            :update-checked="updateChecked"
+            :update-error="updateErrorMsg"
+            :auto-check="autoCheckUpdate"
+            @check-update="handleCheckUpdate(true)"
+            @toggle-auto-check="toggleAutoCheckUpdate"
+          />
         </main>
 
         <!-- statusbar -->
         <footer class="statusbar">
           <span class="r">
+            <span v-if="updateInfo" class="update-hint" role="button" @click="switchView('settings')">✨ 发现新版本 v{{ updateInfo.version }} (去设置查看)</span>
             <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 切换页面</span>
             <span><kbd>T</kbd> 主题</span>
           </span>
@@ -236,6 +319,16 @@ onBeforeUnmount(() => {
         <span class="ot">{{ noticeText }}</span>
         <button class="ox" type="button" aria-label="关闭提示" @click="noticeDismissed = true">×</button>
       </div>
+
+      <!-- 手动检查更新的结果弹窗 -->
+      <UpdateDialog
+        v-if="updateDialogOpen"
+        :checking="isCheckingUpdate"
+        :update="updateInfo"
+        :error="updateErrorMsg"
+        @close="updateDialogOpen = false"
+        @retry="handleCheckUpdate(true)"
+      />
     </div>
   </div>
 </template>

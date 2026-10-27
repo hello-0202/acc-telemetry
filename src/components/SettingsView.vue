@@ -1,12 +1,24 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ACCENTS, accentName, setAccent, setTheme, themeName } from '../telemetry/theme.js';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { clearHistory, getBaseUrl, getConfig, getHealth, listSessions, saveConfig } from '../telemetry/api.js';
 import { telemetry } from '../telemetry/useTelemetry.js';
 import { applyPrefs, prefs } from '../telemetry/prefs.js';
 import HelpTip from './HelpTip.vue';
 
-const props = defineProps({ visible: { type: Boolean, default: true } });
+const props = defineProps({
+  visible: { type: Boolean, default: true },
+  updateInfo: { type: Object, default: null },
+  updateChecking: { type: Boolean, default: false },
+  updateChecked: { type: Boolean, default: false },
+  updateError: { type: String, default: '' },
+  autoCheck: { type: Boolean, default: true },
+});
+
+const emit = defineEmits(['check-update', 'toggle-auto-check']);
+
+const RELEASES_URL = 'https://github.com/hello-0202/acc-telemetry/releases/latest';
 
 const SW = [100, 50, 20];
 const PUSH = [60, 50, 30];
@@ -34,6 +46,13 @@ const statusText = computed(() => {
   if (!health.value) return '未连接';
   if (!health.value.dbOk) return '数据库异常';
   return health.value.streaming ? '监测中' : '在线';
+});
+const updateStateText = computed(() => {
+  if (props.updateChecking) return '检查中…';
+  if (props.updateInfo) return '发现新版本 v' + props.updateInfo.version;
+  if (props.updateError) return '检查失败';
+  if (props.updateChecked) return '已是最新版本';
+  return '尚未检查';
 });
 // 后端清空接口在监测中会返回 409，弹窗里提前把按钮禁掉，不用等失败
 const streamingNow = computed(() => !!health.value?.streaming);
@@ -95,6 +114,15 @@ function toggleResident() {
 
 function toggleAuto() {
   patch({ autoStart: !swAuto.value });
+}
+
+/* 更新下载不接入应用内，发现新版本后引导到 GitHub Releases 手动下载 */
+async function openReleases() {
+  try {
+    await openUrl(RELEASES_URL);
+  } catch (e) {
+    console.error('open releases page failed:', e);
+  }
 }
 
 /* 清空历史：先开自绘确认弹窗，确认后才真正请求删除 */
@@ -275,6 +303,30 @@ watch(() => telemetry.historyRevision, refresh);
     </div>
 
     <div class="set-group">
+      <span class="glbl">更新</span>
+      <div class="set-row"><span class="set-label">软件更新
+          <HelpTip label="更新说明" text="目前只支持检查新版本，下载与安装请前往 GitHub Releases 手动完成。" />
+        </span>
+        <div class="upd-actions">
+          <span class="v upd-state" :class="{ good: !!updateInfo, bad: !updateInfo && !!updateError }" :title="updateError || ''">{{ updateStateText }}</span>
+          <button class="btn btn-ghost" :disabled="updateChecking" @click="emit('check-update')">{{ updateChecking ? '检查中…' : '检查更新' }}</button>
+        </div>
+      </div>
+      <div class="set-row"><span class="set-label">启动时自动检查
+          <HelpTip label="自动检查说明" text="每次打开软件时静默检查一次；发现新版本会在右下角状态栏提示。" />
+        </span>
+        <button class="switch" :class="{ on: autoCheck }" @click="emit('toggle-auto-check')" aria-label="启动时自动检查更新"></button>
+      </div>
+      <div v-if="updateInfo" class="set-row upd-note">
+        <div class="upd-note-main">
+          <div class="upd-ver">v{{ updateInfo.currentVersion }} → v{{ updateInfo.version }}</div>
+          <div v-if="updateInfo.body" class="upd-body">{{ updateInfo.body }}</div>
+        </div>
+        <button class="btn btn-primary" @click="openReleases">前往下载</button>
+      </div>
+    </div>
+
+    <div class="set-group">
       <span class="glbl">关于</span>
       <div class="set-row"><span>版本</span><span class="v">{{ versionText }}</span></div>
     </div>
@@ -290,10 +342,8 @@ watch(() => telemetry.historyRevision, refresh);
           aria-describedby="dlg-desc"
           @keydown="onDialogKey"
         >
-          <div class="dlg-stripe" aria-hidden="true"></div>
-
           <div class="dlg-head">
-            <span class="dlg-ico" aria-hidden="true">
+            <span class="dlg-ico danger" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 4.2 3.2 19.8h17.6L12 4.2z" />
                 <path d="M12 10.2v3.9" />
@@ -302,7 +352,6 @@ watch(() => telemetry.historyRevision, refresh);
             </span>
             <div class="dlg-ttl">
               <h3 id="dlg-title">清空历史数据</h3>
-              <div class="dlg-en">IRREVERSIBLE · LOCAL DATABASE</div>
             </div>
           </div>
 

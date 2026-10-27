@@ -211,3 +211,8 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Tauri 签名私钥
+*.key
+*.key.pub
+*.sig
