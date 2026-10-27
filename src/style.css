@@ -497,6 +497,14 @@ html[data-theme="dark"] .kv.lap .v{color:#fff}
 .upd-body{font-size:0.7692rem;color:var(--text-dim);line-height:1.45;white-space:pre-wrap;max-height:8rem;overflow:auto}
 .upd-note .btn{flex:none}
 
+/* 更新下载进度条 */
+.upd-prog{margin-top:0.8462rem}
+.upd-bar{position:relative;height:0.4615rem;background:var(--line);overflow:hidden}
+.upd-bar i{display:block;height:100%;width:0;background:var(--good);transition:width .2s linear}
+.upd-bar i.indet{width:35%;animation:updIndet 1.1s ease-in-out infinite}
+.upd-prog-txt{margin-top:0.3846rem;font-family:var(--font-mono);font-size:0.7308rem;color:var(--text-faint)}
+@keyframes updIndet{from{transform:translateX(-100%)}to{transform:translateX(300%)}}
+
 /* ================= confirm dialog ================= */
 /* 确认弹窗：遮罩 + 居中卡片，Teleport 到 body 后全窗口居中 */
 .dlg-mask{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;padding:1.5385rem;background:rgba(3,5,8,.58);backdrop-filter:blur(2px);animation:dlgFade .14s ease-out}
@@ -526,7 +534,9 @@ html[data-theme="light"] .dlg-mask{background:rgba(24,31,27,.34)}
 .dlg-mask.dlg-notify{inset:auto 1.2308rem 2.7692rem auto;display:block;padding:0;background:none;backdrop-filter:none;pointer-events:none;animation:none}
 html[data-theme="light"] .dlg-mask.dlg-notify{background:none}
 .dlg-notify .dlg{pointer-events:auto;width:min(23.0769rem, calc(100vw - 2.4616rem));animation:notifyIn .18s cubic-bezier(.2,.8,.25,1)}
-.dlg-notify .dlg-head{padding:1rem 1.1538rem 0}
+.dlg-notify .dlg-head{padding:1rem 2.4615rem 0 1.1538rem}
+.dlg-notify .dlg-x{position:absolute;top:0.3846rem;right:0.3846rem;width:1.6923rem;height:1.6923rem;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:1.1538rem;line-height:1;z-index:1}
+.dlg-notify .dlg-x:hover{color:var(--text);background:var(--panel-2)}
 .dlg-notify .dlg-ico{width:2rem;height:2rem}
 .dlg-notify .dlg-ico svg{width:1.0769rem;height:1.0769rem}
 .dlg-notify .dlg-body{padding:0.7692rem 1.1538rem 0;font-size:0.8846rem}
@@ -536,8 +546,6 @@ html[data-theme="light"] .dlg-mask.dlg-notify{background:none}
 /* ================= statusbar ================= */
 .statusbar{flex:none;display:flex;align-items:center;gap:1.0769rem;padding:0 1.0769rem;height:1.8462rem;border-top:0.0769rem solid var(--line);background:var(--bg-soft);font-family:var(--font-mono);font-size:0.7308rem;color:var(--text-faint)}
 .statusbar .r{margin-left:auto;display:flex;gap:1.0769rem;align-items:center}
-.statusbar .update-hint{color:var(--good);font-weight:700;cursor:pointer;user-select:none}
-.statusbar .update-hint:hover{text-decoration:underline}
 kbd{font-family:var(--font-mono);border:0.0769rem solid var(--line-2);padding:0 0.3077rem;color:var(--text-dim)}
 
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}

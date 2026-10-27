@@ -10,11 +10,25 @@ use tauri_plugin_shell::process::CommandChild;
 
 struct Sidecar(Mutex<Option<CommandChild>>);
 
+/// 前端在安装更新前主动调用：先干掉 sidecar、释放 8008 端口。
+/// updater 的 install 会直接结束主进程（不走 RunEvent::Exit），所以不能只依赖退出钩子。
+#[tauri::command]
+fn stop_sidecar(app: tauri::AppHandle) {
+    if let Some(state) = app.try_state::<Sidecar>() {
+        if let Some(child) = state.0.lock().unwrap().take() {
+            println!("[Rust] 收到前端指令，正在清理 sidecar 进程...");
+            let _ = child.kill();
+        }
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![stop_sidecar])
         .setup(|app| {
             // 系统托盘（关闭窗口后用于恢复 / 退出）
             setup_tray(app)?;

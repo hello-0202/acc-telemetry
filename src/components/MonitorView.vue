@@ -232,6 +232,12 @@ watch(session, (s) => {
 const SUPERVISE_MS = 3000;
 let retryTimer = null;
 
+// sidecar 冷启动期间读不到配置，prefs 此时还是默认值（autoStart=true），
+// 不能拿默认值判断是否自动开始，否则用户关掉开关也会被忽略。
+let autoStartDecided = false;
+let autoStartBusy = false;
+let autoStartTimer = null;
+
 function stopRetry() {
   if (retryTimer !== null) {
     clearInterval(retryTimer);
@@ -260,6 +266,11 @@ function startRetry() {
 }
 
 function setMon(on, { auto = false } = {}) {
+  // 用户亲手点过开关后，就不再让「启动时自动开始」覆盖他的选择
+  if (!auto) {
+    autoStartDecided = true;
+    stopAutoStartProbe();
+  }
   userStarted.value = on;
   // 只有「用户亲手点开」才需要在游戏没开时弹提示；自动开始属于后台待命
   ui.manualStart = on && !auto;
@@ -278,15 +289,41 @@ function setMon(on, { auto = false } = {}) {
   }
 }
 
-onMounted(async () => {
-  // 配置读回后再决定是否自动开始（读回前 prefs 是默认值，不可信）
-  await loadPrefs();
-  if (!prefs.autoStart || userStarted.value) return;
-  // 自动开始：即使游戏还没进赛道也先置位，由监督循环在就绪后自动接入
-  setMon(true, { auto: true });
+async function decideAutoStart() {
+  if (autoStartDecided || autoStartBusy) return;
+  autoStartBusy = true;
+  try {
+    const values = await loadPrefs();
+    // 等配置期间用户可能已经手动操作过，或者后端仍未就绪
+    if (autoStartDecided || !values) return;
+    autoStartDecided = true;
+    // 自动开始：即使游戏还没进赛道也先置位，由监督循环在就绪后自动接入
+    if (prefs.autoStart && !userStarted.value) setMon(true, { auto: true });
+  } finally {
+    autoStartBusy = false;
+  }
+}
+
+function stopAutoStartProbe() {
+  if (autoStartTimer !== null) {
+    clearInterval(autoStartTimer);
+    autoStartTimer = null;
+  }
+}
+
+onMounted(() => {
+  // 配置读回后再决定是否自动开始；sidecar 冷启动期间每秒重试
+  decideAutoStart();
+  autoStartTimer = setInterval(() => {
+    if (autoStartDecided) stopAutoStartProbe();
+    else decideAutoStart();
+  }, 1000);
 });
 
-onBeforeUnmount(stopRetry);
+onBeforeUnmount(() => {
+  stopRetry();
+  stopAutoStartProbe();
+});
 
 // 后端刚探到在线的一瞬间就接入，不必等监督循环下一个 3 秒节拍
 watch(() => ui.backendOnline, (online) => {

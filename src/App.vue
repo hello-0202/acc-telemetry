@@ -167,7 +167,11 @@ async function handleCheckUpdate(manual = false) {
     const update = await check({ timeout: 5000 });
     updateChecked.value = true;
     closeUpdate();
-    if (update) updateInfo.value = update;
+    if (update) {
+      updateInfo.value = update;
+      // 启动时的静默检查也走右下角弹窗，取代原来状态栏里的一行提示
+      updateDialogOpen.value = true;
+    }
   } catch (e) {
     // GitHub 在国内访问不稳，静默检查失败只记日志，不打扰用户
     console.error('update check failed:', e);
@@ -300,13 +304,13 @@ onBeforeUnmount(() => {
             :auto-check="autoCheckUpdate"
             @check-update="handleCheckUpdate(true)"
             @toggle-auto-check="toggleAutoCheckUpdate"
+            @start-update="updateDialogOpen = true"
           />
         </main>
 
         <!-- statusbar -->
         <footer class="statusbar">
           <span class="r">
-            <span v-if="updateInfo" class="update-hint" role="button" @click="switchView('settings')">✨ 发现新版本 v{{ updateInfo.version }} (去设置查看)</span>
             <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 切换页面</span>
             <span><kbd>T</kbd> 主题</span>
           </span>

@@ -34,7 +34,12 @@ export function loadPrefs() {
         applyPrefs(values);
         return values;
       })
-      .catch(() => null);
+      .catch(() => {
+        // 后端（sidecar）冷启动期间读不到配置。失败不能缓存，
+        // 否则后续调用会一直拿到 null，前端就按默认值跑了。
+        loading = null;
+        return null;
+      });
   }
   return loading;
 }
