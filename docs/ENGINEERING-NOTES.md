@@ -116,6 +116,7 @@
 - 尺寸读数：`innerSize()` 是**物理像素**，显示 design 前必须除以 `scaleFactor`；`set_overlay_size` 用 `LogicalSize`。
   工具条显示 `design = 窗口逻辑尺寸 - 14`（6×2 内边距 + 1×2 边框）。失焦回锁要延迟复核（拖动结束那一下也会掉焦点）。
 - 前提：ACC 必须窗口化/无边框（用户已确认「全屏已禁用」）。独占全屏下普通置顶窗口盖不住，需 D3D Present hook。
+- **位置 / 尺寸持久化（2026-10-28）**：`place_overlay()` 首次显示先读 `%LOCALAPPDATA%\acc-telemetry\window-state.json` 的 `overlay` 几何恢复；`OverlayView` 在 `onMoved`/`onResized` 后 400ms 调 `save_overlay_rect` 落盘（物理像素，避开 DPI 换算坑）。注意：主题若声明 `design`，加载时会按 design 重设尺寸、覆盖保存值；无 design 的主题（可拖拽缩放）保存值长期有效。
 
 ## 10. 主题宿主与安全边界
 
@@ -124,8 +125,23 @@
   capability 里应用级权限**不带命名空间**（`"allow-stop-sidecar"`），生效与否看 `gen/schemas/acl-manifests.json` 的 `__app-acl__`。
   按窗口授权：main = `stop_sidecar` + 全部悬浮窗命令；overlay = 仅 `set_overlay_size` + `set_overlay_locked`。
   `stop_sidecar(app, window: WebviewWindow)` 非 main 直接 `Err`（双保险）。
-- 设置页预览 iframe 在**主窗口**内 → 继承 main 的 ACL。做「主题市场」前必须先换独立 `WebviewWindow`
-  （capability 只留 `core:event:allow-listen`，任何 app 命令都不列）。
+- **多悬浮窗（2026-10-28）**：最多 3 个，窗口 label 固定为 `overlay-1/2/3`（capability 用 glob `overlay-*`）。
+  1 号在 `tauri.conf.json` 里静态创建，2/3 由 `set_overlay_slots` 按需创建、停用时 `destroy()`。
+  **创建窗口只能在非主线程**：同步命令和事件回调都在主线程，`WebviewWindowBuilder::build()` 在 Windows 上会死锁
+  （wry#583），所以显隐/编辑快捷键的回调里都 `std::thread::spawn` 后再建；`show/hide/toggle_overlay` 已改成 async 命令。
+  状态：`OVERLAY_ENABLED: Option<Vec<u8>>`（None = 还没被前端推过 → 默认只有 1 号）、
+  `OVERLAY_PADDED/PAD_OFFSET/PLACED` 按槽位索引；几何存 `window-state.json` 的 `overlays["1"]...`（旧的 `overlay` 键兼容 1 号）。
+  主题按槽位存 localStorage `acc.overlayTheme.<n>`（1 号兼容旧键 `acc.overlayTheme`），换主题事件带 `{slot}`。
+  **注意**：`readThemeChoice()` 以 localStorage 为准并同步本窗口的 reactive 副本 —— 各悬浮窗是独立 webview，
+  只读内存副本会读到旧主题。每个显示的悬浮窗会各自连一条 WS（后端已支持多客户端）。
+- **主题模板包（2026-10-28）**：`public/templates/theme-template.zip`（悬浮窗）与
+  `theme-template-monitor.zip`（主面板）是「导入主题包」能直接吃的安装包；Rust 用
+  `include_bytes!` 编译进二进制，设置页「导出模板」原样写盘。源文件在 `docs/theme-template*/`，
+  **改完模板目录要重新打这两个 zip**，否则导出的还是旧内容。
+- **主题预览隔离（2026-10-28 已完成）**：设置页放大预览已改为独立 `WebviewWindow`（`label: theme-preview`，
+  `capabilities/preview.json` 只列 `core:event:allow-listen`/`unlisten`，**无任何 app 命令**）。
+  第三方主题在此加载也调不到 `stop_sidecar`/`delete_user_theme`。由 `open_theme_preview` 命令（只授 main）打开；
+  卡片缩略图改静态占位，不再在主窗口内执行主题 JS。做「主题市场」的前置条件已具备。
 - **主题地址**：内置主题编译进二进制 → `/themes/<id>/`；用户主题走自定义协议 `theme`，Windows 实际是
   `http://theme.localhost/<id>/`（**手拼 `theme://` 必失败**），统一走 `theme-url.js::themeBaseUrl()`。
 - `serve_user_theme()`：id 只允许 `[A-Za-z0-9_-]`；拒绝 `..` / `.` / `\` / NUL；`canonicalize()` 后比前缀；
@@ -140,7 +156,10 @@
 - 槽位与选择：`theme-choice.js` 按槽位存 localStorage（`acc.overlayTheme` / `acc.monitorTheme`）并导出响应式
   `themeChoice`；**同窗口靠它同步，跨窗口才用 `overlay-theme-changed` 事件**。
 - `ThemeHost.fit`：`contain`（固定 design + transform scale）/ `fluid`（铺满、主题自己响应式；
-  `acc:init` 多带 `fit`/`box`/`theme`，切黑白补发 `acc:ui`）。主题 4s 没 ready → emit `fail` → 回退内置面板。
+  `acc:init` 多带 `fit`/`box`/`theme`/`background`，切黑白或切悬浮窗背景补发 `acc:ui`）。主题 4s 没 ready → emit `fail` → 回退内置面板。
+- **悬浮窗背景（2026-10-28）**：设置页每个悬浮窗槽位可选「透明 / 不透明」（localStorage `acc.overlayBackground.<slot>`）。
+  窗口本身一直是 `transparent(true)`，不透明模式由 `OverlayView` 给根节点铺 `#0b0e13` 实心底板实现；
+  主题通过 `acc:init.background` / `acc:ui.background` 得知，用 `html[data-bg="opaque"]` 把自己的半透明卡片也变实心。
 - 缺口：主题拿不到赛道几何（`getTrackGeometry()` 不在 state 里），带地图的纯主题（如副屏）需单独推 `acc:map`。
 
 ## 11. 调试技巧

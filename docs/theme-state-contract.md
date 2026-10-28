@@ -225,7 +225,10 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 1. **只增不删**。字段废弃时保留键、值置 `null`，并在本文标注 `deprecated`。
 2. **只有破坏性变更才升 `v`**（改单位、改语义、改嵌套层级）。加字段不升版。
 3. 主题必须**忽略不认识的字段**，不能读不到就崩。
-4. `status != streaming` 时，实时字段**保留最后一个有效值**，由主题决定显示占位还是灰掉。
+4. **只有 `status == streaming` 时才给出实时值**；`idle`（没在监测 / 游戏没启动 / 已停止）与 `waiting`
+   （暂停 / 回放 / 退到菜单 / 游戏进程在但不在赛道）时实时字段一律置空，由主题显示占位或灰掉——
+   不能把上一场冻结的速度、圈速、胎温当成当前值继续展示。短暂掉帧（< 1.5s）仍算 `streaming`，不会闪零。
+   非实时字段（赛道名、车名、`lap.pbMs` 等会话元信息）在会话有效期内保留。
 
 ## 八、暂不暴露（v1.1 候选）
 
@@ -310,8 +313,8 @@ iframe 直接 `width:100%; height:100%`、不做 transform，**主题的视口�
 | 方向 | 消息 | 说明 |
 |---|---|---|
 | 主题 → 宿主 | `{ type: 'acc:ready' }` | 主题脚本就绪，可以喂数据。**每次收到 `acc:init` 都要回一次**（幂等，宿主会忽略重复） |
-| 宿主 → 主题 | `{ type: 'acc:init', v, mode, design, fit, scale, box, theme }` | 握手 + 告知当前 mode / 设计尺寸 / 缩放方式 / 容器初始尺寸（`box`）/ 宿主黑白色（`theme`） |
-| 宿主 → 主题 | `{ type: 'acc:ui', theme }` | 用户切黑白主题时补发，不用重新 init（重新 init 会再触发一次 ready） |
+| 宿主 → 主题 | `{ type: 'acc:init', v, mode, design, fit, scale, box, theme, background }` | 握手 + 告知当前 mode / 设计尺寸 / 缩放方式 / 容器初始尺寸（`box`）/ 宿主黑白色（`theme`）/ 悬浮窗背景（`background`：`transparent` \| `opaque`） |
+| 宿主 → 主题 | `{ type: 'acc:ui', theme, background }` | 用户切黑白主题 / 悬浮窗透明-不透明时补发，不用重新 init（重新 init 会再触发一次 ready） |
 | 宿主 → 主题 | `{ type: 'acc:state', payload }` | 就是本文第三节的 state，录制中 30Hz、待机 2Hz |
 
 握手顺序上有两个坑，两边都做了兜底：

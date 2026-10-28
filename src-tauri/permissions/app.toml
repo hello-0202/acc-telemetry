@@ -50,3 +50,33 @@ commands.allow = ["open_themes_dir"]
 identifier = "allow-delete-user-theme"
 description = """把用户主题目录移入系统回收站。属于破坏性操作，只给主窗口。"""
 commands.allow = ["delete_user_theme"]
+
+[[permission]]
+identifier = "allow-save-overlay-rect"
+description = """悬浮窗拖动 / 缩放后把几何写回磁盘。只有悬浮窗自己调。"""
+commands.allow = ["save_overlay_rect"]
+
+[[permission]]
+identifier = "allow-overlay-any-focused"
+description = """查询是否有任意悬浮窗处于聚焦态（多悬浮窗时判断「该不该自动回锁」）。"""
+commands.allow = ["overlay_any_focused"]
+
+[[permission]]
+identifier = "allow-set-overlay-slots"
+description = """设置启用的悬浮窗槽位（1~3）。会创建 / 销毁悬浮窗，只给主窗口。"""
+commands.allow = ["set_overlay_slots"]
+
+[[permission]]
+identifier = "allow-open-theme-preview"
+description = """打开隔离的主题预览窗口（无 app 命令权限）。只有主窗口（设置页）调。"""
+commands.allow = ["open_theme_preview"]
+
+[[permission]]
+identifier = "allow-import-theme-zip"
+description = """把用户选择的 .zip 主题包解压进用户主题目录。会写磁盘，只给主窗口。"""
+commands.allow = ["import_theme_zip"]
+
+[[permission]]
+identifier = "allow-export-theme-template"
+description = """把内置的主题模板安装包另存到用户选择的位置。只给主窗口。"""
+commands.allow = ["export_theme_template"]

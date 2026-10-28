@@ -2,7 +2,8 @@
  *
  * 与宿主的约定（postMessage，见 docs/theme-state-contract.md）：
  *   iframe → 宿主：{ type: 'acc:ready' }                  主题加载完成，可以开始喂数据
- *   宿主 → iframe：{ type: 'acc:init',  v, mode, design, scale }
+ *   宿主 → iframe：{ type: 'acc:init',  v, mode, design, scale, background }
+ *   宿主 → iframe：{ type: 'acc:ui',    theme?, background? }  切黑白 / 透明背景时补发
  *   宿主 → iframe：{ type: 'acc:state', payload }         每秒 2~30 次
  *
  * 独立打开时（双击 index.html）没有宿主，2 秒后自动跑演示数据，
@@ -30,6 +31,14 @@
     // 幂等：宿主每次 init 都回一次 ready（宿主自己会忽略重复），
     // 这样即使首次 ready 比宿主的监听先发出、丢了，也能补上。
     try { window.parent.postMessage({ type: 'acc:ready' }, '*'); } catch (e) { /* ignore */ }
+  }
+
+  // 宿主告知的界面状态：背景 transparent | opaque。
+  // 写到 html[data-bg]，CSS 据此决定底板是半透明还是实心。
+  function applyUi(msg) {
+    if (msg.background === 'transparent' || msg.background === 'opaque') {
+      document.documentElement.dataset.bg = msg.background;
+    }
   }
 
   /* ------------------------------- 格式化 ------------------------------- */
@@ -65,17 +74,20 @@
   function render(st) {
     card.dataset.status = st.status || 'idle';
 
-    var car = st.car || {};
-    var lap = st.lap || {};
-    var track = st.track || {};
+    // 契约：非 streaming 时后端仍保留上一场的最后值。主题要自己显示占位，
+    // 否则没开游戏 / 已停止监测时，旧的圈速和速度看起来像还在实时采集。
+    var live = st.status === 'streaming';
+    var car = live ? (st.car || {}) : null;
+    var lap = live ? (st.lap || {}) : null;
+    var track = live ? (st.track || {}) : null;
 
-    $('speed').textContent = Math.round(car.speed || 0);
-    $('gear').textContent = gearText(car.gear);
-    $('rpm').textContent = car.rpm != null ? Math.round(car.rpm) : 0;
-    $('lap').textContent = fmtLap(lap.timeMs);
+    $('speed').textContent = car ? Math.round(car.speed || 0) : '--';
+    $('gear').textContent = car ? gearText(car.gear) : '–';
+    $('rpm').textContent = car && car.rpm != null ? Math.round(car.rpm) : '--';
+    $('lap').textContent = lap ? fmtLap(lap.timeMs) : '--:--.---';
 
     var delta = $('delta');
-    var d = lap.deltaMs;
+    var d = lap ? lap.deltaMs : null;
     if (d == null || !isFinite(d)) {
       delta.textContent = '--.---';
       delta.className = 'v mono delta none';
@@ -84,7 +96,7 @@
       delta.className = 'v mono delta ' + (d < 0 ? 'neg' : 'pos');
     }
 
-    $('track').textContent = track.title || track.name || '—';
+    $('track').textContent = (track && (track.title || track.name)) || '—';
   }
 
   /* ------------------------------- 数据来源 ------------------------------- */
@@ -95,7 +107,14 @@
 
     // 宿主主动握手：说明父页面在线。回一条 ready，避免「脚本先跑完、宿主后挂监听」丢消息
     if (msg.type === 'acc:init') {
+      applyUi(msg);
       sayReady();
+      return;
+    }
+
+    // 宿主切换黑/白主题、悬浮窗透明/不透明时补发的轻量通知
+    if (msg.type === 'acc:ui') {
+      applyUi(msg);
       return;
     }
 
@@ -107,12 +126,9 @@
   });
 
   if (framed) {
-    // 告诉宿主「我准备好了」；宿主收到后才开始推 state，否则首帧会丢
+    // 告诉宿主「我准备好了」；宿主收到后才开始推 state，否则首帧会丢。
+    // 有宿主但后端还没起来时保持占位画面 —— 不能跑演示数据，否则没开游戏也会看起来像在实时采集。
     sayReady();
-    // 有宿主但迟迟没有数据（后端没起来 / 不是通过宿主打开）：兜底演示，别显示一片空
-    demoTimer = setTimeout(function () {
-      if (!gotState) startDemo();
-    }, 2000);
   } else {
     startDemo();
   }

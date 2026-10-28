@@ -1,0 +1,10 @@
+{
+  "id": "pedals-wheel",
+  "name": "pedals-wheel",
+  "version": "1.0.0",
+  "author": "acc-telemetry",
+  "desc": "油门/刹车竖直踏板条（从底部填充）+ 内圈圆环与外圈 270° 转向进度弧，透明背景无底板",
+  "design": { "w": 300, "h": 190 },
+  "fit": "contain",
+  "modes": ["overlay"]
+}

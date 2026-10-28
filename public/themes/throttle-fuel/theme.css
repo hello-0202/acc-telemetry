@@ -1,0 +1,112 @@
+/* 油量策略 —— 设计基准 260×140，全部 px 写死，缩放交给宿主（contain）。
+ *
+ * 视觉取向：左侧标签名 + 右侧数值的两列数据表。
+ * 纯色、直角、无发光、无边框、背景完全透明，直接浮在游戏画面上。
+ */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  /* 与软件外壳同一套字体栈（src/style.css 的 --font-display），数字单独用 --font-mono */
+  font-family: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Microsoft YaHei', sans-serif;
+  color: #e9eef5;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+.hud {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  /* 左右留边：标签贴左、数值贴右，不顶到窗口边缘 */
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+}
+
+/* 三列：标签（吃掉剩余空间，靠左） / 数值（右对齐） / 单位（独立一列，右对齐）。
+ * 数值列宽 = 该列最宽内容，配 text-align:right 后所有数字右边缘严格成一条线。 */
+.rows {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  width: 100%;
+  align-items: baseline;
+  row-gap: 9px;
+}
+
+.k {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.82);
+  white-space: nowrap;
+  /* 1px 硬投影：透明背景下亮画面上能读，不是光晕 */
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+}
+
+/* 分隔一下「建议加注量」：它是结论，不是原始读数 */
+.k.add {
+  color: #ffffff;
+}
+
+.v {
+  text-align: right;
+  white-space: nowrap;
+  padding-right: 6px;
+}
+
+.v b {
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #ffffff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+}
+
+.u {
+  min-width: 26px;
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  /* 单位也右对齐：数字 + 单位的整体右边缘才是一条直线 */
+  text-align: right;
+  color: rgba(255, 255, 255, 0.72);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+}
+
+/* 可跑圈数告警：<2 圈红、<5 圈琥珀，其余正常 */
+#laps-row[data-level='low'] b {
+  color: #ff2136;
+}
+
+#laps-row[data-level='warn'] b {
+  color: #ffab00;
+}
+
+/* 建议加油量：需要加 = 绿；油够 = 灰 */
+#add-row[data-level='need'] b {
+  color: #00dd5c;
+}
+
+#add-row[data-level='ok'] b {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+/* 未开始 / 等待：整体压暗，别把上次的值当实时值 */
+.hud[data-status='idle'],
+.hud[data-status='waiting'],
+.hud[data-status='error'] {
+  opacity: 0.5;
+}

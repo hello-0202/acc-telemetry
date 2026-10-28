@@ -23,6 +23,11 @@ const props = defineProps({
   /** 覆盖 theme.json 的设计尺寸（调试用） */
   design: { type: Object, default: null },
   /**
+   * 悬浮窗背景：transparent（默认，能看见游戏画面）/ opaque（宿主铺实心底板）。
+   * 主题可以据此把自己的底板也画成实心（CSS 里查 html[data-bg]）。
+   */
+  background: { type: String, default: 'transparent' },
+  /**
    * 缩放方式，默认取 theme.json 的 fit：
    *   contain —— 按设计尺寸等比缩放塞进容器（悬浮窗：主题 1:1 大小恒定）
    *   fluid   —— iframe 铺满容器、不缩放，主题自己用 %/flex 排版（主面板/看板）
@@ -143,6 +148,8 @@ function sendInit() {
     box: { ...boxSize.value },
     // 宿主当前是黑底还是白底：主题自己决定要不要跟着换配色（CSS 里查 html[data-theme]）
     theme: themeName.value,
+    // 悬浮窗背景：transparent | opaque，主题据此决定底板是否画实心
+    background: props.background,
   });
 }
 
@@ -208,9 +215,13 @@ async function hotReload() {
 
 watch(() => props.state, (s) => pushState(s));
 
-// 宿主切黑白主题：不发 init（那会触发一次 ready，主题可能重绘），只补一条轻量通知
+// 宿主切黑白主题 / 悬浮窗背景：不发 init（那会触发一次 ready，主题可能重绘），
+// 只补一条轻量通知
 watch(themeName, (t) => {
   if (ready.value) post({ type: 'acc:ui', theme: t });
+});
+watch(() => props.background, (b) => {
+  if (ready.value) post({ type: 'acc:ui', background: b });
 });
 
 // 换主题（或换来源）时 design 可能完全不同：重读 theme.json 再重新量一次容器，

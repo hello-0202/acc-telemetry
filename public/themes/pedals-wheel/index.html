@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>踏板 + 方向盘</title>
+    <link rel="stylesheet" href="./theme.css" />
+  </head>
+  <body>
+    <!-- 设计基准 300×190（见 theme.json）。宿主按 contain 等比缩放，直接按像素写。
+         视觉：左右两根竖直矩形踏板条（从底部往上填充）+ 中间转向圆环，背景透明无底板，
+         纯色填充、直角边界、无发光。 -->
+    <div class="hud" id="hud" data-status="idle">
+      <!-- 左：刹车 -->
+      <div class="pedal brake">
+        <span class="p-lab">BRAKE</span>
+        <div class="p-bar">
+          <div class="p-fill" id="brake-fill"></div>
+        </div>
+        <span class="p-val" id="brake-val">--</span>
+      </div>
+
+      <!-- 中：内圈圆环 + 外圈转向进度弧（无方向盘图形） -->
+      <div class="steer">
+        <svg class="ring" viewBox="0 0 168 168" aria-hidden="true">
+          <!-- 内圈：深色底环 + 白色细环。两层是为了浅色/深色游戏画面都能看见（单层白色在浅底上会消失） -->
+          <circle class="st-core-bed" cx="84" cy="84" r="47" />
+          <circle class="st-core" cx="84" cy="84" r="47" />
+          <!-- 进度槽：270°，缺口朝下，深色（与踏板槽同色），标出左右满舵可达范围 -->
+          <circle class="st-track" cx="84" cy="84" r="64" pathLength="100" transform="rotate(135 84 84)" />
+          <!-- 右转弧：从正上方顺时针生长；左转弧：从正上方逆时针生长（rotate 由 JS 跟随弧长更新） -->
+          <circle class="st-right" id="st-right" cx="84" cy="84" r="64" pathLength="100" transform="rotate(-90 84 84)" />
+          <circle class="st-left" id="st-left" cx="84" cy="84" r="64" pathLength="100" transform="rotate(-90 84 84)" />
+        </svg>
+        <div class="st-read">
+          <b id="steer-deg">0°</b>
+        </div>
+      </div>
+
+      <!-- 右：油门 -->
+      <div class="pedal thr">
+        <span class="p-lab">THROTTLE</span>
+        <div class="p-bar">
+          <div class="p-fill" id="thr-fill"></div>
+        </div>
+        <span class="p-val" id="thr-val">--</span>
+      </div>
+    </div>
+
+    <script src="./theme.js"></script>
+  </body>
+</html>

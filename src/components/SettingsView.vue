@@ -9,6 +9,9 @@ import { telemetry } from '../telemetry/useTelemetry.js';
 import { applyPrefs, prefs } from '../telemetry/prefs.js';
 import HelpTip from './HelpTip.vue';
 import ThemePicker from './ThemePicker.vue';
+import { OVERLAY_SLOT_MAX } from '../telemetry/theme-choice.js';
+import { isOverlaySlotEnabled, setOverlaySlotEnabled } from '../telemetry/overlay-slots.js';
+import { overlayBackground, setOverlayBackground } from '../telemetry/overlay-background.js';
 
 const props = defineProps({
   visible: { type: Boolean, default: true },
@@ -129,6 +132,11 @@ function toggleResident() {
   patch({ backgroundResident: !prefs.backgroundResident });
 }
 
+/* 悬浮窗槽位开关：localStorage + Rust 窗口一起更新（Rust 负责建 / 销毁窗口） */
+function toggleOverlaySlot(n) {
+  setOverlaySlotEnabled(n, !isOverlaySlotEnabled(n));
+}
+
 function toggleAuto() {
   patch({ autoStart: !swAuto.value });
 }
@@ -234,7 +242,7 @@ watch(() => telemetry.historyRevision, refresh);
 <template>
   <section class="view" id="view-settings">
     <div class="set-group">
-      <span class="glbl">外观</span>
+      <span class="glbl">外观与主题</span>
       <div class="set-row"><span>主题</span>
         <div class="seg">
           <button :class="{ active: themeName === 'dark' }" @click="setTheme('dark')">黑</button>
@@ -255,11 +263,51 @@ watch(() => telemetry.historyRevision, refresh);
           ></button>
         </div>
       </div>
+      <!-- 主面板主题：收成一行「当前主题 + 更改」，点开弹窗再选 -->
+      <ThemePicker mode="monitor" :active="visible" />
+      <!-- 悬浮窗：最多 3 个，每个槽位一个开关 + 一行主题 -->
+      <template v-for="n in OVERLAY_SLOT_MAX" :key="'overlay-' + n">
+        <div class="set-row">
+          <span class="set-label">悬浮窗 {{ n }}
+            <HelpTip
+              v-if="n === 1"
+              label="悬浮窗说明"
+              text="最多同时开 3 个悬浮窗：每个槽位独立主题、独立摆放位置，统一显隐（Ctrl+Shift+O）、统一调整（Ctrl+Shift+L）。"
+            />
+          </span>
+          <button
+            class="switch"
+            :class="{ on: isOverlaySlotEnabled(n) }"
+            :aria-label="`启用悬浮窗 ${n}`"
+            @click="toggleOverlaySlot(n)"
+          ></button>
+        </div>
+        <!-- 槽位下的子设置：缩进 + 左侧细线，一眼看出属于上面那个悬浮窗 -->
+        <div v-if="isOverlaySlotEnabled(n)" class="set-sub">
+          <ThemePicker mode="overlay" :slot="n" :active="visible" row-label="主题" />
+          <div class="set-row">
+            <span class="set-label">背景
+              <HelpTip
+                v-if="n === 1"
+                label="悬浮窗背景说明"
+                text="透明：保留窗口透明，主题留白处能看见游戏画面（默认）。不透明：整块铺深色底板，亮色赛道/白天场景下文字更清楚。"
+              />
+            </span>
+            <div class="seg">
+              <button
+                :class="{ active: overlayBackground[n] === 'transparent' }"
+                @click="setOverlayBackground(n, 'transparent')"
+              >透明</button>
+              <button
+                :class="{ active: overlayBackground[n] === 'opaque' }"
+                @click="setOverlayBackground(n, 'opaque')"
+              >不透明</button>
+            </div>
+          </div>
+        </div>
+      </template>
       <div class="set-row"><span>界面语言</span><span class="v">简体中文</span></div>
     </div>
-
-    <ThemePicker mode="overlay" :active="visible" />
-    <ThemePicker mode="monitor" :active="visible" />
 
     <div class="set-group">
       <span class="glbl">采集与性能</span>

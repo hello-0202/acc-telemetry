@@ -1,0 +1,207 @@
+/* 主面板主题模板（fit: fluid）。
+ *
+ * fluid 模式下 iframe 铺满数据区、不做整体缩放，所以这里用「根字号跟随视口」自适应：
+ *   html { font-size: clamp(...) }  →  其余尺寸全部写 rem
+ * 窗口拉大拉小、进全屏沉浸都是等比放大，不会「字很小、卡片很空」。
+ * 想要固定像素的主题请把 theme.json 的 fit 改成 contain（悬浮窗写法）。
+ */
+
+:root {
+  --bg: #0d1116;
+  --panel: #141a21;
+  --line: #222b35;
+  --text: #e9eef4;
+  --dim: #8b97a6;
+  --faint: #5d6874;
+  --signal: #ff5a1f;
+  --good: #35d07f;
+  --warn: #f5c542;
+  --hot: #ff4d4d;
+  --cold: #4aa3ff;
+  /* 字体与软件外壳保持同一套栈（src/style.css 的 --font-mono / --font-display） */
+  --mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace;
+  --sans: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Microsoft YaHei', sans-serif;
+}
+
+html[data-theme="light"] {
+  --bg: #f4f6f9;
+  --panel: #ffffff;
+  --line: #dde3ea;
+  --text: #12181f;
+  --dim: #5b6673;
+  --faint: #8d98a5;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+html {
+  /* 视口大小的函数：小窗口先缩字，避免卡片被挤爆。 */
+  font-size: clamp(10px, calc(1.5vh + 0.4vw), 20px);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.wrap {
+  display: grid;
+  grid-template-columns: 1.62fr 1fr;
+  gap: 0.7rem;
+  height: 100%;
+  padding: 0.15rem;
+}
+
+.col-left, .col-right {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-width: 0;
+  min-height: 0;
+}
+
+.panel {
+  background: var(--panel);
+  border: 0.0625rem solid var(--line);
+  border-radius: 0.5rem;
+}
+
+/* ---------------------------------- hero ---------------------------------- */
+.hero {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  grid-template-areas:
+    "spd gear delta"
+    "rpm rpm rpm"
+    "laps laps laps";
+  align-items: center;
+  gap: 0.5rem 1.1rem;
+  padding: 0.85rem 1rem;
+  background: var(--panel);
+  border: 0.0625rem solid var(--line);
+  border-radius: 0.5rem;
+}
+.hero i { font-style: normal; }
+
+.spd { grid-area: spd; display: flex; align-items: baseline; gap: 0.5rem; }
+.spd b {
+  font-family: var(--mono);
+  font-size: clamp(2.6rem, 8.4vh, 5.6rem);
+  font-weight: 700;
+  line-height: 0.92;
+  letter-spacing: -0.03em;
+}
+.spd i { font-size: 0.85rem; letter-spacing: 0.2em; color: var(--dim); }
+
+.gear { grid-area: gear; text-align: center; padding-left: 1.1rem; border-left: 0.0625rem solid var(--line); }
+.gear b { display: block; font-family: var(--mono); font-size: 2.6rem; line-height: 1; color: var(--signal); }
+.gear i { display: block; margin-top: 0.15rem; font-size: 0.72rem; letter-spacing: 0.24em; color: var(--faint); }
+
+.delta { grid-area: delta; text-align: right; }
+.delta i { display: block; font-size: 0.72rem; letter-spacing: 0.14em; color: var(--faint); }
+.delta b { font-size: 1.9rem; line-height: 1.1; }
+.delta b.neg { color: var(--good); }
+.delta b.pos { color: var(--hot); }
+.delta b.none { color: var(--faint); }
+
+.rpm { grid-area: rpm; }
+.rpm-bar { display: flex; gap: 0.16rem; height: 0.8rem; }
+.rpm-bar span { flex: 1; border-radius: 0.0625rem; background: var(--line); transition: background 60ms linear; }
+.rpm-bar span.on { background: var(--dim); }
+.rpm-bar span.on.s1 { background: var(--good); }
+.rpm-bar span.on.s2 { background: var(--warn); }
+.rpm-bar span.on.s3 { background: var(--hot); }
+.rpm-meta {
+  display: flex; justify-content: space-between; margin-top: 0.3rem;
+  font-family: var(--mono); font-size: 0.72rem; color: var(--faint);
+}
+
+.laps {
+  grid-area: laps; display: flex; gap: 1.6rem;
+  padding-top: 0.55rem; border-top: 0.0625rem solid var(--line);
+}
+.laps div { display: flex; flex-direction: column; gap: 0.15rem; }
+.laps i { font-size: 0.68rem; letter-spacing: 0.14em; color: var(--faint); }
+.laps b { font-size: 1.15rem; font-weight: 600; }
+.laps div:last-child b { color: var(--signal); }
+
+/* -------------------------------- pedals -------------------------------- */
+.pedals {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: repeat(3, 1fr);
+  gap: 0.6rem;
+  padding: 0.9rem 1rem;
+}
+.prow { display: grid; grid-template-columns: 4rem 1fr 4rem; align-items: center; gap: 0.8rem; }
+.prow i { font-style: normal; font-size: 0.86rem; letter-spacing: 0.08em; color: var(--dim); }
+.prow b { font-family: var(--mono); font-size: 1.05rem; font-weight: 600; text-align: right; }
+
+.track { position: relative; height: 1.1rem; border-radius: 0.55rem; background: var(--line); overflow: hidden; }
+.track .fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 0.55rem; transition: width 70ms linear; }
+.fill.thr { background: var(--good); }
+.fill.brk { background: var(--hot); }
+.track.steer { overflow: visible; }
+.track.steer s { position: absolute; left: 50%; top: -0.12rem; bottom: -0.12rem; width: 0.0625rem; background: var(--faint); }
+.fill.str { background: var(--cold); }
+
+/* --------------------------------- tires --------------------------------- */
+.tires {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 0.55rem;
+  padding: 0.6rem;
+}
+.tire {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas: "c p" "t t" "b b";
+  align-items: center;
+  gap: 0.2rem 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border: 0.0625rem solid var(--line);
+  border-radius: 0.4rem;
+  min-height: 0;
+}
+.tire .c { grid-area: c; font-family: var(--mono); font-size: 0.82rem; letter-spacing: 0.1em; color: var(--dim); }
+.tire .p { grid-area: p; font-family: var(--mono); font-size: 0.82rem; color: var(--dim); }
+.tire .t {
+  grid-area: t; align-self: center;
+  font-family: var(--mono); font-size: 2.2rem; font-weight: 600; line-height: 1;
+}
+.tire.cold .t { color: var(--cold); }
+.tire.ok .t { color: var(--good); }
+.tire.hot .t { color: var(--hot); }
+.tire .b { grid-area: b; display: flex; align-items: center; gap: 0.45rem; }
+.tire .b em { font-style: normal; font-family: var(--mono); font-size: 0.72rem; color: var(--faint); min-width: 2.4rem; text-align: right; }
+.tire .b .bar { flex: 1; height: 0.28rem; border-radius: 0.14rem; background: var(--line); overflow: hidden; }
+.tire .b i { display: block; height: 100%; width: 0; background: var(--dim); transition: width 120ms linear; }
+.tire .b i.cold { background: var(--cold); }
+.tire .b i.hot { background: var(--hot); }
+
+/* ---------------------------------- meta ---------------------------------- */
+.meta { flex: 0 0 auto; display: flex; flex-direction: column; gap: 0.35rem; padding: 0.8rem 0.9rem; }
+.meta div { display: flex; justify-content: space-between; gap: 0.6rem; font-size: 0.86rem; line-height: 1.5; }
+.meta i { font-style: normal; color: var(--faint); letter-spacing: 0.08em; }
+.meta b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta .state { font-family: var(--mono); }
+.meta .state.streaming { color: var(--good); }
+.meta .state.waiting { color: var(--warn); }
+.meta .state.error { color: var(--hot); }

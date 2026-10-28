@@ -1,0 +1,10 @@
+{
+  "id": "throttle-fuel",
+  "name": "throttle-fuel",
+  "version": "1.0.0",
+  "author": "acc-telemetry",
+  "desc": "油量策略：剩余油量 / 可跑圈数 / 每圈油耗 / 建议加油量（左标签右数值，透明背景）",
+  "design": { "w": 260, "h": 140 },
+  "fit": "contain",
+  "modes": ["overlay"]
+}

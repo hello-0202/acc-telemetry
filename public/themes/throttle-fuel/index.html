@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>油量策略</title>
+    <link rel="stylesheet" href="./theme.css" />
+  </head>
+  <body>
+    <!-- 设计基准 260×140（见 theme.json）。宿主按 contain 等比缩放，直接按像素写。
+         三列：标签名贴左 / 数值贴右 / 单位单独一列（两者右边缘对齐成一条线）。
+         纯色、直角、无发光、背景全透明。 -->
+    <div class="hud" id="hud" data-status="idle">
+      <div class="rows">
+        <span class="k">FUEL</span>
+        <span class="v"><b id="fuel-val">--</b></span>
+        <span class="u">L</span>
+
+        <span class="k">LAPS LEFT</span>
+        <span class="v" id="laps-row"><b id="laps-val">--</b></span>
+        <span class="u">laps</span>
+
+        <span class="k">PER LAP</span>
+        <span class="v"><b id="per-val">--</b></span>
+        <span class="u">L</span>
+
+        <span class="k add">SUGGESTED ADD</span>
+        <span class="v" id="add-row"><b id="add-val">--</b></span>
+        <span class="u">L</span>
+      </div>
+    </div>
+
+    <script src="./theme.js"></script>
+  </body>
+</html>

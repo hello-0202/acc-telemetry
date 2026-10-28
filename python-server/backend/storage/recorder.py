@@ -39,6 +39,34 @@ logger = logging.getLogger(__name__)
 PREBUF_MAX_FRAMES = 3600
 
 
+def _log_lap_samples(result: LapResult) -> None:
+    """记录每圈的采样质量。
+
+    走线是拿这一圈的采样点画的：帧流中途断掉时圈速照样完整，但走线会缺一段，
+    界面上看不出原因。这里把「点数 + 最大时间间隔」打进日志，出问题能直接定位。
+    """
+    samples = result.samples or []
+    times = [s.get("t_ms") for s in samples if s.get("t_ms") is not None]
+    max_gap = 0.0
+    if len(times) >= 2:
+        max_gap = max(b - a for a, b in zip(times, times[1:]))
+    logger.info(
+        "lap %d: %d ms, %d samples, maxGap %.0f ms",
+        result.no,
+        result.ms,
+        len(samples),
+        max_gap,
+    )
+    if len(samples) < 100:
+        logger.warning(
+            "lap %d 采样严重不足（%d 点，最大间隔 %.1f s）：本圈走线会缺失，"
+            "请检查帧队列丢帧或游戏是否处于回放/暂停态",
+            result.no,
+            len(samples),
+            max_gap / 1000.0,
+        )
+
+
 def _trim_lead_in(buf: list) -> list:
     """从滚动缓冲里只保留「最近一次 completedLaps 变化之后」的帧。
 
@@ -544,6 +572,7 @@ class Recorder:
             )
             if result.session_type != "unknown":
                 self._session_type = result.session_type
+            _log_lap_samples(result)
             self._emit(await self._persist_lap(result))
             await self._maybe_record_track_map(result)
             bus.runtime["lap"] = self._lap_seq + 1

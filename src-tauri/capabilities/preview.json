@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "preview",
+  "description": "Capability for the isolated theme preview window. NO app commands on purpose —— third-party themes loaded here must not be able to call stop_sidecar / delete_user_theme etc.",
+  "windows": [
+    "theme-preview"
+  ],
+  "permissions": [
+    "core:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
+  ]
+}

@@ -1,14 +1,15 @@
 <script setup>
-// 主题选择器（设置页用）：卡片网格 + 缩略预览 + 放大预览 + 启用/删除。
+// 主题选择器（设置页用）：设置页里只留一行「当前主题名 + 更改」，
+// 点开后在弹窗里给完整卡片网格（缩略预览 / 放大预览 / 启用 / 删除）。
 //
 // 按「槽位」复用：mode="overlay" 是游戏悬浮窗，mode="monitor" 是主面板数据区。
 // 同一个组件两处调用，规则只写一份 —— 校验在 themes.js，选择存 theme-choice.js。
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { emit as emitEvent } from '@tauri-apps/api/event';
+// 注意别名：本文件里 `open` 是弹窗开关的 ref
+import { open as openFileDialog, save as saveFileDialog } from '@tauri-apps/plugin-dialog';
 
-import LazyMount from './LazyMount.vue';
-import ThemePreview from './ThemePreview.vue';
 import {
   BUILTIN_PANEL,
   DEFAULT_MONITOR_THEME,
@@ -16,24 +17,46 @@ import {
   listThemes,
   themesForMode,
 } from '../telemetry/themes.js';
-import { saveThemeChoice, themeChoice } from '../telemetry/theme-choice.js';
+import { saveThemeChoice, themeChoice, themeChoiceKey } from '../telemetry/theme-choice.js';
 import { onThemesChanged } from '../telemetry/theme-watch.js';
 
 const props = defineProps({
   /** overlay | monitor */
   mode: { type: String, required: true },
-  /** 设置页当前是否可见（不可见时不挂 iframe，省资源） */
+  /** 悬浮窗槽位（1~3）：每个悬浮窗各自记一个主题 */
+  slot: { type: Number, default: 1 },
+  /** 行标题（默认按模式 / 槽位生成） */
+  title: { type: String, default: '' },
+  /** 行内短标题（缩进到某个槽位下面时用；弹窗标题仍用完整 label） */
+  rowLabel: { type: String, default: '' },
+  /** 设置页当前是否可见（切走时把弹窗收掉，避免残留在别的页面上） */
   active: { type: Boolean, default: true },
 });
 
 const themes = ref([]);
 const busy = ref(false);
+const importing = ref(false);
+const exporting = ref(false);
+const notice = ref('');
 const error = ref('');
 const pendingDelete = ref('');
 const deletingKey = ref('');
+const open = ref(false);
+const dialogEl = ref(null);
 
-const current = computed(() => themeChoice[props.mode]);
+const current = computed(() => themeChoice[themeChoiceKey(props.mode, props.slot)]);
 const currentKey = computed(() => current.value.source + ':' + current.value.id);
+const label = computed(() =>
+  props.title || (props.mode === 'monitor' ? '主面板主题' : `悬浮窗 ${props.slot} 主题`)
+);
+// 缩进在槽位下面时只显示「主题」，弹窗标题仍带「悬浮窗 N」上下文
+const rowText = computed(() => props.rowLabel || label.value);
+// 统一显示「安装包名」= theme.json 的 id（等于文件夹名）；内置面板不是主题、没有包名，特判成中文
+const currentName = computed(() => {
+  const hit = cards.value.find((t) => t.key === currentKey.value);
+  if (hit) return hit.isPanel ? '内置面板' : hit.id;
+  return current.value.id === BUILTIN_PANEL.id ? '内置面板' : current.value.id;
+});
 
 // 主面板多一个「内置面板」选项：它不是主题（没有 iframe），但功能最全（含实时赛道图）
 function cardList() {
@@ -60,11 +83,6 @@ async function reload() {
   try {
     themes.value = await listThemes();
     error.value = '';
-    // 弹窗拿的是列表项的旧引用，列表重建后同步一份，否则「已启用」状态滞后
-    if (previewOf.value) {
-      const key = previewOf.value.key;
-      previewOf.value = cards.value.find((t) => t.key === key) || null;
-    }
   } catch (e) {
     error.value = '读取主题失败：' + e.message;
   } finally {
@@ -74,49 +92,109 @@ async function reload() {
 
 async function pick(t) {
   if (t.error || t.key === currentKey.value) return;
-  saveThemeChoice({ id: t.id, source: t.source }, props.mode);
-  // 悬浮窗是独立 webview，读完 localStorage 也不会自己知道，必须显式推一条事件过去
+  saveThemeChoice({ id: t.id, source: t.source }, props.mode, props.slot);
+  // 悬浮窗是独立 webview，读完 localStorage 也不会自己知道，必须显式推一条事件过去；
+  // 事件带槽位，各悬浮窗只认自己那条
   const eventName = props.mode === 'overlay' ? 'overlay-theme-changed' : null;
   if (eventName) {
     try {
-      await emitEvent(eventName, { id: t.id, source: t.source });
+      await emitEvent(eventName, { slot: props.slot, id: t.id, source: t.source });
     } catch { /* 浏览器预览里没有 Tauri 事件 */ }
   }
 }
 
-/* ------------------------------ 放大预览 ------------------------------ */
-const previewOf = ref(null);
-const previewCloseBtn = ref(null);
-
-async function openPreview(t) {
-  if (t.error || t.isPanel) return;
-  previewOf.value = t;
-  await nextTick();
-  previewCloseBtn.value?.focus();
+/* ------------------------------ 选择弹窗 ------------------------------ */
+function openDialog() {
+  if (open.value) return;
+  open.value = true;
+  notice.value = '';
+  reload();
+  // 焦点收进弹窗，Esc / 回车不会漏到全局快捷键（1/2/3 切页、T 换黑白）
+  nextTick(() => dialogEl.value?.focus());
 }
 
-function closePreview() {
-  previewOf.value = null;
+function closeDialog() {
+  if (deletingKey.value) return;
+  open.value = false;
 }
 
-const previewStageStyle = computed(() => {
-  const d = previewOf.value?.design;
-  return d && d.w > 0 && d.h > 0 ? { aspectRatio: `${d.w} / ${d.h}` } : {};
-});
-
-async function usePreviewed() {
-  const t = previewOf.value;
-  if (!t) return;
-  await pick(t);
-  closePreview();
-}
-
-// 阻止冒泡：否则 1/2/3 会切页、T 会切黑白主题
-function onPreviewKey(e) {
+function onDialogKey(e) {
   e.stopPropagation();
   if (e.key === 'Escape') {
     e.preventDefault();
-    closePreview();
+    closeDialog();
+  }
+}
+
+/* ------------------------------ 放大预览（独立窗口） ------------------------------ */
+// 预览不再嵌在主窗口内（那样第三方主题会继承主窗口 ACL，能调 stop_sidecar 等），
+// 改成打开一个独立、权限受限的 WebviewWindow（capabilities/preview.json 不含任何 app 命令）。
+// 预览按钮的悬停说明：当前正在用的主题、内置面板、以及有问题的主题都不给开预览
+function previewTitle(t) {
+  if (t.error) return '主题有问题，无法预览';
+  if (t.isPanel) return '内置面板无需预览';
+  if (t.key === currentKey.value) return '当前正在使用，无需预览';
+  return '点击打开预览窗口';
+}
+
+async function openThemePreview(t) {
+  if (t.error || t.isPanel || t.key === currentKey.value) return;
+  try {
+    await invoke('open_theme_preview', { id: t.id, source: t.source, mode: props.mode });
+  } catch (e) {
+    error.value = '打开预览失败：' + e.message;
+  }
+}
+
+/* ------------------------------ 导入主题包（.zip） ------------------------------ */
+// 选一个 .zip → Rust 解压进 %LOCALAPPDATA%\acc-telemetry\themes\<id>\。
+// 校验（theme.json / index.html / 路径穿越 / 重名）都在 Rust 那边做，失败不会留下半成品。
+async function importThemePack() {
+  if (importing.value) return;
+  notice.value = '';
+  error.value = '';
+  try {
+    const path = await openFileDialog({
+      title: '选择主题包',
+      multiple: false,
+      directory: false,
+      filters: [{ name: '主题包', extensions: ['zip'] }],
+    });
+    if (!path || Array.isArray(path)) return; // 用户取消
+    importing.value = true;
+    // 带上当前选择器的模式：Rust 会拒绝 modes 不匹配的包（悬浮窗主题导入到主面板等）
+    const id = await invoke('import_theme_zip', { path, mode: props.mode });
+    await reload();
+    notice.value = `已导入主题「${id}」，点它卡片上的「使用」即可启用`;
+  } catch (e) {
+    error.value = '导入失败：' + (typeof e === 'string' ? e : (e && e.message) || String(e));
+  } finally {
+    importing.value = false;
+  }
+}
+
+/* ------------------------------ 导出主题模板 ------------------------------ */
+// 把对应槽位的模板安装包另存出来（Rust 里 include_bytes! 内置的两个 zip）。
+// 用户拿到的是一个能直接「导入主题包」的 .zip：照着改 theme.json / index.html 就能做新主题。
+async function exportTemplate() {
+  if (exporting.value) return;
+  notice.value = '';
+  error.value = '';
+  const monitor = props.mode === 'monitor';
+  try {
+    const path = await saveFileDialog({
+      title: '导出主题模板',
+      defaultPath: monitor ? 'theme-template-monitor.zip' : 'theme-template.zip',
+      filters: [{ name: '主题模板包', extensions: ['zip'] }],
+    });
+    if (!path) return; // 用户取消
+    exporting.value = true;
+    await invoke('export_theme_template', { kind: props.mode, path });
+    notice.value = `模板已导出：${path}`;
+  } catch (e) {
+    error.value = '导出失败：' + (typeof e === 'string' ? e : (e && e.message) || String(e));
+  } finally {
+    exporting.value = false;
   }
 }
 
@@ -168,139 +246,126 @@ onBeforeUnmount(() => {
   if (offWatch) offWatch();
 });
 watch(() => props.active, (on) => {
-  if (on) reload();
-  else if (!deletingKey.value) confirmCloseIfAny();
+  if (on) {
+    // 回到设置页时把弹窗里的列表刷新一遍（中间可能拷了新主题进去）
+    if (open.value) reload();
+  } else if (open.value) {
+    // 弹窗 Teleport 到 body，不会随页面一起隐藏，切页时得自己收掉
+    open.value = false;
+  }
 });
-
-// 切走设置页时把弹窗收掉（Teleport 到 body，不会随页面一起隐藏）
-function confirmCloseIfAny() {
-  previewOf.value = null;
-}
 </script>
 
 <template>
-  <div class="set-group">
-    <span class="glbl">{{ mode === 'monitor' ? '主面板主题' : '悬浮窗主题' }}</span>
-    <div v-if="error" class="set-row"><span></span><span class="v" style="color:var(--hot)">{{ error }}</span></div>
-
-    <div class="theme-grid">
-      <div
-        v-for="t in cards"
-        :key="t.key"
-        class="theme-card"
-        :class="{ active: t.key === currentKey, bad: !!t.error }"
-      >
-        <button
-          type="button"
-          class="tc-preview"
-          :class="{ static: t.isPanel }"
-          :disabled="!!t.error || t.isPanel"
-          :title="t.error ? '主题有问题，无法预览' : (t.isPanel ? '内置面板无需预览' : '点击放大预览')"
-          @click="openPreview(t)"
-        >
-          <LazyMount v-if="!t.error && !t.isPanel && active">
-            <ThemePreview :theme="t.id" :source="t.source" :mode="mode" :design="t.design" />
-          </LazyMount>
-          <span v-else-if="t.error" class="tc-preview-empty">无法预览</span>
-          <span v-else class="tc-panel-thumb">内置面板</span>
-          <span v-if="!t.error && !t.isPanel" class="tc-zoom" aria-hidden="true">放大</span>
-        </button>
-
-        <div class="tc-head">
-          <span class="tc-name">{{ t.name }}</span>
-          <span class="tc-badge">{{ t.isPanel ? '内置' : (t.source === 'user' ? '用户' : '内置') }}</span>
-        </div>
-        <div class="tc-meta">
-          {{ t.design ? t.design.w + '×' + t.design.h : (t.isPanel ? '自适应铺满' : '尺寸未知') }}<template v-if="t.author"> · {{ t.author }}</template>
-        </div>
-        <div v-if="t.desc" class="tc-desc">{{ t.desc }}</div>
-        <div v-if="t.error" class="tc-err">{{ t.error }}</div>
-
-        <div v-if="pendingDelete === t.key" class="tc-actions">
-          <span class="tc-ask">移入回收站？</span>
-          <button class="btn btn-danger" :disabled="deletingKey === t.key" @click="confirmDelete(t)">
-            {{ deletingKey === t.key ? '删除中…' : '删除' }}
-          </button>
-          <button class="btn btn-ghost" :disabled="deletingKey === t.key" @click="cancelDelete">取消</button>
-        </div>
-        <div v-else class="tc-actions">
-          <button
-            class="btn btn-ghost"
-            :disabled="!!t.error || t.key === currentKey"
-            @click="pick(t)"
-          >{{ t.key === currentKey ? '已启用' : '使用' }}</button>
-          <button v-if="t.source === 'user' && !t.isPanel" class="btn btn-ghost" @click="askDelete(t)">删除</button>
-        </div>
-      </div>
+  <!-- 设置页里只占一行：当前用的是哪个 + 一个「更改」按钮，点开才弹选择框 -->
+  <div class="set-row">
+    <span>{{ rowText }}</span>
+    <div class="tpk-ctl">
+      <span class="v tpk-now" :title="currentName">{{ currentName }}</span>
+      <button class="btn btn-ghost" @click="openDialog">更改</button>
     </div>
-
-    <div class="theme-tools">
-      <button class="btn btn-ghost" @click="openThemesDir">打开主题文件夹</button>
-      <button class="btn btn-ghost" :disabled="busy" @click="reload">
-        {{ busy ? '刷新中…' : '刷新' }}
-      </button>
-      <span class="tc-hint">
-        把主题目录拷进该文件夹就会自动出现在这里（{{ mode === 'monitor' ? 'modes 含 monitor 的主题才能当主面板'
-          : 'modes 含 overlay 的主题才能当悬浮窗' }}）
-      </span>
-    </div>
-
-    <!-- 放大预览：看完可以直接启用 -->
-    <Teleport to="body">
-      <div v-if="previewOf" class="dlg-mask" @click.self="closePreview">
-        <div
-          class="dlg dlg-wide"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="pv-title"
-          @keydown="onPreviewKey"
-        >
-          <div class="dlg-head">
-            <span class="dlg-ico" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="2.6" y="4" width="18.8" height="12.8" rx="1.6" />
-                <path d="M9 20.4h6M12 16.8v3.6" />
-              </svg>
-            </span>
-            <div class="dlg-ttl">
-              <h3 id="pv-title">{{ previewOf.name }}</h3>
-            </div>
-          </div>
-
-          <div class="dlg-body">
-            <div class="pv-stage" :style="previewStageStyle">
-              <ThemePreview
-                :theme="previewOf.id"
-                :source="previewOf.source"
-                :mode="mode"
-                :design="previewOf.design"
-                live
-                :badge="false"
-              />
-            </div>
-
-            <div class="pv-meta">
-              <span class="pv-chip">{{ previewOf.source === 'user' ? '用户主题' : '内置主题' }}</span>
-              <span v-if="previewOf.design" class="pv-chip">{{ previewOf.design.w }}×{{ previewOf.design.h }}</span>
-              <span v-if="previewOf.version" class="pv-chip">v{{ previewOf.version }}</span>
-              <span v-if="previewOf.author" class="pv-dim">{{ previewOf.author }}</span>
-            </div>
-
-            <p v-if="previewOf.desc" class="pv-desc">{{ previewOf.desc }}</p>
-            <p class="pv-hint">演示数据渲染，画面与真机数据同名字段一一对应。透明区域在这里显示为斜纹底。</p>
-          </div>
-
-          <div class="dlg-foot">
-            <button ref="previewCloseBtn" type="button" class="btn btn-ghost" @click="closePreview">关闭</button>
-            <button
-              type="button"
-              class="btn btn-primary"
-              :disabled="previewOf.key === currentKey"
-              @click="usePreviewed"
-            >{{ previewOf.key === currentKey ? '已启用' : '使用此主题' }}</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
   </div>
+
+  <Teleport to="body">
+    <div v-if="open" class="dlg-mask" @click.self="closeDialog">
+      <div
+        ref="dialogEl"
+        class="dlg dlg-wide dlg-theme"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="label"
+        tabindex="-1"
+        @keydown="onDialogKey"
+      >
+        <button class="dlg-x" type="button" aria-label="关闭" @click="closeDialog">×</button>
+        <div class="dlg-head">
+          <span class="dlg-ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3.2" y="4.2" width="17.6" height="15.6" rx="1.6" />
+              <path d="M3.2 9.2h17.6" />
+              <path d="M9.6 9.2v10.6" />
+            </svg>
+          </span>
+          <div class="dlg-ttl">
+            <h3>{{ label }}</h3>
+          </div>
+        </div>
+
+        <div class="dlg-body">
+          <p class="tpk-lead">
+            当前使用 <strong>{{ currentName }}</strong>。
+          </p>
+          <div v-if="error" class="tc-err tpk-err">{{ error }}</div>
+          <div v-if="notice" class="tc-ok tpk-err">{{ notice }}</div>
+
+          <div class="theme-grid">
+            <div
+              v-for="t in cards"
+              :key="t.key"
+              class="theme-card"
+              :class="{ active: t.key === currentKey, bad: !!t.error }"
+            >
+              <button
+                type="button"
+                class="tc-preview"
+                :disabled="!!t.error || t.isPanel || t.key === currentKey"
+                :title="previewTitle(t)"
+                @click="openThemePreview(t)"
+              >
+                <span v-if="t.error" class="tc-preview-empty">无法预览</span>
+                <span v-else-if="t.isPanel" class="tc-panel-thumb">内置面板</span>
+                <span v-else class="tc-thumb">
+                  <span class="tc-thumb-dim">{{ t.design ? t.design.w + '×' + t.design.h : '自适应' }}</span>
+                  <span class="tc-thumb-hint">{{ t.key === currentKey ? '使用中' : '点击预览' }}</span>
+                </span>
+              </button>
+
+              <div class="tc-head">
+                <span class="tc-name">{{ t.isPanel ? '内置面板' : t.id }}</span>
+                <span class="tc-badge">{{ t.isPanel ? '内置' : (t.source === 'user' ? '外部' : '内置') }}</span>
+              </div>
+              <div v-if="t.error" class="tc-err">{{ t.error }}</div>
+
+              <div v-if="pendingDelete === t.key" class="tc-actions">
+                <span class="tc-ask">移入回收站？</span>
+                <button class="btn btn-danger" :disabled="deletingKey === t.key" @click="confirmDelete(t)">
+                  {{ deletingKey === t.key ? '删除中…' : '删除' }}
+                </button>
+                <button class="btn btn-ghost" :disabled="deletingKey === t.key" @click="cancelDelete">取消</button>
+              </div>
+              <div v-else class="tc-actions">
+                <button
+                  class="btn btn-ghost"
+                  :disabled="!!t.error || t.key === currentKey"
+                  @click="pick(t)"
+                >{{ t.key === currentKey ? '已启用' : '使用' }}</button>
+                <button v-if="t.source === 'user' && !t.isPanel" class="btn btn-ghost" @click="askDelete(t)">删除</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="theme-tools">
+            <button class="btn btn-ghost" :disabled="importing" @click="importThemePack">
+              {{ importing ? '导入中…' : '导入主题包' }}
+            </button>
+            <button class="btn btn-ghost" :disabled="exporting" @click="exportTemplate">
+              {{ exporting ? '导出中…' : '导出模板' }}
+            </button>
+            <button class="btn btn-ghost" @click="openThemesDir">打开主题文件夹</button>
+            <button class="btn btn-ghost" :disabled="busy" @click="reload">
+              {{ busy ? '刷新中…' : '刷新' }}
+            </button>
+            <span class="tc-hint">
+              把主题目录拷进该文件夹就会自动出现在这里（{{ mode === 'monitor' ? 'modes 含 monitor 的主题才能当主面板'
+                : 'modes 含 overlay 的主题才能当悬浮窗' }}）
+            </span>
+          </div>
+        </div>
+
+        <div class="dlg-foot">
+          <button class="btn btn-primary" @click="closeDialog">完成</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>

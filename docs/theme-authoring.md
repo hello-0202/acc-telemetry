@@ -7,6 +7,14 @@
 `%LOCALAPPDATA%\acc-telemetry\themes\my-hud\`，改 `theme.json` 的 `id`，然后在设置页刷新。
 目录里的四个文件就是最小可运行主题。
 
+也可以把主题目录打包成 **.zip**（theme.json / index.html 放在压缩包根目录，或套一层文件夹都行），
+在设置页「更改」→「导入主题包」里选它，应用会解压到 `themes/<theme.json 里的 id>/`。
+重名（目录已存在）会拒绝导入，先删掉旧主题再导即可。
+导入会按当前选择器校验 `modes`：悬浮窗主题不能从主面板选择器导入，反之亦然，避免装上了却不出现在列表里。
+
+想从模板起手？设置页「更改」→「导出模板」会把对应类型的模板包（悬浮窗 / 主面板各一个）另存出来，
+改完再「导入主题包」导回去即可。
+
 ---
 
 ## 一、目录结构
@@ -27,7 +35,7 @@
 ```json
 {
   "id": "my-hud",
-  "name": "我的 HUD",
+  "name": "my-hud",
   "version": "0.1.0",
   "author": "你",
   "desc": "一句话说明",
@@ -42,7 +50,7 @@
 | `id` | ✅ | 必须与目录名一致，`[A-Za-z0-9_-]` |
 | `design` | ✅ | **设计基准尺寸**（整数 px，80~8192）。见第三节 |
 | `modes` | ✅ | 这个主题给哪些窗口用：`overlay`（悬浮窗）/ `monitor`（主面板） |
-| `name` | | 显示名，缺省用 id |
+| `name` | | **请与 `id` 保持一致**（两个名字统一）；卡片/设置页显示的是 `id`（安装包名） |
 | `version` / `author` / `desc` | | 只用于展示 |
 | `fit` | | `contain`（默认，等比缩放）或 `fluid`（流式铺满，主面板用）。见第三节末尾 |
 
@@ -92,8 +100,15 @@ window.addEventListener('message', (e) => {
   if (!msg || typeof msg !== 'object') return;
 
   if (msg.type === 'acc:init') {
-    // { v, mode, design: {w,h}, scale }
+    // { v, mode, design: {w,h}, scale, fit, box, theme, background }
+    applyUi(msg);
     window.parent.postMessage({ type: 'acc:ready' }, '*');
+    return;
+  }
+
+  // 切黑白主题 / 悬浮窗透明-不透明时补发，不用重新握手
+  if (msg.type === 'acc:ui') {
+    applyUi(msg);                 // { theme?, background? }
     return;
   }
 
@@ -101,10 +116,19 @@ window.addEventListener('message', (e) => {
     render(msg.payload);          // 数据帧
   }
 });
+
+// 约定：把宿主给的界面状态写到 <html> 的 data-*，CSS 里按需切换
+function applyUi(msg) {
+  if (msg.theme) document.documentElement.dataset.theme = msg.theme;
+  if (msg.background) document.documentElement.dataset.bg = msg.background;
+}
 ```
 
 - `acc:init` 会**重复到达**（宿主在 iframe 加载后每 400ms 重发一次，直到收到 ready）。这是故意设计的：
   主题脚本常常比宿主的监听先跑完，第一条 ready 会丢。所以**别用「只发一次」的开关**。
+- `acc:init.background` / `acc:ui.background` 取值 `transparent`（默认，能用上游戏画面）或 `opaque`
+  （用户在设置里把悬浮窗背景切成不透明）。宿主会在 iframe 后面铺一层实心底板，
+  主题收到后把 `html` 的 `data-bg` 设成该值即可让自带卡片也跟着变实心。
 - `acc:state` 的频率：录制中 30Hz，待机 2Hz。
 - 数据里带 `seq`，同值代表同一帧，可以凭它跳过重复渲染。
 
@@ -160,7 +184,10 @@ window.addEventListener('message', (e) => {
    `fluid` 模式反过来：必须自己响应式（见第三节）。
 2. **`html, body { height: 100% }` 一定要写**。漏了的话 `.card{height:100%}` 只拿到内容高度，
    卡片会缩在顶部，看起来像「垂直居中坏了」。
-3. **背景保持透明**（`background: transparent`）。悬浮窗是透明窗口，画不透明底色会挡住游戏。
+3. **背景默认保持透明**（`background: transparent`）。悬浮窗是透明窗口，画不透明底色会挡住游戏。
+   用户可以在设置里把悬浮窗背景切成「不透明」——宿主会自己铺实心底板，并把
+   `background: "opaque"` 通过 `acc:init` / `acc:ui` 告诉主题；主题想让自带卡片也变实心，
+   就加一条 `html[data-bg="opaque"] .card { background: #0b0e13; }`。
    主面板主题可以画底色（它占满数据区），但更推荐面板色 + 透明，让黑白主题都好看。
 4. **不要连 WebSocket，也不要自己算 delta**。数据只能从 `acc:state` 来，别的来源都会和主面板对不上。
 5. **不要读本地文件 / 发网络请求**。主题跑在 sandbox iframe 里，读不到宿主的存储，
@@ -175,6 +202,12 @@ window.addEventListener('message', (e) => {
    const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
    el.textContent = num(w.pressure) === null ? '–' : num(w.pressure).toFixed(1);
    ```
+
+9. **非 `streaming` 时要显示占位，不要渲染旧值**。后端在待机 / 退出游戏后仍会按 2Hz 推
+   `acc:state` 心跳，并**保留上一场最后一次有效值**（契约里的 stability 约定），
+   只是把 `status` 改成 `idle` / `waiting` / `error`。如果照单渲染，没开游戏也会看到速度、
+   圈速、踏板停在上一场的位置，看起来像还在采集。判断 `st.status === 'streaming'`，
+   否则把实时字段当空值显示 `--` / `–`（内置主题都是这么做的）。
 
    另外把 `render()` 包进 `try/catch`，一帧脏数据不该让面板停更。
 

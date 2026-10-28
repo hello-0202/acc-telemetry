@@ -23,7 +23,7 @@ WebSocket 推帧 → Vue 前端画实时面板 / 圈速分析。当前主线是*
 ## 1. 路线图与进度
 
 P0 契约 ✅ → P1 后端 state 推送 ✅ → P2 主题宿主 + 首个预设主题 ✅ →
-P3 用户主题包（任务 0~6）✅ → P4 主面板壳化 ✅ → P5 副屏需求（看板窗口已撤销，改用监测面板全屏）✅ → **P6 文档 + 脚手架（下一步）**。
+P3 用户主题包（任务 0~6）✅ → P4 主面板壳化 ✅ → P5 副屏需求（看板窗口已撤销，改用监测面板全屏）✅ → **P6 文档 + 脚手架 ✅** → 下一步：主题市场 / 收尾遗留 #2。
 
 已完成的能力（都能在设置页看到）：
 
@@ -34,8 +34,8 @@ P3 用户主题包（任务 0~6）✅ → P4 主面板壳化 ✅ → P5 副屏�
 - 两处主题槽位：`overlay`（悬浮窗）、`monitor`（主面板），localStorage 持久化，内置「内置面板」可回退。
 - 应用自定义命令已过 ACL（`src-tauri/permissions/app.toml`），按窗口分配权限。
 
-**⚠️ P0~P4 全部改动还在工作区，没有 commit**（`git status` 会看到 20+ 修改 + 25+ 未跟踪）。
-接手第一件事：`git status` / `git diff --stat` 看清现状，建议先提一个 checkpoint 再往下做。
+> 当前改动（P0~P5 主题化主线、撤销 board 窗口、悬浮窗持久化、预览隔离）已随主题化主线提交（见 `git log`）。
+> 接手先 `git log --oneline -8` 看清进度；要回滚用 `git reset --soft HEAD~N`。
 
 ## 2. 只能真机验证的（重启应用点一遍）
 
@@ -50,17 +50,19 @@ P3 用户主题包（任务 0~6）✅ → P4 主面板壳化 ✅ → P5 副屏�
 - [ ] `theme.localhost/<id>/../../config.json` 之类穿越请求被拒；主题里 `document.cookie` / `localStorage` 读不到宿主数据。
 - [ ] `overlay-min/theme.js` 里 `window.__TAURI_INTERNALS__` 的实测值（若为 `object` = IPC 确实进了子 frame，ACL 是唯一防线）。
 
-## 3. 遗留问题（先确认再动手）
+## 3. 遗留问题 / 已完成项
 
-1. **悬浮窗位置 / 尺寸持久化**：用户说另一个 AI 做过了，但当前工作区 `main.rs::place_overlay()`
-   **仍然只在首次显示时贴右上角，没有任何 x/y/w/h 存取代码**（文件时间戳停在 10-27 23:51）。
-   → 先确认那份改动在哪儿（别的分支？没合进来？），别重复实现，也别以为已经好了。
-   位置存哪由你定，建议 `tauri-plugin-store` 或 `%LOCALAPPDATA%\acc-telemetry\window-state.json`。
+1. ✅ **悬浮窗位置 / 尺寸持久化**（2026-10-28）：`main.rs::place_overlay()` 现在先读
+   `%LOCALAPPDATA%\acc-telemetry\window-state.json` 恢复上次几何，没有才贴右上角；
+   悬浮窗拖动 / 拉边缩放结束后由 `OverlayView` 经 `save_overlay_rect` 落盘（物理像素，无 DPI 坑）。
+   注意交互：主题若声明 `design`，加载时会按 design 重设尺寸、覆盖保存值；无 design 的主题（可拖拽缩放）保存值长期有效。
 2. **主题拿不到赛道几何**：内置面板的实时赛道图来自 `getTrackGeometry()`，不在 `state` 里。
-   主题拿不到赛道几何：内置面板的实时赛道图来自 `getTrackGeometry()`，不在 `state` 里。若将来要做带地图的纯主题（如副屏），得单独推一次 `acc:map`（session 变化时推一次，**别塞进 30Hz 的 state**）。
-3. **主题市场的前置条件**：设置页预览 iframe 在**主窗口**内，继承 main 的 ACL。
-   分发第三方主题前必须先换独立 `WebviewWindow`（capability 只留 `core:event:allow-listen`，任何 app 命令都不列）。
-   顺序不能反。
+   若将来要做带地图的纯主题（如副屏），得单独推一次 `acc:map`（session 变化时推一次，**别塞进 30Hz 的 state**）。
+3. ✅ **主题市场的前置条件——预览隔离**（2026-10-28）：设置页放大预览不再嵌在主窗口 iframe，
+   改为打开独立 `WebviewWindow`（`label: theme-preview`，见 `src-tauri/capabilities/preview.json`），
+   capability 只列 `core:event:allow-listen`/`unlisten`，**没有任何 app 命令**。
+   第三方主题在这里被加载也调不到 `stop_sidecar`/`delete_user_theme` 等。新增 `open_theme_preview` 命令（只授 main）。
+   设置页卡片缩略图改为静态占位（不再在主窗口内执行主题 JS），点击才开预览窗口。
 
 ## 4. P5 副屏需求 —— board 窗口已撤销（2026-10-28）
 
@@ -73,7 +75,7 @@ P3 用户主题包（任务 0~6）✅ → P4 主面板壳化 ✅ → P5 副屏�
 
 结论：副屏需求由「监测面板全屏」满足，无需单独主题 / 窗口。下一步见 P6。
 
-**⚠️ P0~P5 全部改动仍在工作区（其中 P5 的 board 窗口已撤销），没有 commit。**
+**改动已随主题化主线提交（见仓库 `git log`）；P0~P5 + 撤销 board + 悬浮窗持久化 + 预览隔离 都已落地。**
 
 ## 5. 开工前 3 分钟
 
@@ -102,3 +104,9 @@ cd src-tauri && cargo check --target-dir ../.workbuddy/target-check
 - 不给 iframe 加 `allow-same-origin`（临时测试除外，测完立刻改回）。
 - 不让主题连 WebSocket 或发 `{"cmd":"start"}`。
 - 不动 `acc_telemetry/services/telemetry_service.py` 之外的字段同步规则（两套实现要一起改）。
+
+## 7. 本轮回退（P6 收尾）
+
+- 主题化主线（P0~P5）已提交，board 副屏窗口按用户要求撤销；本轮再补两项遗留：悬浮窗位置 / 尺寸持久化、预览隔离窗口。
+- 脚手架：`docs/theme-template/` 是可拷用的主题最小模板（别放进 `public/themes/`），写主题照这个起手即可。
+- 下一步方向：主题市场（预览隔离已具备前置条件）、带地图的纯主题（需推 `acc:map`）、悬浮窗持久化的细节打磨（如多显示器记忆）。

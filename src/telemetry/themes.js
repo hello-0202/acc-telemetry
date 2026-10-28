@@ -8,7 +8,13 @@ import { isTauriRuntime, themeBaseUrl } from './theme-url.js';
 
 // 内置主题登记表：新增一个内置主题 = 放进 public/themes/<id>/ + 这里加一行。
 // （public/ 下的文件不会被 import 分析，没法自动枚举，所以只能显式列。）
-export const BUILTIN_THEME_IDS = ['overlay-min', 'monitor-grid'];
+export const BUILTIN_THEME_IDS = [
+  'overlay-min',
+  'monitor-grid',
+  'pedals-wheel',
+  'throttle-fuel',
+  'tyres',
+];
 
 export const DEFAULT_THEME = { id: 'overlay-min', source: 'builtin' };
 
@@ -97,7 +103,8 @@ export async function listThemes() {
           meta = undefined; // 解析失败：checkMeta 会报「不是合法 JSON」
         }
       }
-      out.push(makeEntry(t.id, 'user', meta, !!t.hasIndex));
+      // 老版本 Rust 序列化的是 has_index，新版统一成了 hasIndex，两种都认
+      out.push(makeEntry(t.id, 'user', meta, !!(t.hasIndex ?? t.has_index)));
     }
   }
 

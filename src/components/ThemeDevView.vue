@@ -204,7 +204,7 @@ onBeforeUnmount(() => {
       <strong class="dv-title">主题调试</strong>
       <select v-model="themeKey" class="dv-select" aria-label="选择主题">
         <option v-for="t in themes" :key="t.key" :value="t.key" :disabled="!!t.error">
-          {{ t.name }}{{ t.source === 'user' ? ' · 用户' : ' · 内置' }}{{ t.error ? ' ✗' : '' }}
+          {{ t.name }}{{ t.source === 'user' ? ' · 外部' : ' · 内置' }}{{ t.error ? ' ✗' : '' }}
         </option>
       </select>
       <span v-if="current?.error" class="dv-err">{{ current.error }}</span>

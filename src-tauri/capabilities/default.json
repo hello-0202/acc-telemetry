@@ -28,9 +28,14 @@
     "allow-show-overlay",
     "allow-hide-overlay",
     "allow-set-overlay-locked",
+    "allow-set-overlay-slots",
     "allow-list-user-themes",
     "allow-open-themes-dir",
     "allow-delete-user-theme",
+    "allow-open-theme-preview",
+    "allow-import-theme-zip",
+    "allow-export-theme-template",
+    "dialog:default",
     "core:event:allow-emit"
   ]
 }

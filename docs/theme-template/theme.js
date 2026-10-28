@@ -1,9 +1,10 @@
 /* 最小骨架脚本：接宿主数据 + 无宿主时自己造演示数据。
  *
- * 协议只有三条消息（详见 docs/theme-authoring.md）：
- *   iframe → 宿主：{ type: 'acc:ready' }                       我准备好了，可以喂数据
- *   宿主 → iframe：{ type: 'acc:init',  v, mode, design, scale } 每次 init 都要回一条 ready
- *   宿主 → iframe：{ type: 'acc:state', payload }               数据帧，待机 2Hz / 录制中 30Hz
+ * 协议只有四条消息（详见 docs/theme-authoring.md）：
+ *   iframe → 宿主：{ type: 'acc:ready' }                                 我准备好了，可以喂数据
+ *   宿主 → iframe：{ type: 'acc:init', v, mode, design, scale, ... }      握手，每次 init 都要回一条 ready
+ *   宿主 → iframe：{ type: 'acc:ui', theme?, background? }                切黑白 / 透明背景时补发
+ *   宿主 → iframe：{ type: 'acc:state', payload }                        数据帧，待机 2Hz / 录制中 30Hz
  */
 (function () {
   'use strict';
@@ -27,14 +28,17 @@
   /* ------------------------------- 渲染 ------------------------------- */
 
   function render(st) {
-    var car = st.car || {};
-    var lap = st.lap || {};
+    // 契约：非 streaming 时后端仍保留上一场的最后值。主题要自己显示占位，
+    // 否则没开游戏 / 已停止监测时，旧的数值看起来像还在实时采集。
+    var live = st.status === 'streaming';
+    var car = live ? (st.car || {}) : null;
+    var lap = live ? (st.lap || {}) : null;
 
-    $('speed').textContent = Math.round(car.speed || 0);
-    $('gear').textContent = gearText(car.gear);
+    $('speed').textContent = car ? Math.round(car.speed || 0) : '--';
+    $('gear').textContent = car ? gearText(car.gear) : '–';
 
     var delta = $('delta');
-    var d = lap.deltaMs;
+    var d = lap ? lap.deltaMs : null;
     if (d == null || !isFinite(d)) {
       delta.textContent = '--.---';
       delta.className = 'delta';
@@ -56,12 +60,29 @@
     } catch (e) { /* 独立打开时没有 parent */ }
   }
 
+  // 宿主告知的界面状态：
+  //   background = transparent（默认，能看见游戏画面）| opaque（宿主已铺实心底板）
+  // 写到 html[data-bg]，CSS 里按需切换底板透明度。
+  function applyUi(msg) {
+    if (msg.theme) document.documentElement.dataset.theme = msg.theme;
+    if (msg.background === 'transparent' || msg.background === 'opaque') {
+      document.documentElement.dataset.bg = msg.background;
+    }
+  }
+
   window.addEventListener('message', function (event) {
     var msg = event.data;
     if (!msg || typeof msg !== 'object') return;
 
     if (msg.type === 'acc:init') {
+      applyUi(msg);
       sayReady();
+      return;
+    }
+
+    // 宿主切黑白主题 / 悬浮窗透明-不透明时补发，不用重新握手
+    if (msg.type === 'acc:ui') {
+      applyUi(msg);
       return;
     }
 
@@ -92,6 +113,7 @@
       var wave = Math.sin(t / 9);
       var speed = 178 + wave * 74;
       render({
+        status: 'streaming',
         car: { speed: speed, gear: speed > 230 ? 4 : speed > 150 ? 3 : 2 },
         lap: { deltaMs: wave * 640 },
       });
@@ -104,11 +126,8 @@
   }
 
   if (framed) {
+    // 有宿主就只等真实 state；后端没起来时保持占位，不跑演示数据
     sayReady();
-    // 有宿主但 2 秒还没数据（后端没起来）：先跑演示，别显示一片空
-    demoTimer = setTimeout(function () {
-      if (!gotState) startDemo();
-    }, 2000);
   } else {
     // 双击 index.html 直接打开：纯本地演示，方便调样式
     startDemo();

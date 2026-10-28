@@ -29,6 +29,9 @@ percent-encoding = "2"
 trash = "5"
 # 用户主题目录的文件监听（热重载）
 notify = "8"
+tauri-plugin-dialog = "2"
+# 只读 deflate（纯 Rust 后端）：主题包是普通 zip，别把 bzip2/zstd/lzma 整套编进来
+zip = { version = "4", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

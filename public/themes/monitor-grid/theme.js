@@ -179,10 +179,8 @@
   });
 
   if (framed) {
+    // 有宿主就只等真实 state；后端没起来时保持占位，不跑演示数据
     sayReady();
-    demoTimer = setTimeout(function () {
-      if (!gotState) startDemo();
-    }, 2000);
   } else {
     startDemo();
   }

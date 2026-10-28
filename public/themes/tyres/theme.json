@@ -1,0 +1,10 @@
+{
+  "id": "tyres",
+  "name": "tyres",
+  "version": "1.0.0",
+  "author": "acc-telemetry",
+  "desc": "四轮轮胎数据圆环：胎压 / 胎温 / 刹车盘温 / 磨损（2×2 紧凑排列，透明背景无底板、无发光）",
+  "design": { "w": 220, "h": 220 },
+  "fit": "contain",
+  "modes": ["overlay"]
+}

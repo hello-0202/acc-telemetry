@@ -18,9 +18,9 @@
         "decorations": false
       },
       {
-      "label": "overlay",
+      "label": "overlay-1",
       "url": "overlay.html",
-      "title": "ACC Overlay",
+      "title": "ACC Overlay 1",
       "width": 380,
       "height": 150,
       "minWidth": 220,

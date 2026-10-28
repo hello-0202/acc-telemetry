@@ -140,8 +140,16 @@ const analysisHtml = computed(() => {
   const pb = tk.pb || zeroLapRef(M.n);
   const d = lp.ms - pb.ms;
   const isPb = !!tk.pb && lp.no === pb.no;
+  // 走线是逐采样点画的：一圈正常 1200 点左右。少于 100 点说明录制中途断流，
+  // 地图上只会出现开头一小段 —— 直接标出来，别让人以为是地图坏了。
+  const linePts = Array.isArray(lp.line) ? lp.line.length : 0;
+  const sparseLine = linePts < 100;
   return '' +
     '<div class="ana-card"><h4>圈速概要' +
+        (sparseLine
+          ? '<span class="sparse-tip" title="本圈采样中途中断，走线只覆盖开头一小段（或完全没有）">' +
+              '本圈走线数据不足（' + linePts + ' 个采样点）</span>'
+          : '') +
         '<span class="toggle-group">' +
           '<button class="pb-toggle' + (showLapLine ? ' on' : '') + '" id="lapLineToggle" type="button">' + (showLapLine ? '隐藏本圈路线' : '显示本圈路线') + '</button>' +
           '<button class="pb-toggle' + (showHeat ? ' on' : '') + '" id="heatToggle" type="button">' + (showHeat ? '隐藏热力' : '显示热力') + '</button>' +

@@ -3,6 +3,7 @@ import { computed, ref, shallowRef, watch, onMounted, onBeforeUnmount } from 'vu
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { check } from '@tauri-apps/plugin-updater';
+import { exit } from '@tauri-apps/plugin-process';
 import MonitorView from './components/MonitorView.vue';
 import HistoryView from './components/HistoryView.vue';
 import SettingsView from './components/SettingsView.vue';
@@ -11,6 +12,7 @@ import { themeName, toggleTheme } from './telemetry/theme.js';
 import { ui } from './telemetry/store.js';
 import { immersive, exitImmersive, toggleImmersive } from './telemetry/immersive.js';
 import { initOverlayWatcher, overlayVisible, toggleOverlay, setOverlayLocked } from './telemetry/overlay-window.js';
+import { pushOverlaySlots } from './telemetry/overlay-slots.js';
 import { getHealth } from './telemetry/api.js';
 import { loadPrefs, prefs } from './telemetry/prefs.js';
 import { telemetry, clearConnectError } from './telemetry/useTelemetry.js';
@@ -222,6 +224,8 @@ onMounted(() => {
 
   // 悬浮窗按钮的状态跟着 Rust 侧的显隐走（快捷键也能同步）
   initOverlayWatcher();
+  // 把「启用了哪几个悬浮窗」推给 Rust（它据此建窗口、响应快捷键）；浏览器里会静默失败
+  pushOverlaySlots();
 
   // 全局快捷键被别的软件占用时 Rust 只能写 stderr，这里再留一条带上下文的记录：
   // 按 Ctrl+Shift+O / L 没反应时，先看这条（也可以点顶栏按钮兜底）。
@@ -246,12 +250,25 @@ onMounted(() => {
   if (appWindow) {
     appWindow
       .onCloseRequested(async (event) => {
-        if (!prefs.backgroundResident) return;
+        if (prefs.backgroundResident) {
+          event.preventDefault();
+          try {
+            await appWindow.hide();
+          } catch (e) {
+            console.error('hide window failed:', e);
+          }
+          return;
+        }
+        // 不常驻：关主窗口 = 退出整个应用。
+        // 不能只让主窗口自己销毁 —— 悬浮窗是独立窗口，它还开着的话进程就留在后台，
+        // 托盘图标跟着残留，而「显示主窗口」再也找不回已销毁的 main，点了等于没反应。
         event.preventDefault();
         try {
-          await appWindow.hide();
+          await exit(0);
         } catch (e) {
-          console.error('hide window failed:', e);
+          console.error('quit app failed:', e);
+          // 兜底：至少把窗口关掉，别让用户卡在「点了没反应」
+          appWindow.destroy().catch(() => {});
         }
       })
       .then((fn) => { unlistenClose = fn; })
@@ -326,7 +343,8 @@ onBeforeUnmount(() => {
               aria-label="悬浮窗"
               title="悬浮窗（Ctrl+Shift+O）"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 20h8" /></svg>
+              <!-- 悬浮窗图标：屏幕外框 + 右下角实心浮窗（右下角略压出边框，表达「浮在上面」） -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="3.8" width="16.6" height="15.4" rx="2" /><rect x="14" y="13.4" width="7.2" height="7.2" rx="1.6" fill="currentColor" stroke="none" /></svg>
             </button>
             <button
               v-if="view === 'monitor' && overlayVisible"
@@ -379,7 +397,7 @@ onBeforeUnmount(() => {
           title="悬浮窗（Ctrl+Shift+O）"
           @click="toggleOverlay"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 20h8" /></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="3.8" width="16.6" height="15.4" rx="2" /><rect x="14" y="13.4" width="7.2" height="7.2" rx="1.6" fill="currentColor" stroke="none" /></svg>
         </button>
         <button class="imm-tool" type="button" title="退出全屏（Esc）" @click="exitImmersive">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h5V4" /><path d="M20 9h-5V4" /><path d="M20 15h-5v5" /><path d="M4 15h5v5" /></svg>

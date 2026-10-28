@@ -26,12 +26,6 @@ _CORNERS = ("FL", "FR", "RL", "RR")
 # 超过这么久没有新帧，就认为「不在直播」（暂停 / 回放 / 退到菜单）
 _STALE_AFTER_S = 1.5
 
-# 上一次成功组装的实时状态，用于「非 streaming 时保留最后一个有效值」
-_last_live: dict[str, Any] | None = None
-# 上一次有效的会话元信息。停止监测后 recorder 会清掉 bus.runtime["state_meta"]，
-# 但此时总线里还留着最后一帧快照——不能因此把赛道名 / 车名 / PB 抹成空，
-# 否则主题会从「Zolder + 车名」闪回空白。
-_last_meta: dict[str, Any] | None = None
 _seq = 0
 
 
@@ -401,23 +395,18 @@ def _apply_meta(state: dict[str, Any], meta: dict[str, Any]) -> None:
 
 def build_state() -> dict[str, Any]:
     """组装一份完整状态快照（主题唯一数据源）。"""
-    global _last_live, _last_meta, _seq
+    global _seq
 
     status = current_status()
     meta = bus.runtime.get("state_meta") or {}
-    if meta:
-        _last_meta = meta
-    elif _last_meta is not None:
-        meta = _last_meta
-    snap = bus.latest_snapshot
+    # 只有真正在直播（streaming）才输出实时值：待机 / 等待进赛道 / 暂停 / 出错一律给空状态。
+    # 旧规则是「status != streaming 保留最后一个有效值」，结果退出赛道或游戏不在直播态时，
+    # 主题会一直显示 24.7 km/h、5 挡这种冻结数据，和内置面板（stopped 即清空）也不一致。
+    # 掉帧/暂停的过渡由 1.5s 的 _STALE_AFTER_S 兜着，短暂抖动不会闪零。
+    snap = bus.latest_snapshot if status == "streaming" else None
 
     if snap is not None:
         state = _build_live(snap, meta)
-        _last_live = state
-    elif _last_live is not None:
-        # 非 streaming：保留最后一个有效值，只刷新元信息与状态（契约 stability 约定）
-        state = _last_live
-        _apply_meta(state, meta)
     else:
         state = _blank_state()
         _apply_meta(state, meta)
@@ -436,7 +425,5 @@ def build_state() -> dict[str, Any]:
 
 def reset() -> None:
     """应用重启 / 换会话时清掉缓存，避免把上一场的值当成当前值。"""
-    global _last_live, _last_meta, _seq
-    _last_live = None
-    _last_meta = None
+    global _seq
     _seq = 0

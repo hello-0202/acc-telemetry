@@ -9,11 +9,12 @@ export default defineConfig(() => ({
 
   build: {
     rollupOptions: {
-      // 三入口：主窗口 index.html + 游戏悬浮窗 overlay.html + 主题调试页 dev.html
+      // 四入口：主窗口 index.html + 游戏悬浮窗 overlay.html + 主题调试页 dev.html + 隔离的主题预览窗口 preview.html
       input: {
         main: 'index.html',
         overlay: 'overlay.html',
         dev: 'dev.html',
+        preview: 'preview.html',
       },
     },
   },

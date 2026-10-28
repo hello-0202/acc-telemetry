@@ -1,0 +1,206 @@
+/* 轮胎数据 —— 设计基准 220×220，全部 px 写死，缩放交给宿主（contain）。
+ *
+ * 视觉取向：四个圆环 2×2 紧凑排列（左上 FL / 右上 FR / 左下 RL / 右下 RR），全透明背景。
+ *   外圈细环 = 磨损（从 12 点顺时针增长）
+ *   内圈 270° 环 = 胎温（40→110 ℃ 映射满环），颜色随热度分档
+ *   环心三行  = 胎压 psi / 胎温 ℃ / 刹车盘温 ℃
+ *
+ * 透明背景下的可读性策略：高饱和纯色 + 1px 硬投影（不是漫反射光晕），不用任何发光/模糊。
+ */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  /* 与软件外壳同一套字体栈（src/style.css 的 --font-display），数字单独用 --font-mono */
+  font-family: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Microsoft YaHei', sans-serif;
+  color: #ffffff;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+/* 2×2 紧凑网格：两列两行，画面正中，不留中间空档 */
+.hud {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 106px 106px;
+  grid-template-rows: 106px 106px;
+  gap: 4px;
+  justify-content: center;
+  align-content: center;
+}
+
+/* ---------------- 四个圆环 ---------------- */
+.corner {
+  position: relative;
+  width: 106px;
+  height: 106px;
+}
+
+.corner svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* pathLength="100" → dasharray 的单位就是百分比，75 = 270°（底部留缺口） */
+.arc-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 9;
+  stroke-linecap: butt;
+  stroke-dasharray: 75 100;
+}
+
+/* 不做 dasharray / stroke 过渡：数据 60ms 一刷，过渡每帧被打断，
+ * 颜色会永远卡在初始档（实测胎温弧一直是 t-na 的灰色，看起来像没画）。
+ * 线帽平切：弧的端头是齐口，和另两份主题一致。 */
+.arc-fg {
+  fill: none;
+  stroke-width: 9;
+  stroke-linecap: butt;
+  stroke-dasharray: 0 100;
+  opacity: 0;
+}
+
+/* 胎温分档：高饱和纯色，不加 filter 发光 */
+.arc-fg.t-na {
+  stroke: rgba(255, 255, 255, 0.32);
+}
+
+.arc-fg.t-cold {
+  stroke: #2b8fff;
+}
+
+.arc-fg.t-ok {
+  stroke: #00e676;
+}
+
+.arc-fg.t-warm {
+  stroke: #ffab00;
+}
+
+.arc-fg.t-hot {
+  stroke: #ff2136;
+}
+
+/* 外圈细环 = 磨损 */
+.wear-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 2;
+}
+
+.wear-fg {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: butt;
+  stroke-dasharray: 0 100;
+  opacity: 0;
+}
+
+.wear-fg.w-ok {
+  stroke: #00e676;
+}
+
+.wear-fg.w-warn {
+  stroke: #ffab00;
+}
+
+.wear-fg.w-bad {
+  stroke: #ff2136;
+}
+
+/* ---------------- 环心读数 ---------------- */
+.c-read {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding-bottom: 8px;
+  pointer-events: none;
+}
+
+/* 主读数：纯白 + 高饱和分档色以外不加装饰，只靠 1px 硬投影压住底下的弧 */
+.c-read b {
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+}
+
+.c-temp {
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 700;
+  color: #e6edf5;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+}
+
+.c-brake {
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 700;
+  color: #a9b6c4;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+}
+
+/* 角落位置标：压在环外侧，不占环内空间 */
+.c-tag {
+  position: absolute;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: rgba(255, 255, 255, 0.8);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+.corner.fl .c-tag {
+  left: 1px;
+  top: 1px;
+}
+
+.corner.fr .c-tag {
+  right: 1px;
+  top: 1px;
+}
+
+.corner.rl .c-tag {
+  left: 1px;
+  bottom: 1px;
+}
+
+.corner.rr .c-tag {
+  right: 1px;
+  bottom: 1px;
+}
+
+/* 未开始 / 等待：整体压暗，别把上次的值当实时值 */
+.hud[data-status='idle'],
+.hud[data-status='waiting'],
+.hud[data-status='error'] {
+  opacity: 0.5;
+}

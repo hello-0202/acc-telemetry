@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>轮胎数据</title>
+    <link rel="stylesheet" href="./theme.css" />
+  </head>
+  <body>
+    <!-- 设计基准 220×220（见 theme.json）。宿主按 contain 等比缩放，直接按像素写。
+         视觉：四环 2×2 紧凑排列（左上 FL / 右上 FR / 左下 RL / 右下 RR），
+         全透明背景，没有车形、没有底板、没有发光。 -->
+    <div class="hud" id="hud" data-status="idle">
+      <!-- 左前 -->
+      <div class="corner fl">
+        <svg viewBox="0 0 106 106" aria-hidden="true">
+          <circle class="wear-bg" cx="53" cy="53" r="49" pathLength="100" transform="rotate(-90 53 53)" />
+          <circle class="wear-fg w-ok" id="wear-FL" cx="53" cy="53" r="49" pathLength="100" transform="rotate(-90 53 53)" />
+          <circle class="arc-bg" cx="53" cy="53" r="39" pathLength="100" transform="rotate(135 53 53)" />
+          <circle class="arc-fg t-na" id="arc-FL" cx="53" cy="53" r="39" pathLength="100" transform="rotate(135 53 53)" />
+        </svg>
+        <div class="c-read">
+          <b id="psi-FL">--</b>
+          <span class="c-temp" id="temp-FL">--°C</span>
+          <span class="c-brake" id="brake-FL">B --</span>
+        </div>
+        <span class="c-tag">FL</span>
+      </div>
+
+      <!-- 右前 -->
+      <div class="corner fr">
+        <svg viewBox="0 0 106 106" aria-hidden="true">
+          <circle class="wear-bg" cx="53" cy="53" r="49" pathLength="100" transform="rotate(-90 53 53)" />
+          <circle class="wear-fg w-ok" id="wear-FR" cx="53" cy="53" r="49" pathLength="100" transform="rotate(-90 53 53)" />
+          <circle class="arc-bg" cx="53" cy="53" r="39" pathLength="100" transform="rotate(135 53 53)" />
+          <circle class="arc-fg t-na" id="arc-FR" cx="53" cy="53" r="39" pathLength="100" transform="rotate(135 53 53)" />
+        </svg>
+        <div class="c-read">
+          <b id="psi-FR">--</b>
+          <span class="c-temp" id="temp-FR">--°C</span>
+          <span class="c-brake" id="brake-FR">B --</span>
+        </div>
+        <span class="c-tag">FR</span>
+      </div>
+
+      <!-- 左后 -->
+      <div class="corner rl">
+        <svg viewBox="0 0 106 106" aria-hidden="true">
+          <circle class="wear-bg" cx="53" cy="53" r="49" pathLength="100" transform="rotate(-90 53 53)" />
+          <circle class="wear-fg w-ok" id="wear-RL" cx="53" cy="53" r="49" pathLength="100" transform="rotate(-90 53 53)" />
+          <circle class="arc-bg" cx="53" cy="53" r="39" pathLength="100" transform="rotate(135 53 53)" />
+          <circle class="arc-fg t-na" id="arc-RL" cx="53" cy="53" r="39" pathLength="100" transform="rotate(135 53 53)" />
+        </svg>
+        <div class="c-read">
+          <b id="psi-RL">--</b>
+          <span class="c-temp" id="temp-RL">--°C</span>
+          <span class="c-brake" id="brake-RL">B --</span>
+        </div>
+        <span class="c-tag">RL</span>
+      </div>
+
+      <!-- 右后 -->
+      <div class="corner rr">
+        <svg viewBox="0 0 106 106" aria-hidden="true">
+          <circle class="wear-bg" cx="53" cy="53" r="49" pathLength="100" transform="rotate(-90 53 53)" />
+          <circle class="wear-fg w-ok" id="wear-RR" cx="53" cy="53" r="49" pathLength="100" transform="rotate(-90 53 53)" />
+          <circle class="arc-bg" cx="53" cy="53" r="39" pathLength="100" transform="rotate(135 53 53)" />
+          <circle class="arc-fg t-na" id="arc-RR" cx="53" cy="53" r="39" pathLength="100" transform="rotate(135 53 53)" />
+        </svg>
+        <div class="c-read">
+          <b id="psi-RR">--</b>
+          <span class="c-temp" id="temp-RR">--°C</span>
+          <span class="c-brake" id="brake-RR">B --</span>
+        </div>
+        <span class="c-tag">RR</span>
+      </div>
+    </div>
+
+    <script src="./theme.js"></script>
+  </body>
+</html>

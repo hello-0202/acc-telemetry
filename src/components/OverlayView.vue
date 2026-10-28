@@ -9,16 +9,29 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import ThemeHost from './ThemeHost.vue';
-import { readThemeChoice } from '../telemetry/theme-choice.js';
+import { OVERLAY_SLOT_MAX, readThemeChoice } from '../telemetry/theme-choice.js';
+import { readOverlayBackground } from '../telemetry/overlay-background.js';
 import { disconnect, start, telemetry } from '../telemetry/useTelemetry.js';
 
 const isTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
+const appWindow = isTauri ? getCurrentWindow() : null;
 
-// 当前悬浮窗主题：存在 localStorage（与主窗口同源共享），设置页切换后会推一条事件过来
-const choice = ref(readThemeChoice());
+// 窗口 label 就是槽位：overlay-1 / overlay-2 / overlay-3（浏览器预览时当 1 号）
+function slotFromLabel(label) {
+  const m = /^overlay-(\d+)$/.exec(label || '');
+  const n = m ? Number(m[1]) : 1;
+  return Math.min(OVERLAY_SLOT_MAX, Math.max(1, n || 1));
+}
+const slot = slotFromLabel(appWindow?.label);
+
+// 当前悬浮窗主题：按槽位存在 localStorage（与主窗口同源共享），设置页切换后会推一条事件过来
+const choice = ref(readThemeChoice('overlay', slot));
+
+// 悬浮窗背景：透明（默认）/ 不透明。设置页切换后同样会推事件过来。
+const background = ref(readOverlayBackground(slot));
 
 function applyTheme() {
-  choice.value = readThemeChoice();
+  choice.value = readThemeChoice('overlay', slot);
 }
 
 // true = 穿透（默认）。浏览器里预览时先当作未锁定，方便看编辑态的样式。
@@ -27,20 +40,25 @@ const locked = ref(true);
 const size = ref('');
 const design = ref('');
 
-const appWindow = isTauri ? getCurrentWindow() : null;
 let unlistenLock = null;
 let unlistenResize = null;
 let unlistenFocus = null;
 let unlistenVisible = null;
 let unlistenTheme = null;
+let unlistenBackground = null;
 let blurTimer = null;
 // 拖动 / 缩放期间焦点会短暂离开 webview，此时不能当成「用户去玩游戏了」而回锁
 let interacting = false;
 let interactTimer = null;
+// 位置 / 尺寸持久化：拖动 / 缩放结束后把几何写回磁盘
+let unlistenMove = null;
+let saveTimer = null;
 
 // 主题决定窗口尺寸：设计尺寸 + 悬浮窗内边距（6px×2）与 1px 边框×2，
 // 这样主题内容刚好按 design 的 1:1 渲染（k≈1），不会被无谓缩小。
 const OVERLAY_CHROME = 14;
+// 编辑态工具条高度：解锁时 Rust 会把窗口长高这么多（主题区尺寸不变），算 design 时要扣掉
+const EDIT_BAR = 22;
 
 async function syncSize() {
   if (!appWindow) return;
@@ -53,7 +71,32 @@ async function syncSize() {
     const w = Math.round(s.width / dpr);
     const h = Math.round(s.height / dpr);
     size.value = `${w}×${h}`;
-    design.value = `${Math.max(0, w - OVERLAY_CHROME)}×${Math.max(0, h - OVERLAY_CHROME)}`;
+    // 编辑态的窗口多了工具条那一行，design 读数要扣掉，才是主题真正的基准尺寸
+    const chrome = OVERLAY_CHROME + (locked.value ? 0 : EDIT_BAR);
+    design.value = `${Math.max(0, w - OVERLAY_CHROME)}×${Math.max(0, h - chrome)}`;
+  } catch { /* 权限缺失时忽略 */ }
+}
+
+// 拖动 / 缩放结束后（停 400ms）把当前几何写回磁盘，供下次启动恢复。
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(doSave, 400);
+}
+
+async function doSave() {
+  if (!appWindow) return;
+  // 编辑态的窗口多了一行工具条（高度 +22、位置上移），不能当成正式几何存下来；
+  // 锁定 / 隐藏时 Rust 会复原窗口，那一次 resize/move 事件再落盘才是对的。
+  if (!locked.value) return;
+  try {
+    const pos = await appWindow.outerPosition();
+    const size = await appWindow.outerSize();
+    await invoke('save_overlay_rect', {
+      x: pos.x,
+      y: pos.y,
+      w: size.width,
+      h: size.height,
+    });
   } catch { /* 权限缺失时忽略 */ }
 }
 
@@ -133,17 +176,33 @@ onMounted(async () => {
   }
   // 配置在 localStorage 里（同源共享），不用等 sidecar 起来
   applyTheme();
-  listen('overlay-theme-changed', () => { applyTheme(); })
+  // 事件带槽位：改的是别的悬浮窗的主题，这边不用动
+  listen('overlay-theme-changed', (e) => {
+    const changed = Number(e.payload?.slot);
+    if (!changed || changed === slot) applyTheme();
+  })
     .then((fn) => { unlistenTheme = fn; })
+    .catch(() => { /* 权限缺失时忽略 */ });
+  listen('overlay-background-changed', (e) => {
+    const changed = Number(e.payload?.slot);
+    if (!changed || changed === slot) background.value = readOverlayBackground(slot);
+  })
+    .then((fn) => { unlistenBackground = fn; })
     .catch(() => { /* 权限缺失时忽略 */ });
   listen('overlay-lock', (e) => {
     locked.value = !!e.payload;
     clearTimeout(blurTimer);
+    // 窗口尺寸 / 位置随锁定态变（工具条那一行），读数要跟着刷新
+    syncSize();
   })
     .then((fn) => { unlistenLock = fn; })
     .catch(() => { /* 权限缺失时忽略 */ });
-  appWindow.onResized(() => { syncSize(); })
+  appWindow.onResized(() => { syncSize(); scheduleSave(); })
     .then((fn) => { unlistenResize = fn; })
+    .catch(() => {});
+  // 拖动（startDragging）结束时也会掉这个事件：用它记住位置
+  appWindow.onMoved(() => { scheduleSave(); })
+    .then((fn) => { unlistenMove = fn; })
     .catch(() => {});
   // 解锁后一旦把焦点交还给游戏，重新穿透，避免忘记锁定后点不动游戏。
   // 拖动 / 缩放结束的那一下也会掉焦点，所以延迟复核，别刚解锁就自己锁回去。
@@ -153,8 +212,14 @@ onMounted(async () => {
       return;
     }
     clearTimeout(blurTimer);
-    blurTimer = setTimeout(() => {
-      if (!locked.value && !interacting && !document.hasFocus()) lock();
+    blurTimer = setTimeout(async () => {
+      if (locked.value || interacting || document.hasFocus()) return;
+      // 多开时焦点常常只是挪到另一个悬浮窗去了：那种情况下不能回锁，
+      // 否则点一下第二个窗口、第一个窗口的失焦计时器会把所有窗口一起锁回去。
+      let otherFocused = false;
+      try { otherFocused = await invoke('overlay_any_focused'); } catch { otherFocused = false; }
+      if (otherFocused) return;
+      if (!document.hasFocus()) lock();
     }, 800);
   })
     .then((fn) => { unlistenFocus = fn; })
@@ -175,32 +240,44 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   clearTimeout(blurTimer);
   clearTimeout(interactTimer);
+  clearTimeout(saveTimer);
   if (unlistenLock) unlistenLock();
   if (unlistenResize) unlistenResize();
+  if (unlistenMove) unlistenMove();
   if (unlistenFocus) unlistenFocus();
   if (unlistenVisible) unlistenVisible();
   if (unlistenTheme) unlistenTheme();
+  if (unlistenBackground) unlistenBackground();
 });
 </script>
 
 <template>
-  <div class="ov-root" :class="{ editing: !locked }">
+  <div class="ov-root" :class="{ editing: !locked, opaque: background === 'opaque' }">
+    <!-- 编辑态工具条：单独一行、固定在主题正上方。
+         解锁时 Rust 会把窗口向上长高 22px（主题位置和尺寸都不动），
+         所以工具条不会压住主题，也不会把 contain 的缩放比压小。 -->
+    <div v-if="!locked" class="ov-bar" @pointerdown="startDrag">
+      <span class="ov-drag">拖动移动 · 拉边缩放</span>
+      <span class="ov-size" :title="'窗口 ' + size">
+        design <b>{{ design }}</b>
+      </span>
+      <button class="ov-lock" type="button" @pointerdown.stop @click="lock">锁定</button>
+    </div>
+
     <div class="ov-card">
       <div id="theme-slot" class="ov-slot">
-        <ThemeHost :theme="choice.id" :source="choice.source" mode="overlay" :state="telemetry.state" @ready="fitToTheme" />
+        <ThemeHost
+          :theme="choice.id"
+          :source="choice.source"
+          mode="overlay"
+          :background="background"
+          :state="telemetry.state"
+          @ready="fitToTheme"
+        />
       </div>
 
-      <!-- 编辑态拖动层：整块（工具条以下）都能拖着走 -->
+      <!-- 编辑态拖动层：整块主题都能拖着走 -->
       <div v-if="!locked" class="ov-grab" @pointerdown="startDrag" />
-
-      <!-- 编辑态工具条：整条可拖，右侧显示当前尺寸（内容区就是主题 design 的基准） -->
-      <div v-if="!locked" class="ov-bar" @pointerdown="startDrag">
-        <span class="ov-drag">拖动移动 · 拉边缩放</span>
-        <span class="ov-size" :title="'窗口 ' + size">
-          design <b>{{ design }}</b>
-        </span>
-        <button class="ov-lock" type="button" @pointerdown.stop @click="lock">锁定</button>
-      </div>
     </div>
 
     <!-- 八向缩放热区：贴窗口边缘（无边框窗口没有原生边框可拉） -->
@@ -223,26 +300,44 @@ onBeforeUnmount(() => {
   height: 100vh;
   box-sizing: border-box;
   padding: 6px;
+  /* 纵向排：编辑态工具条一行 + 主题卡片。窗口解锁时会自动长高 22px（Rust 侧），
+     所以卡片高度始终等于主题 design，不会被工具条挤压。 */
+  display: flex;
+  flex-direction: column;
+}
+
+/* 不透明模式：整窗（含 6px 内边距）铺实心底板，主题的透明留白也不会透出游戏画面。
+   窗口本身是透明的，所以圆角外的四个角仍然透 —— 和主题卡片的圆角视觉一致。 */
+.ov-root.opaque {
+  background: #0b0e13;
+  border-radius: 12px;
 }
 
 .ov-card {
   position: relative;
   width: 100%;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   box-sizing: border-box;
   display: flex;
   border-radius: 12px;
-  border: 1px dashed rgba(255, 255, 255, 0.22);
+  /* 边框宽度固定 1px（锁定态透明）：改宽度会挤到主题区，编辑态用 box-shadow 加粗 */
+  border: 1px solid transparent;
   overflow: hidden;
 }
 
-/* 主题自己带圆角和背景，锁定态不要再套一层可见边框 */
+/* 锁定态：主题自己带圆角和背景，不要再套一层可见边框 */
 .ov-root:not(.editing) .ov-card {
   border-color: transparent;
+  box-shadow: none;
 }
 
+/* 编辑态：实线高亮框把悬浮窗（主题区）整个框出来，一眼能看清边界 */
 .ov-root.editing .ov-card {
-  border-color: rgba(120, 190, 255, 0.75);
+  border-color: rgba(120, 190, 255, 0.95);
+  box-shadow:
+    0 0 0 2px rgba(120, 190, 255, 0.28),
+    0 0 14px rgba(120, 190, 255, 0.22);
 }
 
 .ov-slot {
@@ -251,38 +346,32 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
 }
 
-/* 编辑态工具条占 22px：把主题区让开，否则会压住主题第一行 */
-.ov-root.editing .ov-slot {
-  padding-top: 22px;
-}
-
 /* 拖动层铺在主题上：编辑态就是调布局，不需要主题里的交互 */
 .ov-grab {
   position: absolute;
   left: 0;
   right: 0;
-  top: 22px;
+  top: 0;
   bottom: 0;
   z-index: 2;
   cursor: move;
 }
 
+/* 工具条：占满一行、固定在主题正上方（不压住主题，也不改主题缩放） */
 .ov-bar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
+  flex: 0 0 22px;
   height: 22px;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 0 6px;
-  background: rgba(10, 12, 16, 0.72);
+  border-radius: 6px;
+  background: rgba(10, 12, 16, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(120, 190, 255, 0.35);
   font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
   color: rgba(255, 255, 255, 0.6);
   cursor: move;
   user-select: none;
-  z-index: 3;
 }
 
 .ov-drag {

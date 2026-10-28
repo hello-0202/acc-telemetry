@@ -3,7 +3,7 @@
   "identifier": "overlay",
   "description": "Capability for the game overlay window",
   "windows": [
-    "overlay"
+    "overlay-*"
   ],
   "permissions": [
     "core:default",
@@ -16,6 +16,8 @@
     "core:window:allow-set-size",
     "core:window:allow-is-visible",
     "allow-set-overlay-size",
-    "allow-set-overlay-locked"
+    "allow-set-overlay-locked",
+    "allow-overlay-any-focused",
+    "allow-save-overlay-rect"
   ]
 }

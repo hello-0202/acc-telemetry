@@ -444,6 +444,8 @@ html[data-theme="dark"] .kv.lap .v{color:#fff}
 .toggle-group{margin-left:0.6154rem;display:inline-flex;align-items:center;gap:0.4615rem;flex:none}
 /* 圈速概要：开关紧跟在标题文字右侧，间距只用 h4 自身的 gap */
 .ana-card h4 .toggle-group{margin-left:0}
+/* 走线采样不足的提示：出现在圈速概要标题行，不影响布局 */
+.ana-card h4 .sparse-tip{display:inline-flex;align-items:center;padding:0.0769rem 0.3846rem;border:0.0769rem solid var(--warn);border-radius:0.2308rem;background:var(--warn-dim);color:var(--warn);font-size:0.7308rem;font-weight:500;letter-spacing:0}
 .pb-toggle{padding:0.1538rem 0.6923rem;border:0.0769rem solid var(--line-2);border-radius:0.2308rem;background:none;font-family:var(--font-mono);font-weight:400;font-size:0.7308rem;line-height:1.4;color:var(--text-dim);white-space:nowrap;cursor:pointer;transition:.12s}
 .pb-toggle:hover{color:var(--text);border-color:var(--text-faint)}
 .pb-toggle.on{border-color:var(--signal);color:var(--signal-text);background:var(--signal-dim)}
@@ -465,11 +467,15 @@ html[data-theme="dark"] .kv.lap .v{color:#fff}
 /* ================= settings ================= */
 #view-settings{padding:1.2308rem 1.3846rem;overflow-y:auto;align-items:center}
 .set-group{margin-bottom:1.2308rem;width:100%;max-width:40rem}
-.set-group>.glbl{font-family:var(--font-mono);font-size:0.7308rem;color:var(--text-faint);letter-spacing:.14em;display:block;margin-bottom:0.5385rem}
+.set-group>.glbl{display:flex;align-items:center;gap:0.4615rem;font-family:var(--font-display);font-size:1.0769rem;font-weight:600;letter-spacing:.08em;color:var(--text);margin-bottom:0.7692rem}
+/* 分组标题左侧的主题色竖条：比纯文字更醒目，又不会抢内容注意力 */
+.set-group>.glbl::before{content:"";flex:none;width:0.1538rem;height:1.1538rem;border-radius:0.0769rem;background:var(--signal)}
 .set-row{display:flex;align-items:center;justify-content:space-between;gap:0.7692rem;padding:0.6154rem 0;border-bottom:0.0769rem dashed var(--line);font-size:0.9615rem}
 .set-row:last-child{border-bottom:none}
 .set-row .v{font-family:var(--font-mono);font-size:0.8462rem;color:var(--text-dim)}
 .set-label{display:inline-flex;align-items:center;gap:0.4615rem}
+/* 悬浮窗槽位下的子设置：缩进 + 左侧细竖线，和上方的槽位开关行形成层级 */
+.set-sub{padding-left:1.0769rem;margin-left:0.3846rem;border-left:0.0769rem solid var(--line)}
 .seg.seg-hz button{min-width:4.7692rem}
 .metric{display:inline-flex;align-items:center;gap:0.6154rem}
 .metric-track{width:5.8462rem;height:0.3846rem;background:var(--panel-2);box-shadow:inset 0 0 0 0.0769rem var(--line);display:inline-block;overflow:hidden}
@@ -478,34 +484,53 @@ html[data-theme="dark"] .kv.lap .v{color:#fff}
 
 /* ---------- 悬浮窗主题选择器 ---------- */
 .theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(13.5rem,1fr));gap:0.6154rem;margin:0.3846rem 0 0.6154rem}
-.theme-card{display:flex;flex-direction:column;gap:0.3077rem;padding:0.6154rem 0.7692rem;background:var(--panel-2);box-shadow:inset 0 0 0 0.0769rem var(--line);border-radius:0.4615rem;overflow:hidden}
-.theme-card.active{box-shadow:inset 0 0 0 0.0769rem var(--signal)}
+/* 红圈用真实边框而不是 inset box-shadow：缩略预览是绝对定位的子元素，会盖住父级的内阴影，
+   用 border 才能保证上半部分（预览区）也被圈住。
+   默认留一圈透明边框占位，只有当前启用的卡片才上色，切换时内容不会跳动 */
+.theme-card{display:flex;flex-direction:column;gap:0.3077rem;padding:0.6154rem 0.7692rem;background:var(--panel-2);border:0.1538rem solid transparent;border-radius:0.4615rem;overflow:hidden}
+/* 只有当前启用的那张套红圈，未选中的不描边（黑色主题下也不会糊成一片） */
+.theme-card.active{border-color:var(--signal)}
 .theme-card.bad{opacity:.72}
 .tc-head{display:flex;align-items:center;gap:0.3846rem}
 .tc-name{font-size:0.9615rem;font-weight:600;color:var(--text)}
 .tc-badge{font-family:var(--font-mono);font-size:0.6923rem;color:var(--text-faint);box-shadow:inset 0 0 0 0.0769rem var(--line-2);border-radius:0.2308rem;padding:0.0769rem 0.3077rem}
-.tc-meta{font-family:var(--font-mono);font-size:0.7692rem;color:var(--text-dim)}
-.tc-desc{font-size:0.8077rem;color:var(--text-dim);line-height:1.35}
 .tc-err{font-size:0.8077rem;color:var(--hot);line-height:1.35}
+.tc-ok{font-size:0.8077rem;color:var(--good);line-height:1.35}
 .tc-ask{font-size:0.8077rem;color:var(--warn)}
 .tc-actions{display:flex;align-items:center;gap:0.3846rem;margin-top:0.2308rem;flex-wrap:wrap}
 .tc-actions .btn{height:1.6923rem;font-size:0.8077rem;padding:0 0.6923rem}
 .theme-tools{display:flex;align-items:center;gap:0.5385rem;flex-wrap:wrap}
 .theme-tools .btn{height:1.8462rem;font-size:0.8462rem;padding:0 0.7692rem}
 .tc-hint{font-size:0.8077rem;color:var(--text-faint)}
-/* 主题缩略预览：负边距吃掉卡片内边距，让缩略图贴住卡片上沿 */
-.tc-preview{position:relative;display:block;align-self:stretch;height:6.2rem;padding:0;margin:-0.6154rem -0.7692rem 0.2308rem;border:0;border-radius:0;background:#0D1116;overflow:hidden;cursor:zoom-in}
+/* 主题缩略预览：负边距吃掉卡片内边距，让缩略图贴住卡片边框内侧（边框本身由 .theme-card 提供） */
+.tc-preview{position:relative;display:block;align-self:stretch;height:6.2rem;padding:0;margin:-0.6154rem -0.7692rem 0.2308rem;border:0;border-radius:0;background:#0D1116;overflow:hidden;cursor:pointer}
 .tc-preview:disabled{cursor:default}
-.tc-preview:not(:disabled):hover{box-shadow:inset 0 0 0 0.0769rem var(--signal-text)}
+/* hover 高亮画在缩略图自己身上：按钮的 box-shadow 会被 cover 它的 .tc-thumb 盖掉 */
+.tc-preview:not(:disabled):hover .tc-thumb{box-shadow:inset 0 0 0 0.1538rem var(--signal-text)}
 .tc-preview-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--panel-2);color:var(--text-faint);font-size:0.8077rem}
 /* 「内置面板」不是主题，没有 iframe 预览：给一块静态示意，别让卡片高度塌下去 */
-.tc-preview.static{cursor:default;background:var(--panel-2)}
 .tc-panel-thumb{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-family:var(--font-mono);font-size:0.8077rem;letter-spacing:.08em;
   background:repeating-linear-gradient(45deg,rgba(150,162,177,.05) 0 6px,transparent 6px 13px),#0D1116}
-.tc-zoom{position:absolute;right:0.3077rem;top:0.3077rem;padding:0.0769rem 0.3077rem;border-radius:0.1538rem;background:rgba(6,9,12,.62);color:rgba(233,238,244,.82);font-size:0.6154rem;line-height:1.4;opacity:0;transition:opacity .12s}
-.tc-preview:hover .tc-zoom{opacity:1}
+/* 缩略占位：不在这里渲染主题（避免主窗口 ACL 被第三方主题借用），点击后由独立预览窗口承载 */
+.tc-thumb{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.1538rem;background:repeating-linear-gradient(45deg,rgba(150,162,177,.05) 0 6px,transparent 6px 13px),#0D1116}
+.tc-thumb-dim{font-family:var(--font-mono);font-size:0.8077rem;color:rgba(160,205,255,.85)}
+.tc-thumb-hint{font-size:0.6154rem;color:var(--text-faint);letter-spacing:.06em}
 /* 放大预览弹窗 */
 .dlg.dlg-wide{width:min(46rem,100%)}
+/* 主题选择弹窗：网格可能很长，head / foot 固定，中间自己滚 */
+.dlg.dlg-theme{display:flex;flex-direction:column;max-height:min(84vh,48rem)}
+/* 弹窗容器只是为了接住键盘事件才拿焦点，别让它套一圈 focus 环 */
+.dlg-theme:focus,.dlg-theme:focus-visible{outline:none}
+.dlg-theme .dlg-head{padding:1.1538rem 2.4615rem 0 1.2308rem;flex:none}
+.dlg-theme .dlg-body{flex:1;min-height:0;overflow-y:auto;padding-bottom:0.9231rem}
+.dlg-theme .dlg-foot{flex:none;padding-top:0}
+.tpk-lead{margin:0;font-size:0.8462rem;line-height:1.55;color:var(--text-dim)}
+.tpk-lead strong{font-family:var(--font-display);font-weight:600;color:var(--text)}
+.tpk-err{margin-top:0.4615rem}
+/* 设置页里那一行：主题名（过长省略）+ 更改按钮 */
+.tpk-ctl{display:flex;align-items:center;gap:0.7692rem;flex:none;min-width:0}
+.tpk-now{max-width:17rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tpk-ctl .btn{height:1.8462rem;font-size:0.8462rem;padding:0 0.7692rem}
 .pv-stage{position:relative;width:100%;aspect-ratio:380/150;min-height:6.5rem;max-height:min(46vh,26rem);margin-top:0.3077rem;border:0.0769rem solid var(--line);border-radius:0.3077rem;overflow:hidden;background:#0D1116}
 .pv-meta{display:flex;align-items:center;gap:0.4615rem;margin-top:0.6154rem;flex-wrap:wrap}
 .pv-chip{font-family:var(--font-mono);font-size:0.7308rem;color:var(--text-dim);padding:0.0769rem 0.3846rem;border-radius:0.1538rem;box-shadow:inset 0 0 0 0.0769rem var(--line-2)}
@@ -572,8 +597,8 @@ html[data-theme="light"] .dlg-mask{background:rgba(24,31,27,.34)}
 html[data-theme="light"] .dlg-mask.dlg-notify{background:none}
 .dlg-notify .dlg{pointer-events:auto;width:min(23.0769rem, calc(100vw - 2.4616rem));animation:notifyIn .18s cubic-bezier(.2,.8,.25,1)}
 .dlg-notify .dlg-head{padding:1rem 2.4615rem 0 1.1538rem}
-.dlg-notify .dlg-x{position:absolute;top:0.3846rem;right:0.3846rem;width:1.6923rem;height:1.6923rem;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:1.1538rem;line-height:1;z-index:1}
-.dlg-notify .dlg-x:hover{color:var(--text);background:var(--panel-2)}
+.dlg-x{position:absolute;top:0.3846rem;right:0.3846rem;width:1.6923rem;height:1.6923rem;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:1.1538rem;line-height:1;z-index:1}
+.dlg-x:hover{color:var(--text);background:var(--panel-2)}
 .dlg-notify .dlg-ico{width:2rem;height:2rem}
 .dlg-notify .dlg-ico svg{width:1.0769rem;height:1.0769rem}
 .dlg-notify .dlg-body{padding:0.7692rem 1.1538rem 0;font-size:0.8846rem}

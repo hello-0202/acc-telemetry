@@ -1,0 +1,10 @@
+{
+  "id": "my-panel",
+  "name": "my-panel",
+  "version": "1.0.0",
+  "author": "你或 AI 的名字",
+  "desc": "主面板主题示例（fit: fluid）：速度/档位/DELTA、转速、圈速、踏板、四轮、赛道，铺满数据区自适应排版。",
+  "design": { "w": 1200, "h": 640 },
+  "fit": "fluid",
+  "modes": ["monitor"]
+}

@@ -1,0 +1,201 @@
+/* 踏板 + 方向盘 —— 设计基准 300×190，全部 px 写死，缩放交给宿主（contain）。
+ *
+ * 视觉取向：左右两根【竖直矩形踏板条】（从底部往上填充、数值上下变）+ 中间【转向圆环】
+ * （内圈细环 + 外圈 270° 进度弧），背景完全透明，没有底板 / 没有卡片边框。
+ */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  /* 与软件外壳同一套字体栈（src/style.css 的 --font-display），数字单独用 --font-mono */
+  font-family: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Microsoft YaHei', sans-serif;
+  color: #ffffff;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+.hud {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+/* ---------------- 左右踏板：竖直矩形条 ---------------- */
+.pedal {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.p-lab {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: #9aa5b1;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+}
+
+.brake .p-lab {
+  color: #ff3d52;
+}
+
+.thr .p-lab {
+  color: #00f067;
+}
+
+/* 条本体 = 一个凹槽：底色 + 内描边都在填充之上，填充只负责在里面涨高。 */
+.p-bar {
+  position: relative;
+  width: 28px;
+  height: 104px;
+  /* 槽底压深一点，填充与槽的对比才够（透明背景上尤其重要） */
+  background: rgba(10, 14, 19, 0.72);
+  border-radius: 0;
+  overflow: hidden;
+}
+
+/* 内描边：最上层，压住填充边缘，保证框线始终是完整的一圈 */
+.p-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32);
+}
+
+/* 填充：从底部往上长，高度 = 踏板开度。z-index 压在描边之下，所以不会盖住槽壁。
+ * 不做 height 过渡：刷新间隔 60ms，过渡会被下一帧反复打断，填充高度会明显落后于数值
+ * （实测显示 98% 但只填了不到一半）。60ms 直更已经够顺滑。 */
+.p-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  height: 0%;
+}
+
+/* 纯色填充：不做渐变、不做发光，边界就是一条硬线。
+ * 高饱和 + 高亮度：背景会透明在游戏画面上，颜色发暗会在亮场景里糊掉。 */
+.brake .p-fill {
+  background: #ff1f38;
+}
+
+.thr .p-fill {
+  background: #00dd5c;
+}
+
+.p-val {
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #ffffff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+}
+
+/* ---------------- 中间：转向圆环 ---------------- */
+.steer {
+  position: relative;
+  flex: none;
+  width: 140px;
+  height: 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.ring {
+  display: block;
+  width: 140px;
+  height: 140px;
+  overflow: visible;
+}
+
+/* 内圈：完整 360° 圆环。原来这里是方向盘图形，去掉盘面后靠这个圆做视觉锚点。
+ * 深色底 + 白色细线两层叠：浅色游戏画面里白线会糊掉，靠深底兜住轮廓；
+ * 深色画面里深底看不见，靠白线兜住 —— 两头都能读。 */
+.st-core-bed {
+  fill: none;
+  stroke: rgba(10, 14, 19, 0.72);
+  stroke-width: 7;
+}
+
+.st-core {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.78);
+  stroke-width: 2.6;
+}
+
+/* 进度槽：270°（缺口朝下），深色槽底与踏板的槽同色，彩色进度弧直接盖在它上面 */
+.st-track {
+  fill: none;
+  stroke: rgba(10, 14, 19, 0.72);
+  stroke-width: 7;
+  stroke-dasharray: 75 100;
+}
+
+/* 左 / 右转向弧（-450..450 度映射到 ±135°，即 37.5 个 dasharray 单位）
+ * 不做 dasharray 过渡：60ms 刷新会打断 80ms 过渡，弧长永远追不上真实值。 */
+/* 弧端与连接一律平切（butt / miter），不要圆头也不要发光 */
+.st-left,
+.st-right {
+  fill: none;
+  stroke-width: 7;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+  stroke-dasharray: 0 100;
+  opacity: 0;
+}
+
+.st-left {
+  stroke: #1a94ff;
+}
+
+.st-right {
+  stroke: #ff9500;
+}
+
+.st-read {
+  display: flex;
+  align-items: baseline;
+  margin-top: 4px;
+}
+
+.st-read b {
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #ffffff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+}
+
+/* 未开始 / 等待：整体压暗，别把上次的值当实时值 */
+.hud[data-status="idle"],
+.hud[data-status="waiting"],
+.hud[data-status="error"] {
+  opacity: 0.5;
+}
