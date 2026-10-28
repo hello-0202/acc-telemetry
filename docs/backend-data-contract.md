@@ -2,6 +2,9 @@
 
 > 适用范围：Vue 前端（MonitorView / HistoryView / SettingsView） ↔ 后端（python-server：WebSocket 实时 + REST/SQLite 历史）
 > 约定：时间单位全部使用 **毫秒（ms）**；比例/归一化字段范围见各字段说明。
+>
+> **另见**：`docs/theme-state-contract.md` —— 主题（悬浮窗 / 监测面板）专用的 `{"type":"state"}` 契约。
+> 那份是独立的新通道，本文描述的 `frame` / `session` / `lap` 消息保持不变。
 
 ---
 

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>我的 HUD</title>
+    <link rel="stylesheet" href="./theme.css" />
+  </head>
+  <body>
+    <!-- design 是 420×120（见 theme.json）。宿主会整块等比缩放到实际窗口，
+         所以这里按「设计图的像素」直接写死数字即可，不要写响应式断点。 -->
+    <div class="card">
+      <div class="speed">
+        <span id="speed">0</span><span class="unit">KM/H</span>
+      </div>
+      <div class="gear"><span id="gear">N</span></div>
+      <div class="delta" id="delta">--.---</div>
+    </div>
+
+    <script src="./theme.js"></script>
+  </body>
+</html>

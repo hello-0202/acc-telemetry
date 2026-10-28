@@ -155,6 +155,7 @@ async def collect_loop(
                     logger.info("ACC 已退出，关闭共享内存")
                     bus.runtime["game_running"] = False
                     bus.latest_static = None
+                    bus.latest_snapshot = None
                     # 之前在直播，现在游戏进程没了：通知前端退出「活跃」态
                     if prev_live:
                         bus.event_queue.put_nowait({"type": "stopped"})
@@ -174,6 +175,7 @@ async def collect_loop(
                 logger.exception("provider.read() 失败，关闭共享内存")
                 bus.runtime["game_running"] = False
                 bus.latest_static = None
+                bus.latest_snapshot = None
                 try:
                     provider.close()
                 except Exception:  # noqa: BLE001
@@ -225,6 +227,8 @@ async def collect_loop(
 
             # 路径二：实时展示。环形缓冲覆盖写，永不阻塞。
             bus.latest_buffer.append(frame)
+            # 主题状态快照要的是完整 Snapshot（frame 只是子集），单独挂一份
+            bus.latest_snapshot = raw
             bus.stats["produced"] += 1
 
             # 路径一：记录/存储。put_nowait + 丢帧计数，绝不阻塞采集。

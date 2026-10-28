@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, shallowRef, watch, onMounted, onBeforeUnmount } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { listen } from '@tauri-apps/api/event';
 import { check } from '@tauri-apps/plugin-updater';
 import MonitorView from './components/MonitorView.vue';
 import HistoryView from './components/HistoryView.vue';
@@ -8,6 +9,8 @@ import SettingsView from './components/SettingsView.vue';
 import UpdateDialog from './components/UpdateDialog.vue';
 import { themeName, toggleTheme } from './telemetry/theme.js';
 import { ui } from './telemetry/store.js';
+import { immersive, exitImmersive, toggleImmersive } from './telemetry/immersive.js';
+import { initOverlayWatcher, overlayVisible, toggleOverlay, setOverlayLocked } from './telemetry/overlay-window.js';
 import { getHealth } from './telemetry/api.js';
 import { loadPrefs, prefs } from './telemetry/prefs.js';
 import { telemetry, clearConnectError } from './telemetry/useTelemetry.js';
@@ -197,15 +200,34 @@ function switchView(name) {
 function onKey(e) {
   const t = e.target;
   if (t && /INPUT|TEXTAREA/.test(t.tagName)) return;
+  // 沉浸模式里只留 Esc 一个出口，避免误触切走页面后连导航都看不见
+  if (immersive.value) {
+    if (e.key === 'Escape') exitImmersive();
+    return;
+  }
   const k = e.key.toLowerCase();
   if (k >= '1' && k <= '3') switchView(VIEWS[+k - 1]);
   else if (k === 't') toggleTheme();
 }
 
+// 离开监测页就退出沉浸，否则外壳（含导航）被藏起来了没法切回去
+watch(view, (v) => {
+  if (v !== 'monitor' && immersive.value) exitImmersive();
+});
+
 onMounted(() => {
   const h = (location.hash || '').replace('#', '');
   if (VIEWS.indexOf(h) >= 0) view.value = h;
   window.addEventListener('keydown', onKey);
+
+  // 悬浮窗按钮的状态跟着 Rust 侧的显隐走（快捷键也能同步）
+  initOverlayWatcher();
+
+  // 全局快捷键被别的软件占用时 Rust 只能写 stderr，这里再留一条带上下文的记录：
+  // 按 Ctrl+Shift+O / L 没反应时，先看这条（也可以点顶栏按钮兜底）。
+  listen('overlay-shortcut-error', (e) => {
+    console.warn('[overlay] 全局快捷键不可用，请改用面板按钮：', e.payload);
+  }).catch(() => {});
 
   // 读取后端配置（自动开始 / 后台常驻等），MonitorView 复用同一个 Promise 做自动开始
   loadPrefs();
@@ -253,7 +275,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="desktop">
-    <div class="win" id="win">
+    <div class="win" id="win" :class="{ immersive }">
       <!-- 自定义标题栏：data-tauri-drag-region 让它可以拖动窗口 -->
       <div class="win-bar" data-tauri-drag-region>
         <div class="win-id" data-tauri-drag-region>
@@ -284,6 +306,37 @@ onBeforeUnmount(() => {
             </button>
           </nav>
           <div class="top-right">
+            <!-- 全屏 / 悬浮窗只对监测页有意义，其它页面不显示 -->
+            <button
+              v-if="view === 'monitor'"
+              class="sq-btn"
+              :class="{ on: immersive }"
+              @click="toggleImmersive"
+              aria-label="全屏沉浸"
+              title="全屏沉浸（Esc 退出）"
+            >
+              <svg v-if="!immersive" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H4v5" /><path d="M15 4h5v5" /><path d="M15 20h5v-5" /><path d="M9 20H4v-5" /></svg>
+              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h5V4" /><path d="M20 9h-5V4" /><path d="M20 15h-5v5" /><path d="M4 15h5v5" /></svg>
+            </button>
+            <button
+              v-if="view === 'monitor'"
+              class="sq-btn"
+              :class="{ on: overlayVisible }"
+              @click="toggleOverlay"
+              aria-label="悬浮窗"
+              title="悬浮窗（Ctrl+Shift+O）"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 20h8" /></svg>
+            </button>
+            <button
+              v-if="view === 'monitor' && overlayVisible"
+              class="sq-btn"
+              @click="setOverlayLocked(false)"
+              aria-label="调整悬浮窗"
+              title="调整悬浮窗位置与大小（Ctrl+Shift+L）"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" /></svg>
+            </button>
             <button class="sq-btn" :class="{ on: themeName === 'light' }" @click="toggleTheme()" aria-label="切换黑白主题" title="切换主题 (T)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" /></svg>
             </button>
@@ -315,6 +368,23 @@ onBeforeUnmount(() => {
             <span><kbd>T</kbd> 主题</span>
           </span>
         </footer>
+      </div>
+
+      <!-- 全屏沉浸时外壳被收起：右上角留一组浮动控件（悬浮窗 / 退出，Esc 同效） -->
+      <div v-if="immersive" class="imm-tools">
+        <button
+          class="imm-tool"
+          :class="{ on: overlayVisible }"
+          type="button"
+          title="悬浮窗（Ctrl+Shift+O）"
+          @click="toggleOverlay"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 20h8" /></svg>
+        </button>
+        <button class="imm-tool" type="button" title="退出全屏（Esc）" @click="exitImmersive">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h5V4" /><path d="M20 9h-5V4" /><path d="M20 15h-5v5" /><path d="M4 15h5v5" /></svg>
+          <span>ESC</span>
+        </button>
       </div>
 
       <!-- 断开 / 游戏未启动提示 -->

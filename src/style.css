@@ -475,6 +475,43 @@ html[data-theme="dark"] .kv.lap .v{color:#fff}
 .metric-track{width:5.8462rem;height:0.3846rem;background:var(--panel-2);box-shadow:inset 0 0 0 0.0769rem var(--line);display:inline-block;overflow:hidden}
 .metric-track i{display:block;height:100%;background:var(--signal);transition:width .2s}
 .metric-track i.hot{background:var(--hot)}
+
+/* ---------- 悬浮窗主题选择器 ---------- */
+.theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(13.5rem,1fr));gap:0.6154rem;margin:0.3846rem 0 0.6154rem}
+.theme-card{display:flex;flex-direction:column;gap:0.3077rem;padding:0.6154rem 0.7692rem;background:var(--panel-2);box-shadow:inset 0 0 0 0.0769rem var(--line);border-radius:0.4615rem;overflow:hidden}
+.theme-card.active{box-shadow:inset 0 0 0 0.0769rem var(--signal)}
+.theme-card.bad{opacity:.72}
+.tc-head{display:flex;align-items:center;gap:0.3846rem}
+.tc-name{font-size:0.9615rem;font-weight:600;color:var(--text)}
+.tc-badge{font-family:var(--font-mono);font-size:0.6923rem;color:var(--text-faint);box-shadow:inset 0 0 0 0.0769rem var(--line-2);border-radius:0.2308rem;padding:0.0769rem 0.3077rem}
+.tc-meta{font-family:var(--font-mono);font-size:0.7692rem;color:var(--text-dim)}
+.tc-desc{font-size:0.8077rem;color:var(--text-dim);line-height:1.35}
+.tc-err{font-size:0.8077rem;color:var(--hot);line-height:1.35}
+.tc-ask{font-size:0.8077rem;color:var(--warn)}
+.tc-actions{display:flex;align-items:center;gap:0.3846rem;margin-top:0.2308rem;flex-wrap:wrap}
+.tc-actions .btn{height:1.6923rem;font-size:0.8077rem;padding:0 0.6923rem}
+.theme-tools{display:flex;align-items:center;gap:0.5385rem;flex-wrap:wrap}
+.theme-tools .btn{height:1.8462rem;font-size:0.8462rem;padding:0 0.7692rem}
+.tc-hint{font-size:0.8077rem;color:var(--text-faint)}
+/* 主题缩略预览：负边距吃掉卡片内边距，让缩略图贴住卡片上沿 */
+.tc-preview{position:relative;display:block;align-self:stretch;height:6.2rem;padding:0;margin:-0.6154rem -0.7692rem 0.2308rem;border:0;border-radius:0;background:#0D1116;overflow:hidden;cursor:zoom-in}
+.tc-preview:disabled{cursor:default}
+.tc-preview:not(:disabled):hover{box-shadow:inset 0 0 0 0.0769rem var(--signal-text)}
+.tc-preview-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--panel-2);color:var(--text-faint);font-size:0.8077rem}
+/* 「内置面板」不是主题，没有 iframe 预览：给一块静态示意，别让卡片高度塌下去 */
+.tc-preview.static{cursor:default;background:var(--panel-2)}
+.tc-panel-thumb{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-family:var(--font-mono);font-size:0.8077rem;letter-spacing:.08em;
+  background:repeating-linear-gradient(45deg,rgba(150,162,177,.05) 0 6px,transparent 6px 13px),#0D1116}
+.tc-zoom{position:absolute;right:0.3077rem;top:0.3077rem;padding:0.0769rem 0.3077rem;border-radius:0.1538rem;background:rgba(6,9,12,.62);color:rgba(233,238,244,.82);font-size:0.6154rem;line-height:1.4;opacity:0;transition:opacity .12s}
+.tc-preview:hover .tc-zoom{opacity:1}
+/* 放大预览弹窗 */
+.dlg.dlg-wide{width:min(46rem,100%)}
+.pv-stage{position:relative;width:100%;aspect-ratio:380/150;min-height:6.5rem;max-height:min(46vh,26rem);margin-top:0.3077rem;border:0.0769rem solid var(--line);border-radius:0.3077rem;overflow:hidden;background:#0D1116}
+.pv-meta{display:flex;align-items:center;gap:0.4615rem;margin-top:0.6154rem;flex-wrap:wrap}
+.pv-chip{font-family:var(--font-mono);font-size:0.7308rem;color:var(--text-dim);padding:0.0769rem 0.3846rem;border-radius:0.1538rem;box-shadow:inset 0 0 0 0.0769rem var(--line-2)}
+.pv-dim{font-size:0.8077rem;color:var(--text-faint)}
+.pv-desc{margin-top:0.4615rem;font-size:0.8462rem;color:var(--text-dim)}
+.pv-hint{margin-top:0.4615rem;font-size:0.7692rem;line-height:1.5;color:var(--text-faint)}
 .accent-row{display:flex;gap:0.6923rem;align-items:center}
 .accent-dot{width:1.5385rem;height:1.5385rem;border-radius:50%;border:0.0769rem solid var(--line-2);cursor:pointer;transition:transform .12s}
 .accent-dot:hover{transform:scale(1.12)}
@@ -549,3 +586,27 @@ html[data-theme="light"] .dlg-mask.dlg-notify{background:none}
 kbd{font-family:var(--font-mono);border:0.0769rem solid var(--line-2);padding:0 0.3077rem;color:var(--text-dim)}
 
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+/* ================= 全屏沉浸 ================= */
+/* 沉浸态只留数据区：应用外壳（标题栏 / 导航 / 状态栏）和面板顶部那一行
+   （连接状态 + 温度 + 操作按钮）全部收起，退出靠 Esc 或右上角小按钮 */
+.win.immersive .win-bar,
+.win.immersive .topbar,
+.win.immersive .statusbar,
+.win.immersive .mon-top{display:none}
+/* 根字号决定整页比例。窗口态 1000×680 下是 13px；沉浸态去掉了标题栏 / 导航 / 状态栏，
+   实际内容区约 1000×570（13px 时），所以
+   min(1.3vw, 2.28vh) 正好等价于 13px × min(vw/1000, vh/570)
+   ——整体等比放大到刚好铺满屏幕，面板内部比例与窗口态一致
+   （不受原 clamp 上限 22px 的限制，也不会因视口变宽而把面板拉扁）。 */
+html.immersive{font-size:min(1.3vw, 2.28vh)}
+/* 沉浸态右上角的浮动控件组（悬浮窗 / 退出）：平时半透明，不抢画面 */
+.imm-tools{position:absolute;top:0.6154rem;right:0.9231rem;z-index:60;display:flex;align-items:center;gap:0.4615rem;opacity:.42;transition:.16s}
+.imm-tools:hover{opacity:1}
+.imm-tool{height:2rem;min-width:2rem;padding:0 0.5385rem;display:flex;align-items:center;justify-content:center;gap:0.3846rem;border:0.0769rem solid var(--line-2);background:var(--panel);color:var(--text-dim);font-family:var(--font-mono);font-size:0.6923rem;letter-spacing:.08em;transition:.16s}
+.imm-tool:hover{color:var(--text);border-color:var(--signal-text)}
+.imm-tool.on{background:var(--signal);border-color:var(--signal);color:var(--signal-ink)}
+.imm-tool svg{width:0.9231rem;height:0.9231rem}
+.imm-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.7692rem;font-family:var(--font-display);color:var(--text-faint)}
+.imm-empty span:first-child{font-size:1.3846rem;font-weight:600;letter-spacing:.06em;color:var(--text-dim)}
+.imm-empty .hint{font-family:var(--font-mono);font-size:0.8462rem;letter-spacing:.04em}

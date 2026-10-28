@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>主题调试 — ACC Telemetry</title>
+    <style>
+      /* 调试页是给主题作者用的独立页面，不引入应用样式（那边有根字号 clamp，会干扰观感） */
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: #0b0e12;
+        color: #e3e8ee;
+        font: 13px/1.5 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      #app {
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/dev.js"></script>
+  </body>
+</html>

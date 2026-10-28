@@ -73,6 +73,54 @@ class Snapshot:
     rain_intensity: int = 0
     track_grip: int = 0
 
+    # ---- 以下是「主题状态契约」额外需要的字段（contracts/telemetry-state.json）----
+    # 全部带默认值：老的构造调用（acc_telemetry/services/telemetry_service.py 等）不用改。
+    # 单位与语义见契约文件，这里只做原样搬运，不在采集层做任何换算。
+    best_lap_ms: int = 0
+    estimated_lap_ms: int = 0
+    penalty_ms: int = 0
+    position: int = 0
+    distance_m: float = 0.0
+    session_time_left_ms: float = 0.0
+    laps_total: int = 0
+    session_index: int = 0
+    tyre_compound: str = ""
+    rain_tyres: bool = False
+    tc_level: int = 0
+    abs_level: int = 0
+    engine_map: int = 0
+    fuel_per_lap: float = 0.0
+    fuel_laps_left: float = 0.0
+    fuel_used: float = 0.0
+    rain_in_10min: int = 0
+    rain_in_30min: int = 0
+    surface_grip: float = 0.0
+    wind_speed: float = 0.0
+    wind_direction: float = 0.0
+    time_of_day: float = 0.0
+    flag_yellow: int = 0
+    flag_white: int = 0
+    flag_green: int = 0
+    flag_chequered: int = 0
+    flag_red: int = 0
+    track_status: str = ""
+    mandatory_pits_missing: int = 0
+    # physics 块：驾驶辅助 / 车体姿态 / 四轮细项
+    clutch: float = 0.0
+    brake_bias: float = 0.0
+    tc_active: float = 0.0
+    abs_active: float = 0.0
+    pit_limiter_on: bool = False
+    drs_active: bool = False
+    auto_shifter_on: bool = False
+    ai_controlled: bool = False
+    air_density: float = 0.0
+    wheel_slip: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    slip_ratio: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    slip_angle: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    suspension_travel: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    tyre_wear: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+
 
 @dataclass(frozen=True, slots=True)
 class StaticInfo:

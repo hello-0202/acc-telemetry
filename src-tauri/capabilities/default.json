@@ -7,6 +7,8 @@
   ],
   "permissions": [
     "core:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "core:window:allow-start-dragging",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
@@ -15,9 +17,20 @@
     "core:window:allow-hide",
     "core:window:allow-show",
     "core:window:allow-set-focus",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen",
     "opener:default",
     "shell:default",
     "process:default",
-    "process:allow-restart"
+    "process:allow-restart",
+    "allow-stop-sidecar",
+    "allow-toggle-overlay",
+    "allow-show-overlay",
+    "allow-hide-overlay",
+    "allow-set-overlay-locked",
+    "allow-list-user-themes",
+    "allow-open-themes-dir",
+    "allow-delete-user-theme",
+    "core:event:allow-emit"
   ]
 }

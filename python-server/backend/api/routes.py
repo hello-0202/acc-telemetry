@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 import time
 from contextlib import suppress
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 
@@ -14,6 +16,7 @@ from acc_telemetry.config import VERSION
 
 from .. import bus
 from .broadcaster import connections
+from .state import build_state
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +24,27 @@ router = APIRouter()
 
 # 进程 CPU 估算：用两次 /health 之间的 CPU 时间差 / 墙钟时间差
 _cpu_mark = {"cpu": time.process_time(), "wall": time.monotonic()}
+
+# 契约 JSON 只读一次（PyInstaller 里它在临时解包目录）
+_contract_cache: dict | None = None
+
+
+def _contract_path() -> Path:
+    """定位 `contracts/telemetry-state.json`。
+
+    - 源码运行：`python-server/contracts/...`（本文件在 backend/api/ 下，上溯两级）
+    - PyInstaller：spec 里以 `contracts` 目录为 datas 打进 `sys._MEIPASS`
+    """
+    candidates = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "contracts" / "telemetry-state.json")
+    here = Path(__file__).resolve()
+    candidates.append(here.parents[2] / "contracts" / "telemetry-state.json")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise HTTPException(status_code=404, detail="telemetry-state contract not found")
 
 
 def _cpu_percent() -> float:
@@ -69,6 +93,34 @@ async def health(request: Request) -> dict:
         "pushHz": int(bus.runtime.get("push_hz", 50)),
         "cpuPercent": _cpu_percent(),
     }
+
+
+@router.get("/api/contract")
+async def telemetry_contract() -> dict:
+    """返回主题状态契约（字段名 / 单位 / 取值 / 枚举 / 示例）。
+
+    前端与主题作者都从这里取，不要在仓库里再抄一份副本。
+    """
+    global _contract_cache
+    if _contract_cache is None:
+        path = _contract_path()
+        try:
+            _contract_cache = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("读取状态契约失败：%s", path)
+            raise HTTPException(
+                status_code=500, detail=f"contract unreadable: {exc}"
+            ) from exc
+    return _contract_cache
+
+
+@router.get("/api/state")
+async def telemetry_state() -> dict:
+    """当前主题状态快照（与 WS 里的 `{"type":"state"}` 完全一致）。
+
+    主题调试、问题排查都用它：不必连 WS 就能看到后端此刻认为的数据。
+    """
+    return build_state()
 
 
 @router.get("/api/tracks/{track_id}/geometry")

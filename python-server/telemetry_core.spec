@@ -24,11 +24,15 @@ for _name in (
             _binaries.append((str(_candidate), "."))
             break
 
+# 主题状态契约随包分发，/api/contract 直接读它。
+# 放在 `_MEIPASS/contracts/telemetry-state.json`，与 backend/api/routes.py::_contract_path 对应。
+_datas = [("contracts/telemetry-state.json", "contracts")]
+
 a = Analysis(
     ['server.py'],
     pathex=[],
     binaries=_binaries,
-    datas=[],
+    datas=_datas,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

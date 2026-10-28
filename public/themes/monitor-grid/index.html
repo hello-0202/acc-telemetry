@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>网格仪表盘</title>
+  <link rel="stylesheet" href="theme.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="col-left">
+      <section class="hero">
+        <div class="spd"><b id="speed">0</b><i>KM/H</i></div>
+        <div class="gear"><b id="gear">N</b><i>档位</i></div>
+        <div class="delta"><i>DELTA · 对 PB</i><b id="delta" class="mono">--.---</b></div>
+        <div class="rpm">
+          <div class="rpm-bar" id="rpmBar"></div>
+          <div class="rpm-meta"><span id="rpmText">0 rpm</span><span id="rpmMax">红线 —</span></div>
+        </div>
+        <div class="laps">
+          <div><i>本圈</i><b id="lapCur" class="mono">--:--.---</b></div>
+          <div><i>上一圈</i><b id="lapLast" class="mono">--:--.---</b></div>
+          <div><i>本赛道 PB</i><b id="lapPb" class="mono">--:--.---</b></div>
+        </div>
+      </section>
+
+      <section class="panel pedals">
+        <div class="prow"><i>油门</i><div class="track"><div class="fill thr" id="thrFill"></div></div><b id="thrVal">0%</b></div>
+        <div class="prow"><i>刹车</i><div class="track"><div class="fill brk" id="brkFill"></div></div><b id="brkVal">0%</b></div>
+        <div class="prow"><i>方向盘</i><div class="track steer"><s></s><div class="fill str" id="strFill"></div></div><b id="strVal">0°</b></div>
+      </section>
+    </div>
+
+    <div class="col-right">
+      <section class="panel tires">
+        <div class="tire" data-corner="FL">
+          <span class="c">FL</span><span class="p" data-k="p">–</span>
+          <span class="t" data-k="t">–</span>
+          <span class="b"><em data-k="bnum">–</em><span class="bar"><i data-k="bbar"></i></span></span>
+        </div>
+        <div class="tire" data-corner="FR">
+          <span class="c">FR</span><span class="p" data-k="p">–</span>
+          <span class="t" data-k="t">–</span>
+          <span class="b"><em data-k="bnum">–</em><span class="bar"><i data-k="bbar"></i></span></span>
+        </div>
+        <div class="tire" data-corner="RL">
+          <span class="c">RL</span><span class="p" data-k="p">–</span>
+          <span class="t" data-k="t">–</span>
+          <span class="b"><em data-k="bnum">–</em><span class="bar"><i data-k="bbar"></i></span></span>
+        </div>
+        <div class="tire" data-corner="RR">
+          <span class="c">RR</span><span class="p" data-k="p">–</span>
+          <span class="t" data-k="t">–</span>
+          <span class="b"><em data-k="bnum">–</em><span class="bar"><i data-k="bbar"></i></span></span>
+        </div>
+      </section>
+
+      <section class="panel meta">
+        <div><i>赛道</i><b id="track">—</b></div>
+        <div><i>温度</i><b id="temps">—</b></div>
+        <div><i>状态</i><b id="status" class="state">待机</b></div>
+      </section>
+    </div>
+  </div>
+
+  <script src="theme.js"></script>
+</body>
+</html>

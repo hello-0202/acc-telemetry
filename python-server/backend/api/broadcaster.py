@@ -1,4 +1,4 @@
-"""广播 Task：实时帧 + 一次性事件（session/lap/trackmap/...）。
+"""广播 Task：实时帧 + 一次性事件（session/lap/trackmap/...）+ 主题状态快照。
 
 为什么每个连接独立 create_task：
 - 某个客户端网络慢或卡住时，只阻塞它自己的发送任务；
@@ -7,6 +7,11 @@
 
 帧只在 bus.runtime['recording'] 为 True 时发送，
 与原来的「点击开始监测后才推流」行为保持一致。
+
+主题状态（{"type":"state"}）是给主题宿主的新通道，与旧 frame 并行：
+- recording 中按 bus.runtime['state_hz']（默认 30Hz）推；
+- 待机时降到 bus.runtime['state_idle_hz']（默认 2Hz）推心跳，
+  主题据此显示 idle / waiting，而不用一直空等。
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ from typing import Any
 from fastapi import WebSocket
 
 from .. import bus
+from .state import build_state
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +56,7 @@ async def broadcast_worker(stop_event: asyncio.Event, hz: float = 50) -> None:
     interval = 1.0 / max(1.0, float(hz))
     next_tick = time.monotonic()
     last_frame: dict[str, Any] | None = None
+    next_state_tick = time.monotonic()
 
     try:
         while not stop_event.is_set():
@@ -82,6 +89,31 @@ async def broadcast_worker(stop_event: asyncio.Event, hz: float = 50) -> None:
                     last_frame = frame
                     for websocket in list(connections):
                         _spawn_send(websocket, frame)
+
+            # 3) 主题状态快照：记录中高频、待机低频（只发一次构建结果给所有连接）
+            if connections:
+                now_state = time.monotonic()
+                if now_state >= next_state_tick:
+                    recording = bool(bus.runtime.get("recording"))
+                    state_hz = bus.runtime.get(
+                        "state_hz" if recording else "state_idle_hz", 30
+                    )
+                    state_interval = 1.0 / max(1.0, float(state_hz))
+                    # 用累加而不是 now+interval：state_hz 接近主循环频率时
+                    # （例如 30Hz 状态 + 30Hz 帧循环），now+interval 会永远差一点点，
+                    # 结果每隔一次才发一次，实测掉到 ~18Hz。
+                    next_state_tick += state_interval
+                    if now_state - next_state_tick > 0.5:
+                        # 落后太多（客户端刚连上/线程被抢占）：直接重置，不追赶补发
+                        next_state_tick = now_state + state_interval
+                    try:
+                        state = build_state()
+                    except Exception:  # noqa: BLE001 - 组装失败不能拖死广播
+                        logger.exception("组装主题状态失败，跳过本次推送")
+                        state = None
+                    if state is not None:
+                        for websocket in list(connections):
+                            _spawn_send(websocket, state)
 
             next_tick += interval
             if time.monotonic() - next_tick > interval:

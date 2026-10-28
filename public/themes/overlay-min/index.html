@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>极简 HUD</title>
+    <link rel="stylesheet" href="./theme.css" />
+  </head>
+  <body>
+    <!-- 设计基准 380×150（见 theme.json）。宿主按 contain 等比缩放这一整块，
+         所以这里可以直接按设计图的像素写，不用考虑实际窗口多大。 -->
+    <div class="card" id="card" data-status="idle">
+      <div class="left">
+        <div class="speed-row">
+          <span class="speed" id="speed">0</span>
+          <span class="unit">KM/H</span>
+        </div>
+        <div class="gear-row">
+          <span class="gear" id="gear">N</span>
+          <span class="rpm" id="rpm">0</span>
+          <span class="rpm-unit">RPM</span>
+        </div>
+      </div>
+
+      <div class="right">
+        <div class="row">
+          <span class="k">本圈</span>
+          <span class="v mono" id="lap">--:--.---</span>
+        </div>
+        <div class="row">
+          <span class="k">DELTA</span>
+          <span class="v mono delta" id="delta">--.---</span>
+        </div>
+        <div class="row">
+          <span class="k">赛道</span>
+          <span class="v track" id="track">—</span>
+        </div>
+      </div>
+    </div>
+
+    <script src="./theme.js"></script>
+  </body>
+</html>

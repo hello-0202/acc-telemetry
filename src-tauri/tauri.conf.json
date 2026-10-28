@@ -16,6 +16,23 @@
         "width": 1000,
         "height": 680,
         "decorations": false
+      },
+      {
+      "label": "overlay",
+      "url": "overlay.html",
+      "title": "ACC Overlay",
+      "width": 380,
+      "height": 150,
+      "minWidth": 220,
+      "minHeight": 90,
+      "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": false,
+        "visible": false
       }
     ],
     "security": {

@@ -1,0 +1,210 @@
+{
+  "version": 1,
+  "title": "ACC Telemetry — Theme State Contract",
+  "description": "主题（悬浮窗 / 监测面板 / 副屏看板）能看到的唯一数据源。后端把三块 ACC 共享内存 + 本地数据库（PB 参考）合成一份扁平状态，按 30Hz 推给主题宿主，宿主再注入 iframe。字段只增不删，破坏性变更才升 version。",
+  "message": {
+    "type": "state",
+    "transport": "WebSocket /ws/telemetry",
+    "rateHz": 30,
+    "idleRateHz": 2,
+    "httpDebug": "GET /api/state 返回同一份对象；GET /api/contract 返回本文件",
+    "note": "旧版 frame / session / lap 消息保持不变，主窗口继续使用；state 是给主题的新通道。recorded 中按 30Hz 推，待机时降到 2Hz 心跳。"
+  },
+  "stability": {
+    "unknownFieldsIgnored": true,
+    "removalPolicy": "字段一旦发布不再删除；废弃时保留并标注 deprecated，值为 null",
+    "versionRule": "只有破坏性变更才升 version，新增字段不升版"
+  },
+  "enums": {
+    "status": {
+      "idle": "未开始监测",
+      "waiting": "已开启监测但还没进赛道（拿不到 static）",
+      "streaming": "正在接收遥测",
+      "error": "后端 / 共享内存异常"
+    },
+    "sessionType": {
+      "unknown": "未知（ACC 菜单或回放里常见）",
+      "practice": "练习",
+      "qualify": "排位",
+      "race": "正赛",
+      "hotlap": "热圈",
+      "timeattack": "计时赛",
+      "drift": "漂移",
+      "drag": "直线加速",
+      "hotstint": "连圈",
+      "hotstintsuperpole": "超级杆位"
+    },
+    "grip": {
+      "0": "green（干净）",
+      "1": "fast",
+      "2": "optimum",
+      "3": "greasy",
+      "4": "damp",
+      "5": "wet"
+    },
+    "rainIntensity": {
+      "0": "无雨",
+      "1": "毛毛雨",
+      "2": "小雨",
+      "3": "中雨",
+      "4": "大雨",
+      "5": "暴雨"
+    }
+  },
+  "example": {
+    "v": 1,
+    "seq": 84213,
+    "t": 1793030400123,
+    "status": "streaming",
+    "session": { "type": "practice", "timeLeftMs": 0, "lapsTotal": 0, "index": 0 },
+    "track": { "name": "monza", "title": "Monza", "configuration": "", "lengthM": 5793.0, "sectorCount": 3 },
+    "car": {
+      "name": "Ferrari 488 GT3 Evo",
+      "maxRpm": 7600, "maxFuel": 120.0, "maxTorqueNm": 700.0, "maxPowerKw": 441.0,
+      "speed": 213.4, "rpm": 6820, "maxRpmCurrent": 7600,
+      "gear": 4, "gearText": "4",
+      "throttle": 0.98, "brake": 0.0, "steer": -0.04, "clutch": 0.0,
+      "fuel": 62.5, "fuelPerLap": 2.85, "fuelLapsLeft": 21.9, "fuelUsed": 8.4,
+      "brakeBias": 0.56,
+      "tcLevel": 3, "tcActive": 0.0, "absLevel": 2, "absActive": 0.0, "engineMap": 1,
+      "pitLimiter": false, "drs": false, "autoShifter": false, "aiControlled": false,
+      "tyreCompound": "dry_compound", "rainTyres": false,
+      "gLong": 0.18, "gLat": -1.24
+    },
+    "lap": {
+      "num": 4, "completed": 3,
+      "timeMs": 41230, "lastMs": 92310, "bestMs": 91980, "pbMs": 91820,
+      "deltaMs": -310, "estimatedMs": 92100,
+      "progress": 0.62, "sector": 2, "sectorLastMs": 31450, "splitMs": 31200,
+      "valid": true, "inPit": false, "inPitLane": false,
+      "position": 7, "penaltyMs": 0
+    },
+    "position": { "x": 812.4, "z": -1533.2, "heading": 1.5708, "distanceM": 14233.7 },
+    "wheels": [
+      { "corner": "FL", "pressure": 27.4, "temp": 78.2, "brakeTemp": 412.0, "slip": 0.02, "slipRatio": 0.01, "slipAngle": 0.03, "suspensionTravel": 0.041, "wear": 0.12 },
+      { "corner": "FR", "pressure": 27.6, "temp": 80.1, "brakeTemp": 420.0, "slip": 0.02, "slipRatio": 0.01, "slipAngle": 0.03, "suspensionTravel": 0.039, "wear": 0.12 },
+      { "corner": "RL", "pressure": 27.1, "temp": 74.8, "brakeTemp": 355.0, "slip": 0.04, "slipRatio": 0.03, "slipAngle": 0.02, "suspensionTravel": 0.044, "wear": 0.14 },
+      { "corner": "RR", "pressure": 27.2, "temp": 75.3, "brakeTemp": 358.0, "slip": 0.04, "slipRatio": 0.03, "slipAngle": 0.02, "suspensionTravel": 0.043, "wear": 0.14 }
+    ],
+    "env": {
+      "airTemp": 26.0, "roadTemp": 31.0, "airDensity": 1.18,
+      "rainIntensity": 0, "rainIn10min": 0, "rainIn30min": 0,
+      "grip": 2, "surfaceGrip": 1.0,
+      "windSpeed": 1.6, "windDirection": 2.1, "timeOfDay": 52200.0
+    },
+    "flags": {
+      "yellow": 0, "white": 0, "green": 1, "chequered": 0, "red": 0,
+      "trackStatus": "GREEN", "mandatoryPitMissing": 0
+    }
+  },
+  "fields": [
+    { "path": "v", "type": "int", "unit": "", "source": "meta", "desc": "契约版本。只有破坏性变更才 +1，主题可据此做兼容分支。" },
+    { "path": "seq", "type": "int", "unit": "", "source": "meta", "desc": "递增序号。主题可用它丢弃乱序/重复帧（宿主保证单调）。" },
+    { "path": "t", "type": "int", "unit": "ms", "source": "meta", "desc": "采样时刻（Unix 毫秒）。" },
+    { "path": "status", "type": "enum", "unit": "", "enum": "status", "source": "meta", "desc": "会话状态。非 streaming 时其余实时字段保留最后一个有效值，主题应自行显示占位。" },
+
+    { "path": "session.type", "type": "enum", "unit": "", "enum": "sessionType", "source": "shared", "raw": "graphics.session", "desc": "会话类型。菜单/回放里可能是 unknown。" },
+    { "path": "session.timeLeftMs", "type": "int", "unit": "ms", "source": "shared", "raw": "graphics.sessionTimeLeft", "desc": "剩余时间（计时赛），圈数赛为 0。" },
+    { "path": "session.lapsTotal", "type": "int", "unit": "圈", "source": "shared", "raw": "graphics.numberOfLaps", "desc": "总圈数，0 表示不限。" },
+    { "path": "session.index", "type": "int", "unit": "", "source": "shared", "raw": "graphics.sessionIndex", "desc": "会话序号（同一比赛周末内递增）。" },
+
+    { "path": "track.name", "type": "str", "unit": "", "source": "shared", "raw": "static.trackName", "desc": "赛道 id（ACC 内部名，如 monza）。适合做键 / 比较，不适合直接显示。" },
+    { "path": "track.title", "type": "str", "unit": "", "source": "computed", "raw": "TrackResolver", "desc": "赛道显示名（如 Monza），未知赛道回退为 track.name。" },
+    { "path": "track.configuration", "type": "str", "unit": "", "source": "shared", "raw": "static.trackConfiguration", "desc": "布局配置（部分赛道有）。" },
+    { "path": "track.lengthM", "type": "float", "unit": "m", "source": "computed", "raw": "TrackResolver.resolved.length_m", "desc": "赛道长度。取自本地赛库（ACC 的 static.trackSplineLength 官方标注未使用，恒为 0）。" },
+    { "path": "track.sectorCount", "type": "int", "unit": "", "source": "shared", "raw": "static.sectorCount", "desc": "扇区数，通常 3。" },
+
+    { "path": "car.name", "type": "str", "unit": "", "source": "shared", "raw": "static.carModel", "desc": "车款名。" },
+    { "path": "car.maxRpm", "type": "int", "unit": "rpm", "source": "shared", "raw": "static.maxRpm", "desc": "引擎最大转速。" },
+    { "path": "car.maxFuel", "type": "float", "unit": "L", "source": "shared", "raw": "static.maxFuel", "desc": "油箱容量。" },
+    { "path": "car.maxTorqueNm", "type": "float", "unit": "Nm", "source": "shared", "raw": "static.maxTorque", "desc": "最大扭矩。ACC 的 static 块不填此项，当前恒为 0（保留字段供未来数据源）。" },
+    { "path": "car.maxPowerKw", "type": "float", "unit": "kW", "source": "shared", "raw": "static.maxPower", "desc": "最大功率。ACC 的 static 块不填此项，当前恒为 0。" },
+    { "path": "car.speed", "type": "float", "unit": "km/h", "source": "shared", "raw": "physics.speedKmh", "desc": "车速，保留 1 位小数。" },
+    { "path": "car.rpm", "type": "int", "unit": "rpm", "source": "shared", "raw": "physics.rpm", "desc": "当前转速。" },
+    { "path": "car.maxRpmCurrent", "type": "int", "unit": "rpm", "source": "shared", "raw": "physics.currentMaxRPM", "desc": "当前允许的最大转速（画红线用）。为 0 时退回 car.maxRpm。" },
+    { "path": "car.gear", "type": "int", "unit": "", "range": [-1, 8], "source": "shared", "raw": "physics.gear", "desc": "已语义化：-1=倒挡，0=空挡，1..n=前进挡。ACC 原始值是 0=R/1=N/2=1 挡，后端已减 1。" },
+    { "path": "car.gearText", "type": "str", "unit": "", "source": "computed", "raw": "physics.gear", "desc": "显示用文本：R / N / 1..n。" },
+    { "path": "car.throttle", "type": "float", "unit": "0..1", "range": [0, 1], "source": "shared", "raw": "physics.throttle", "desc": "油门开度。刻意不给百分比，取整由主题决定。" },
+    { "path": "car.brake", "type": "float", "unit": "0..1", "range": [0, 1], "source": "shared", "raw": "physics.brake", "desc": "刹车开度。" },
+    { "path": "car.steer", "type": "float", "unit": "0..1 归一化", "range": [-1, 1], "source": "shared", "raw": "physics.steerAngle", "desc": "方向盘。主题乘 450 得到度数（本项目约定满舵 ±450°）。" },
+    { "path": "car.clutch", "type": "float", "unit": "0..1", "range": [0, 1], "source": "shared", "raw": "physics.clutch", "desc": "离合。0=踩到底。" },
+    { "path": "car.fuel", "type": "float", "unit": "L", "source": "shared", "raw": "physics.fuel", "desc": "剩余油量。" },
+    { "path": "car.fuelPerLap", "type": "float", "unit": "L/圈", "source": "shared", "raw": "graphics.fuelXLap", "desc": "游戏估算的每圈油耗。" },
+    { "path": "car.fuelLapsLeft", "type": "float", "unit": "圈", "source": "shared", "raw": "graphics.fuelEstimatedLaps", "desc": "剩余油可跑圈数（游戏估算）。" },
+    { "path": "car.fuelUsed", "type": "float", "unit": "L", "source": "shared", "raw": "graphics.usedFuel", "desc": "本次会话累计消耗。" },
+    { "path": "car.brakeBias", "type": "float", "unit": "0..1 前轴", "range": [0, 1], "source": "shared", "raw": "physics.brakeBias", "desc": "刹车前后比（前轴占比）。" },
+    { "path": "car.tcLevel", "type": "int", "unit": "", "source": "shared", "raw": "graphics.tcLevel", "desc": "牵引力控制档位，0=关。" },
+    { "path": "car.tcActive", "type": "float", "unit": "0..1", "source": "shared", "raw": "physics.tcActive", "desc": "TC 是否正在介入（0/1，偶有中间值）。" },
+    { "path": "car.absLevel", "type": "int", "unit": "", "source": "shared", "raw": "graphics.absLevel", "desc": "ABS 档位，0=关。" },
+    { "path": "car.absActive", "type": "float", "unit": "0..1", "source": "shared", "raw": "physics.absActive", "desc": "ABS 是否正在介入。" },
+    { "path": "car.engineMap", "type": "int", "unit": "", "source": "shared", "raw": "graphics.engineMap", "desc": "引擎地图档位。" },
+    { "path": "car.pitLimiter", "type": "bool", "source": "shared", "raw": "physics.pitLimiterOn", "desc": "维修区限速器。" },
+    { "path": "car.drs", "type": "bool", "source": "shared", "raw": "physics.drsActive", "desc": "DRS / 主动空力是否开启（GT3 一般恒 false）。" },
+    { "path": "car.autoShifter", "type": "bool", "source": "shared", "raw": "physics.autoShifterOn", "desc": "自动变速箱。" },
+    { "path": "car.aiControlled", "type": "bool", "source": "shared", "raw": "physics.isAIControlled", "desc": "当前是否 AI 在开（回放/接管）。" },
+    { "path": "car.tyreCompound", "type": "str", "source": "shared", "raw": "graphics.tyreCompound", "desc": "轮胎配方名（游戏原样）。" },
+    { "path": "car.rainTyres", "type": "bool", "source": "shared", "raw": "graphics.rainTyres", "desc": "是否雨胎。" },
+    { "path": "car.gLong", "type": "float", "unit": "g", "source": "computed", "raw": "physics.acceleration + physics.heading", "desc": "纵向加速度（车体坐标，已除 9.81）。" },
+    { "path": "car.gLat", "type": "float", "unit": "g", "source": "computed", "raw": "physics.acceleration + physics.heading", "desc": "横向加速度。" },
+
+    { "path": "lap.num", "type": "int", "unit": "", "source": "computed", "raw": "bus.runtime['lap']", "desc": "本次「开始监测」以来的第几圈（从 1 开始），与主面板显示的圈号一致。想要比赛本身的圈数用 lap.completed + 1。" },
+    { "path": "lap.completed", "type": "int", "unit": "", "source": "shared", "raw": "graphics.completedLaps", "desc": "已完成圈数。" },
+    { "path": "lap.timeMs", "type": "int", "unit": "ms", "source": "shared", "raw": "graphics.iCurrentTime", "desc": "本圈已用时。" },
+    { "path": "lap.lastMs", "type": "int", "unit": "ms", "source": "shared", "raw": "graphics.iLastTime", "desc": "上一圈成绩，0 表示暂无。" },
+    { "path": "lap.bestMs", "type": "int", "unit": "ms", "source": "shared", "raw": "graphics.iBestTime", "desc": "游戏内的本场最佳。" },
+    { "path": "lap.pbMs", "type": "int", "unit": "ms", "source": "computed", "raw": "SQLite laps", "desc": "本项目数据库里该赛道 + 车的历史最快，0/null 表示没有参考。" },
+    { "path": "lap.deltaMs", "type": "int", "unit": "ms", "source": "computed", "raw": "sample_repo._reference()", "desc": "对 LB/PB 的实时差值：负数=更快。无参考时为 null。" },
+    { "path": "lap.estimatedMs", "type": "int", "unit": "ms", "source": "shared", "raw": "graphics.iEstimatedLapTime", "desc": "游戏估算的当前圈成绩。" },
+    { "path": "lap.progress", "type": "float", "unit": "0..1", "range": [0, 1], "source": "shared", "raw": "graphics.normalizedCarPosition", "desc": "赛道归一化进度。" },
+    { "path": "lap.sector", "type": "int", "unit": "", "range": [1, 3], "source": "shared", "raw": "graphics.currentSectorIndex", "desc": "当前扇区，1 起。" },
+    { "path": "lap.sectorLastMs", "type": "int", "unit": "ms", "source": "shared", "raw": "graphics.lastSectorTime", "desc": "上一个扇区用时。" },
+    { "path": "lap.splitMs", "type": "int", "unit": "ms", "source": "shared", "raw": "graphics.iSplit", "desc": "当前分段时间。" },
+    { "path": "lap.valid", "type": "bool", "source": "shared", "raw": "graphics.isValidLap", "desc": "本圈是否有效（未切弯/未出界）。" },
+    { "path": "lap.inPit", "type": "bool", "source": "shared", "raw": "graphics.isInPit", "desc": "在车库/维修区。" },
+    { "path": "lap.inPitLane", "type": "bool", "source": "shared", "raw": "graphics.isInPitLane", "desc": "在维修区通道。" },
+    { "path": "lap.position", "type": "int", "unit": "名次", "source": "shared", "raw": "graphics.position", "desc": "比赛名次，0 表示无效（练习/排位）。" },
+    { "path": "lap.penaltyMs", "type": "int", "unit": "ms", "source": "shared", "raw": "graphics.penaltyTime", "desc": "待执行罚时。" },
+
+    { "path": "position.x", "type": "float", "unit": "m", "source": "shared", "raw": "graphics.carCoordinates[playerCarID]", "desc": "世界坐标 x。用不上时为 null。" },
+    { "path": "position.z", "type": "float", "unit": "m", "source": "shared", "raw": "graphics.carCoordinates[playerCarID]", "desc": "世界坐标 z（ACC 的 y 是高度，平面用 x-z）。" },
+    { "path": "position.heading", "type": "float", "unit": "rad", "source": "shared", "raw": "physics.heading", "desc": "车辆朝向。" },
+    { "path": "position.distanceM", "type": "float", "unit": "m", "source": "shared", "raw": "graphics.distanceTraveled", "desc": "本场累计里程。" },
+
+    { "path": "wheels[].corner", "type": "str", "source": "computed", "desc": "固定顺序：FL / FR / RL / RR。" },
+    { "path": "wheels[].pressure", "type": "float", "unit": "psi", "source": "shared", "raw": "physics.wheelPressure", "desc": "胎压。" },
+    { "path": "wheels[].temp", "type": "float", "unit": "°C", "source": "shared", "raw": "physics.tyreCoreTemp", "desc": "胎芯温度。" },
+    { "path": "wheels[].brakeTemp", "type": "float", "unit": "°C", "source": "shared", "raw": "physics.brakeTemp", "desc": "刹车盘温度。" },
+    { "path": "wheels[].slip", "type": "float", "unit": "0..1", "source": "shared", "raw": "physics.wheelSlip", "desc": "轮胎滑移量。" },
+    { "path": "wheels[].slipRatio", "type": "float", "unit": "", "source": "shared", "raw": "physics.slipRatio", "desc": "滑移率（纵向）。" },
+    { "path": "wheels[].slipAngle", "type": "float", "unit": "rad", "source": "shared", "raw": "physics.slipAngle", "desc": "滑移角（横向）。" },
+    { "path": "wheels[].suspensionTravel", "type": "float", "unit": "m", "source": "shared", "raw": "physics.suspensionTravel", "desc": "悬挂行程。" },
+    { "path": "wheels[].wear", "type": "float", "unit": "0..1", "source": "shared", "raw": "physics.tyreWear", "desc": "轮胎磨损（ACC 文档标注 unused，实测有值，主题里可当装饰/进阶用）。" },
+
+    { "path": "env.airTemp", "type": "float", "unit": "°C", "source": "shared", "raw": "physics.airTemp", "desc": "气温。" },
+    { "path": "env.roadTemp", "type": "float", "unit": "°C", "source": "shared", "raw": "physics.roadTemp", "desc": "路面温度。" },
+    { "path": "env.airDensity", "type": "float", "unit": "kg/m³", "source": "shared", "raw": "physics.airDensity", "desc": "空气密度。" },
+    { "path": "env.rainIntensity", "type": "enum", "unit": "", "enum": "rainIntensity", "source": "shared", "raw": "graphics.rainIntensity", "desc": "当前雨量等级。" },
+    { "path": "env.rainIn10min", "type": "int", "unit": "", "source": "shared", "raw": "graphics.rainIntensityIn10min", "desc": "10 分钟后预期雨量。" },
+    { "path": "env.rainIn30min", "type": "int", "unit": "", "source": "shared", "raw": "graphics.rainIntensityIn30min", "desc": "30 分钟后预期雨量。" },
+    { "path": "env.grip", "type": "enum", "unit": "", "enum": "grip", "source": "shared", "raw": "graphics.trackGripStatus", "desc": "路面抓地力等级。" },
+    { "path": "env.surfaceGrip", "type": "float", "unit": "0..1", "source": "shared", "raw": "graphics.surfaceGrip", "desc": "路面抓地系数。" },
+    { "path": "env.windSpeed", "type": "float", "unit": "m/s", "source": "shared", "raw": "graphics.windSpeed", "desc": "风速。" },
+    { "path": "env.windDirection", "type": "float", "unit": "rad", "source": "shared", "raw": "graphics.windDirection", "desc": "风向。ACC 原值是角度，后端已转成弧度。" },
+    { "path": "env.timeOfDay", "type": "float", "unit": "s", "range": [0, 86400], "source": "shared", "raw": "graphics.timeOfDay", "desc": "一天中的时刻（秒，0=午夜）。想显示 clock 就自己除以 3600。" },
+
+    { "path": "flags.yellow", "type": "int", "unit": "", "source": "shared", "raw": "graphics.globalYellow", "desc": "全场黄旗（另有 globalYellow1/2/3 分区，v1 未暴露）。" },
+    { "path": "flags.white", "type": "int", "unit": "", "source": "shared", "raw": "graphics.globalWhite", "desc": "白旗。" },
+    { "path": "flags.green", "type": "int", "unit": "", "source": "shared", "raw": "graphics.globalGreen", "desc": "绿旗。" },
+    { "path": "flags.chequered", "type": "int", "unit": "", "source": "shared", "raw": "graphics.globalChequered", "desc": "方格旗。" },
+    { "path": "flags.red", "type": "int", "unit": "", "source": "shared", "raw": "graphics.globalRed", "desc": "红旗。" },
+    { "path": "flags.trackStatus", "type": "str", "unit": "", "source": "shared", "raw": "graphics.trackStatus", "desc": "赛道状态原文（如 GREEN）。" },
+    { "path": "flags.mandatoryPitMissing", "type": "int", "unit": "", "source": "shared", "raw": "graphics.missingMandatoryPits", "desc": "还差几次强制进站。" }
+  ],
+  "deferred": {
+    "opponents": "对手车：graphics.carCoordinates / carIDs 有坐标，但缺「车 ID → 车手名 / 圈速」的完整映射，需要额外的 session 命令解析，放到 v1.1。",
+    "sectorTimes": "每段的独立成绩（不含 lastSectorTime 之外的累积值），等历史库结构确定后再加。",
+    "sectorFlags": "globalYellow1/2/3 分区黄旗，v1 只给全场黄旗。",
+    "carDamage": "physics.carDamage 五个部位，UI 目前用不到，v1.1 再说。",
+    "ffb": "kerbVibration / slipVibrations 等力反馈信号，只在动感平台场景有用。"
+  }
+}

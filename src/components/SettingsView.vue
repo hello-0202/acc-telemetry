@@ -3,10 +3,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ACCENTS, accentName, setAccent, setTheme, themeName } from '../telemetry/theme.js';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { getVersion } from '@tauri-apps/api/app';
+import { invoke } from '@tauri-apps/api/core';
 import { clearHistory, getBaseUrl, getConfig, getHealth, listSessions, saveConfig } from '../telemetry/api.js';
 import { telemetry } from '../telemetry/useTelemetry.js';
 import { applyPrefs, prefs } from '../telemetry/prefs.js';
 import HelpTip from './HelpTip.vue';
+import ThemePicker from './ThemePicker.vue';
 
 const props = defineProps({
   visible: { type: Boolean, default: true },
@@ -211,7 +213,9 @@ onMounted(() => {
   getVersion().then((v) => { appVersion.value = v; }).catch(() => { /* ignore */ });
 });
 
-onBeforeUnmount(stopPolling);
+onBeforeUnmount(() => {
+  stopPolling();
+});
 
 watch(() => props.visible, (visible) => {
   if (visible) {
@@ -219,7 +223,7 @@ watch(() => props.visible, (visible) => {
     startPolling();
   } else {
     stopPolling();
-    // 切走页面时把弹窗收掉（Teleport 到 body，不会随页面一起隐藏）
+    // 切走页面时把清空历史弹窗收掉（Teleport 到 body，不会随页面一起隐藏）
     if (!clearing.value) confirmOpen.value = false;
   }
 });
@@ -253,6 +257,9 @@ watch(() => telemetry.historyRevision, refresh);
       </div>
       <div class="set-row"><span>界面语言</span><span class="v">简体中文</span></div>
     </div>
+
+    <ThemePicker mode="overlay" :active="visible" />
+    <ThemePicker mode="monitor" :active="visible" />
 
     <div class="set-group">
       <span class="glbl">采集与性能</span>

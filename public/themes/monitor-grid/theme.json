@@ -1,0 +1,10 @@
+{
+  "id": "monitor-grid",
+  "name": "网格仪表盘",
+  "version": "1.0.0",
+  "author": "内置",
+  "desc": "主面板主题示例：速度/档位/转速、圈速与 delta、踏板、四轮温度，铺满数据区自适应排版（fit: fluid）。",
+  "design": { "w": 1200, "h": 640 },
+  "fit": "fluid",
+  "modes": ["monitor"]
+}

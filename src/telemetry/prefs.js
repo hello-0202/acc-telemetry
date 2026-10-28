@@ -43,3 +43,12 @@ export function loadPrefs() {
   }
   return loading;
 }
+
+/**
+ * 强制重读后端配置（loadPrefs 成功后会一直复用同一个 Promise）。
+ * 悬浮窗收到「主题已切换」事件时用它，否则读到的还是启动时那份。
+ */
+export function reloadPrefs() {
+  loading = null;
+  return loadPrefs();
+}

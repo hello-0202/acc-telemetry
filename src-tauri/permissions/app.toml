@@ -1,0 +1,52 @@
+# 应用自定义命令的 ACL 声明。
+#
+# 为什么需要这个文件：Tauri 的 IPC 由 WebView2 的 AddScriptToExecuteOnDocumentCreated 注入，
+# 对**所有 frame 生效**。悬浮窗里跑的 iframe 主题（不可信 HTML）同样能拿到 window.__TAURI_INTERNALS__，
+# sandbox 只隔离 DOM/存储，挡不住注入的 IPC 对象。
+# 一旦 src-tauri/permissions/ 目录存在，所有 #[tauri::command] 都受 ACL 管：
+# 没在对应窗口的 capability 里授权的命令，调用会直接失败（"command not allowed"）。
+
+[[permission]]
+identifier = "allow-stop-sidecar"
+description = """停止 sidecar 进程。只有主窗口该有；给了悬浮窗等于允许主题直接掐断数据流。"""
+commands.allow = ["stop_sidecar"]
+
+[[permission]]
+identifier = "allow-toggle-overlay"
+description = """切换悬浮窗显隐。只有主窗口的按钮 / 快捷键需要用。"""
+commands.allow = ["toggle_overlay"]
+
+[[permission]]
+identifier = "allow-show-overlay"
+description = """显示悬浮窗。目前没有调用点，留作后续托盘菜单 / 快捷键扩展。"""
+commands.allow = ["show_overlay"]
+
+[[permission]]
+identifier = "allow-hide-overlay"
+description = """隐藏悬浮窗。"""
+commands.allow = ["hide_overlay"]
+
+[[permission]]
+identifier = "allow-set-overlay-locked"
+description = """切换悬浮窗锁定 / 编辑态（关鼠标穿透 + 抢焦点）。主窗口按钮与悬浮窗工具条都会调。"""
+commands.allow = ["set_overlay_locked"]
+
+[[permission]]
+identifier = "allow-set-overlay-size"
+description = """按主题声明的 design 调整悬浮窗尺寸。悬浮窗自己要用。"""
+commands.allow = ["set_overlay_size"]
+
+[[permission]]
+identifier = "allow-list-user-themes"
+description = """列出用户主题目录下的主题（只读）。设置页的主题选择器要用；悬浮窗不需要。"""
+commands.allow = ["list_user_themes"]
+
+[[permission]]
+identifier = "allow-open-themes-dir"
+description = """在资源管理器里打开用户主题目录。路径由 Rust 自己算，前端不能指定。"""
+commands.allow = ["open_themes_dir"]
+
+[[permission]]
+identifier = "allow-delete-user-theme"
+description = """把用户主题目录移入系统回收站。属于破坏性操作，只给主窗口。"""
+commands.allow = ["delete_user_theme"]

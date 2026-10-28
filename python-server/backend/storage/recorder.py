@@ -94,6 +94,12 @@ class Recorder:
         # 本次会话解析到的 fastlane 几何：开记录时 tracks 行可能还不存在
         # （session 延迟落库），先留在内存，建行后由 _persist_session 补写。
         self._geometry: dict | None = None
+        # 发布给主题状态快照（bus.runtime["state_meta"]）的会话元信息：
+        # 赛道 / 车辆 / PB 参考。state.py 只读这些，不去碰数据库。
+        self._track_payload: dict | None = None
+        self._car_name: str = ""
+        self._pb_ms: int | None = None
+        self._pb_ref: dict | None = None
 
     # ------------------------------------------------------------------ 状态
     @property
@@ -113,6 +119,7 @@ class Recorder:
         if self._recording:
             return
 
+        bus.runtime["state_error"] = None
         static = await self._wait_for_static()
         if static is None:
             self._emit(
@@ -153,6 +160,11 @@ class Recorder:
         self._session_meta = None
         self._geometry = None
         self._pre_buffer = []
+        self._track_payload = None
+        self._car_name = ""
+        self._pb_ms = None
+        self._pb_ref = None
+        bus.runtime["state_meta"] = None
         bus.runtime["recording"] = False
         bus.runtime["lap"] = 1
         self._emit({"type": "stopped"})
@@ -264,6 +276,11 @@ class Recorder:
         self._track_id = track.id
         self._static = static
         self._session_type = session_type
+        self._track_payload = track_payload
+        self._car_name = car_name
+        self._pb_ms = pb_ms
+        self._pb_ref = pb_ref
+        self._publish_meta()
 
         self._emit(
             {
@@ -282,6 +299,41 @@ class Recorder:
                 "dbOk": db_ok,
             }
         )
+
+    def _publish_meta(self) -> None:
+        """把会话元信息挂到总线，供 `backend/api/state.py` 组装主题状态。
+
+        state 组装必须留在广播侧（只读、无锁、每帧都能跑），所以记录层只负责
+        「把静态信息 + PB 参考放上去」，不参与任何推送节奏。
+        """
+        static = self._static
+        if static is None or self._track_id is None:
+            bus.runtime["state_meta"] = None
+            return
+        payload = self._track_payload or {}
+        bus.runtime["state_meta"] = {
+            "sessionId": self._session_id,
+            "sessionType": self._session_type or "unknown",
+            "track": {
+                # name 用 ACC 内部 id（monza），title 是给主题显示的美化名（Monza）
+                "name": self._track_id,
+                "title": payload.get("name") or self._track_id,
+                "configuration": getattr(static, "track_configuration", "") or "",
+                "lengthM": payload.get("lengthM"),
+                "sectorCount": int(getattr(static, "sector_count", 0) or 0),
+            },
+            "car": {
+                "name": self._car_name,
+                "maxRpm": int(getattr(static, "max_rpm", 0) or 0),
+                "maxFuel": float(getattr(static, "max_fuel", 0.0) or 0.0),
+                # ACC 的 static 块不填这两项（官方文档标注 Not shown in ACC）
+                "maxTorque": 0.0,
+                "maxPower": 0.0,
+            },
+            "pbMs": self._pb_ms,
+            # pbRef 只在内存里给 delta 用，绝不进 state 消息（上千点会撑爆 30Hz 推送）
+            "pbRef": self._pb_ref,
+        }
 
     async def _persist_session(self) -> None:
         """收到第一帧真实遥测时把 session + track 写入数据库。
@@ -560,6 +612,9 @@ class Recorder:
 
         # 每完成一圈，把当前类型的 PB 参考推给前端，使 DELTA·对 PB 按类型更新
         if pb_ref is not None or pb_ms is not None:
+            self._pb_ms = pb_ms
+            self._pb_ref = pb_ref
+            self._publish_meta()
             self._emit({"type": "pbref", "pbMs": pb_ms, "pbRef": pb_ref})
 
         return {
@@ -593,6 +648,9 @@ class Recorder:
             )
         except Exception:  # noqa: BLE001
             return
+        self._pb_ms = pb_ms
+        self._pb_ref = pb_ref
+        self._publish_meta()
         self._emit({"type": "pbref", "pbMs": pb_ms, "pbRef": pb_ref})
 
     async def _maybe_record_track_map(self, result: LapResult) -> None:
@@ -643,6 +701,13 @@ class Recorder:
             bus.event_queue.put_nowait(event)
         except Exception:  # noqa: BLE001
             logger.exception("事件入队失败")
+
+        # 主题状态快照的 status 需要知道「是不是真出错」：
+        # GAME_NOT_FOUND 只是「还没进赛道」（前端同样按等待态处理），不算故障；
+        # 其余错误（GAME_EXITED / 落库失败等）保留到下次成功开始监测。
+        if event.get("type") == "error":
+            if event.get("code") != "GAME_NOT_FOUND":
+                bus.runtime["state_error"] = event.get("message") or "error"
 
     @staticmethod
     def _error(code: str, message: str) -> dict[str, Any]:

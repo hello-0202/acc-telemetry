@@ -1,0 +1,10 @@
+{
+  "id": "overlay-min",
+  "name": "极简 HUD",
+  "version": "1.0.0",
+  "author": "acc-telemetry",
+  "desc": "速度 / 档位 / 本圈 / DELTA，适合小尺寸悬浮窗",
+  "design": { "w": 380, "h": 150 },
+  "fit": "contain",
+  "modes": ["overlay"]
+}

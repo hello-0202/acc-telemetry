@@ -16,6 +16,8 @@ export const telemetry = reactive({
   fps: 0,
   lapsThisSession: 0,
   historyRevision: 0,
+  // 主题用的完整状态快照（后端 {"type":"state"}，录制中 30Hz / 待机 2Hz）
+  state: null,
 });
 
 let socket = null;
@@ -24,6 +26,8 @@ let frameCount = 0;
 // 前端是否「期望正在监测」（用户点了开始 / 启动时自动开始）。
 // 停止之后后端可能还会补发一条 GAME_NOT_FOUND，不能据此把状态改成等待。
 let wanted = false;
+// 被动模式（游戏悬浮窗）：只收帧，不发 start/stop，避免干扰主窗口的记录状态。
+let passive = false;
 // 当前 error 是否只是「连不上后端」（端口探测 / WS 建立失败）。
 // 这类错误在应用刚启动、sidecar 还没解压完时必然会出现一次，
 // 后端一旦可达就该自动作废，而不是把界面永久钉在「连接断开」。
@@ -111,6 +115,10 @@ function handleMessage(message) {
       frameCount += 1;
       updateDelta();
       break;
+    case 'state':
+      // 主题唯一数据源：后端已把换名 / 单位 / delta / status 都算好
+      telemetry.state = message;
+      break;
     case 'lap':
       telemetry.lastLap = message;
       telemetry.lapsThisSession += 1;
@@ -167,8 +175,9 @@ function closeSocket() {
   socket = null;
 }
 
-export async function start() {
-  wanted = true;
+export async function start(opts = {}) {
+  passive = !!(opts && opts.passive);
+  wanted = !passive;
   telemetry.error = null;
   telemetry.warning = null;
 
@@ -177,7 +186,7 @@ export async function start() {
     // 已经有会话说明后端还在记录（暂停时重新 start 是空操作）：
     // 不要把状态退化成「连接中…」，否则会一直挂在那里等不存在的响应
     if (!telemetry.session) telemetry.status = 'connecting';
-    socket.send(JSON.stringify({ cmd: 'start' }));
+    if (!passive) socket.send(JSON.stringify({ cmd: 'start' }));
     return;
   }
   if (socket && socket.readyState === WebSocket.CONNECTING) return;
@@ -208,7 +217,7 @@ export async function start() {
   socket.onopen = () => {
     if (!socket) return;
     connectFailed = false;
-    socket.send(JSON.stringify({ cmd: 'start' }));
+    if (!passive) socket.send(JSON.stringify({ cmd: 'start' }));
   };
 
   socket.onmessage = (event) => {
@@ -246,6 +255,11 @@ export async function start() {
 
 export function stop() {
   wanted = false;
+  // 被动模式不允许停掉后端记录（悬浮窗只负责显示）
+  if (passive) {
+    disconnect();
+    return;
+  }
   if (socket && socket.readyState === WebSocket.OPEN) {
     try {
       socket.send(JSON.stringify({ cmd: 'stop' }));
@@ -284,6 +298,7 @@ export function clearConnectError() {
 
 export function disconnect() {
   wanted = false;
+  passive = false;
   stopFpsCounter();
   closeSocket();
   telemetry.status = 'idle';
@@ -292,6 +307,7 @@ export function disconnect() {
   telemetry.lastLap = null;
   telemetry.deltaMs = null;
   telemetry.error = null;
+  telemetry.state = null;
 }
 
 export function steerDegrees(steer) {

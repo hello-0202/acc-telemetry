@@ -7,6 +7,17 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(() => ({
   plugins: [vue()],
 
+  build: {
+    rollupOptions: {
+      // 三入口：主窗口 index.html + 游戏悬浮窗 overlay.html + 主题调试页 dev.html
+      input: {
+        main: 'index.html',
+        overlay: 'overlay.html',
+        dev: 'dev.html',
+      },
+    },
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

@@ -1,0 +1,162 @@
+/* 设计基准 380×150，全部用 px 写死；缩放由宿主做（contain）。
+   这样主题作者只需要照着设计图摆位置，不用关心实际窗口多大。 */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+.card {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(11, 14, 19, 0.72);
+  color: #e9eef5;
+}
+
+/* ---------- 左：速度 / 档位 ---------- */
+.left {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 150px;
+}
+
+.speed-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.speed {
+  font-size: 52px;
+  line-height: 0.82;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.unit {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: #7d8794;
+  padding-bottom: 5px;
+}
+
+.gear-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gear {
+  min-width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.rpm {
+  font-size: 12px;
+  color: #9aa5b1;
+  font-variant-numeric: tabular-nums;
+}
+
+.rpm-unit {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: #66707c;
+}
+
+/* ---------- 右：本圈 / DELTA / 赛道 ---------- */
+.right {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  padding-left: 12px;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.k {
+  flex: none;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: #7f8a97;
+}
+
+.v {
+  min-width: 0;
+  text-align: right;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.track {
+  font-size: 12px;
+  color: #b9c3cf;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* DELTA：负数（比 PB 快）绿，正数红 */
+.delta.neg {
+  color: #3ddc84;
+}
+
+.delta.pos {
+  color: #ff5d5d;
+}
+
+.delta.none {
+  color: #6c7683;
+}
+
+/* 未开始监测 / 等待游戏：整体压暗，避免把上一次的值当成实时值 */
+.card[data-status="idle"] .speed,
+.card[data-status="waiting"] .speed,
+.card[data-status="error"] .speed {
+  color: #5b6572;
+}
+
+.card[data-status="idle"] .v,
+.card[data-status="waiting"] .v,
+.card[data-status="error"] .v {
+  color: #5b6572;
+}
