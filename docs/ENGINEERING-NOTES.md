@@ -1,7 +1,8 @@
 # 工程踩坑笔记（跨模块）
 
-> 这里只放「不知道就会踩第二次」的结论，按模块分组。状态契约/主题包协议见 `theme-state-contract.md`，
-> 写主题见 `theme-authoring.md`，赛道图见 `资料/MAP_RENDERING_NOTES.md`，接手任务见 `HANDOFF.md`。
+> 这里只放「不知道就会踩第二次」的结论，按模块分组。文档索引见 `README.md`，
+> 状态契约/主题包协议见 `theme-state-contract.md`，写主题见 `theme-authoring.md`，
+> 轮胎磨损模型见 `tyre-wear-model.md`，接手任务见 `HANDOFF.md`。
 
 ## 1. 架构与数据流
 
@@ -36,7 +37,7 @@
 
 - 5 处必须一致：`package.json`、`package-lock.json`（root 与 `packages.""` 各一处，常漏）、`src-tauri/Cargo.toml`、
   `src-tauri/tauri.conf.json`（**单一真源**）、`python-server/acc_telemetry/__init__.py::__version__`。`Cargo.lock` 自动跟随。
-  当前 `1.0.0`。改版本后 sidecar 必须重打包（exe 里烤的是 `__version__`）。
+  当前 `1.1.0`。改版本后 sidecar 必须重打包（exe 里烤的是 `__version__`）。
 - 发版：改齐五处 → 更新 `CHANGELOG.md` → `git tag vX.Y.Z && git push origin vX.Y.Z`
   → `.github/workflows/release.yml`（tauri-action, windows-latest）自动构建 sidecar、出安装包、建 draft release。
 
@@ -47,7 +48,7 @@
 - 热力 = 按踏板给路面着色：中心线取 `M.left/right` 中点（**不用 `M.centers`**，点数不同会错位），
   线宽取左右边界距离，用 `#mapRoadClip` 裁到路面。**`clipPath` 必须写在 `#mapZoom` 里面**，否则缩放时热力消失。
 - fastlane 的 `left/right` 是「行进方向左右」，世界 x-z 逆时针法线给的是右手边 → **`left = c - n*l`、`right = c + n*r`**。
-  装反会让路面偏到 AI 线另一侧（2026-10-23 真 bug）。校验用 `资料/monza_centerline.csv` 按 `(x, -z)` 复算比对。
+  装反会让路面偏到 AI 线另一侧（2026-10-23 真 bug）。校验可用历史库里的实跑 `wx/wy` 按 `(x, -z)` 复算比对。
 - 弯心 `apex.js::detectApexes` 用**转角累计法**（每点转向角分段、段内取半径最小处）；
   `minTurnDeg≈15° / floorDeg≈0.8° / minGapM≈45m`；起跑线旋转到最长直道中央防跨接缝。弯名表已下线，只显示 T 编号。
 - **走线精度（方案 B）**：`samples` 按时间等距抽稀（`lap_processor._downsample`）并保留真实 `p` + `wx/wy`。
@@ -157,9 +158,14 @@
   `themeChoice`；**同窗口靠它同步，跨窗口才用 `overlay-theme-changed` 事件**。
 - `ThemeHost.fit`：`contain`（固定 design + transform scale）/ `fluid`（铺满、主题自己响应式；
   `acc:init` 多带 `fit`/`box`/`theme`/`background`，切黑白或切悬浮窗背景补发 `acc:ui`）。主题 4s 没 ready → emit `fail` → 回退内置面板。
-- **悬浮窗背景（2026-10-28）**：设置页每个悬浮窗槽位可选「透明 / 不透明」（localStorage `acc.overlayBackground.<slot>`）。
-  窗口本身一直是 `transparent(true)`，不透明模式由 `OverlayView` 给根节点铺 `#0b0e13` 实心底板实现；
-  主题通过 `acc:init.background` / `acc:ui.background` 得知，用 `html[data-bg="opaque"]` 把自己的半透明卡片也变实心。
+- **悬浮窗背景（2026-10-28，2026-10-29 修正色值）**：设置页每个悬浮窗槽位可选「透明 / 不透明」（localStorage `acc.overlayBackground.<slot>`）。
+  窗口本身一直是 `transparent(true)`，不透明模式由 `OverlayView` 给根节点（`.ov-root.opaque`）铺 `#0b0f14` 纯黑底板实现。
+  主题通过 `acc:init.background` / `acc:ui.background` 得知，需要时用 `html[data-bg="opaque"]` 调自己的配色。
+
+  ⚠️ **主题卡片别拿 72% 近黑当"半透明"**（2026-10-29 踩过）。`rgba(11,14,19,.72)` 压在游戏画面上
+  就是个实心黑块，用户选「透明」会以为设置没生效。真要能看见画面，卡片背景就得是 `transparent`
+  （`speed-gear` 现在就是零底板，靠字号 + 向下软投影保证可读），别靠压暗背景。
+  不透明模式现在统一铺 `#0b0f14` 纯黑；主题自带底板时同步用这个值（模板里已改成同一色），不要叠得比底板更黑。
 - 缺口：主题拿不到赛道几何（`getTrackGeometry()` 不在 state 里），带地图的纯主题（如副屏）需单独推 `acc:map`。
 
 ## 11. 调试技巧

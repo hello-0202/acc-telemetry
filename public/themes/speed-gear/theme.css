@@ -1,0 +1,208 @@
+@import url('/fonts/sarasa-gothic-sc/fonts.css');
+/* 速度挡位 HUD —— 设计基准 325×100，全部用 px 写死；缩放由宿主做（contain）。
+ *
+ * 和其他悬浮窗主题一致：主题本身完全透明、不画底板，只靠白字 + 正下方 1px 硬影
+ * 浮在游戏画面上。悬浮窗的「透明 / 不透明」由宿主控制 —— 不透明时宿主在窗口层
+ * 铺 #0b0f14，主题不用改任何东西。
+ *
+ * 布局：
+ *   顶部 14 格转速灯带（格子之间 4px 小间隔，按转速从绿到黄再到红依次点亮）
+ *   向下留 14px 间距，再放一行：左侧迈速 / 中间挡位 / 右侧转速
+ *   转速逼近红线（≥96%）时整条灯带和速度数字转红并闪烁。
+ */
+
+:root {
+  /* 配色取自其它内置悬浮窗主题：绿 / 琥珀 / 红 */
+  --led-green: #00e676;
+  --led-amber: #ffab00;
+  --led-red: #ff2136;
+  /* 数字用 Bahnschrift（Windows 自带，DIN 风格）；缺失时逐级回退 */
+  --font-num: 'Bahnschrift', 'DIN Alternate', 'Chakra Petch', 'JetBrains Mono',
+    'Cascadia Code', Consolas, 'Sarasa Mono SC', 'Microsoft YaHei', sans-serif;
+}
+
+html,
+body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Sarasa Gothic SC',
+    'Sarasa Mono SC', 'Microsoft YaHei', sans-serif;
+  color: #ffffff;
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+
+  /* 和其他悬浮窗主题同一套文字落影：只往正下方投 1px 硬影，不描边、不发光 */
+  --ink-edge: 0 1px 0 rgba(0, 0, 0, 0.85);
+}
+
+.hud {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 22px 18px;
+  gap: 14px;
+  color: #ffffff;
+}
+
+/* ---------------- 转速灯带 ----------------
+ * 14 格平分 279px 内宽，格子之间留 4px 小间隔。
+ * 灭灯是压暗的凹槽（深底 + 1px 内描边），亮灯直接填纯色 —— 和踏板主题的槽同一套做法。 */
+.leds {
+  flex: none;
+  height: 10px;
+  display: flex;
+  gap: 4px;
+}
+
+.led {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  background: rgba(10, 14, 19, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32);
+}
+
+/* 前 9 格绿、中间 3 格黄、最后 2 格红 */
+.led[data-zone='g'] {
+  --on-bg: var(--led-green);
+}
+
+.led[data-zone='y'] {
+  --on-bg: var(--led-amber);
+}
+
+.led[data-zone='r'] {
+  --on-bg: var(--led-red);
+}
+
+.led.on {
+  background: var(--on-bg);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+
+/* ---------------- 速度 / 挡位 / 转速 ----------------
+ * 一行三段：左右各占 1fr，挡位按内容宽度居中。 */
+.readout {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  width: 100%;
+  min-height: 0;
+}
+
+.readout-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.speed-cell {
+  justify-self: start;
+  padding-left: 8px;
+}
+
+.rpm-cell {
+  justify-self: end;
+  padding-right: 8px;
+}
+
+.speed {
+  font-family: var(--font-num);
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: #ffffff;
+  text-shadow: var(--ink-edge);
+}
+
+.rpm {
+  font-family: var(--font-num);
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: #ffffff;
+  text-shadow: var(--ink-edge);
+}
+
+.unit {
+  font-family: var(--font-num);
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.78);
+  text-shadow: var(--ink-edge);
+  white-space: nowrap;
+}
+
+.gear-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  padding: 0 8px;
+}
+
+/* 挡位是整块的重心：48px，几乎占满数据行高度 */
+.gear {
+  font-family: var(--font-num);
+  font-size: 48px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: #ffffff;
+  text-shadow: var(--ink-edge);
+}
+
+/* 倒挡红色、空挡压暗；前进挡保持纯白 */
+.gear[data-g='r'] {
+  color: var(--led-red);
+}
+
+.gear[data-g='n'] {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+/* ---------------- 换挡提示 ----------------
+ * 转速 ≥ 96% 允许转速且不是空挡 / 倒挡时，整条灯带转红并闪烁，速度数字转红。
+ * 只按状态翻转改 data-shift，不每帧重挂动画。 */
+@keyframes led-shift {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.28;
+  }
+}
+
+.hud[data-shift='1'] .led.on {
+  background: var(--led-red);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+  animation: led-shift 0.28s steps(1, end) infinite;
+}
+
+.hud[data-shift='1'] .speed {
+  color: var(--led-red);
+}

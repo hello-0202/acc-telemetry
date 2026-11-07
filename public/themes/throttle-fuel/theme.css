@@ -1,3 +1,4 @@
+@import url('/fonts/sarasa-gothic-sc/fonts.css');
 /* 油量策略 —— 设计基准 260×140，全部 px 写死，缩放交给宿主（contain）。
  *
  * 视觉取向：左侧标签名 + 右侧数值的两列数据表。
@@ -15,11 +16,16 @@ body {
 
 body {
   /* 与软件外壳同一套字体栈（src/style.css 的 --font-display），数字单独用 --font-mono */
-  font-family: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Microsoft YaHei', sans-serif;
-  color: #e9eef5;
+  font-family: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', sans-serif;
+  color: #ffffff;
   -webkit-user-select: none;
   user-select: none;
   cursor: default;
+
+  /* 文字落影：只往正下方投 1px 硬影，不描边、不发光。
+   * 这张表全靠文字表达信息，字必须够白够粗（见下面的 800 字重），
+   * 但不能靠描边提对比 —— 描边会把字圈起来，看着像贴纸。 */
+  --ink-edge: 0 1px 0 rgba(0, 0, 0, 0.85);
 }
 
 .hud {
@@ -44,14 +50,13 @@ body {
 }
 
 .k {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
   line-height: 1;
-  color: rgba(255, 255, 255, 0.82);
+  color: #ffffff;
   white-space: nowrap;
-  /* 1px 硬投影：透明背景下亮画面上能读，不是光晕 */
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+  text-shadow: var(--ink-edge);
 }
 
 /* 分隔一下「建议加注量」：它是结论，不是原始读数 */
@@ -66,24 +71,25 @@ body {
 }
 
 .v b {
-  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace;
-  font-size: 19px;
-  font-weight: 700;
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', monospace;
+  font-size: 20px;
+  font-weight: 800;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   color: #ffffff;
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+  text-shadow: var(--ink-edge);
 }
 
 .u {
   min-width: 26px;
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 700;
   line-height: 1;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   /* 单位也右对齐：数字 + 单位的整体右边缘才是一条直线 */
   text-align: right;
-  color: rgba(255, 255, 255, 0.72);
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+  color: #ffffff;
+  text-shadow: var(--ink-edge);
 }
 
 /* 可跑圈数告警：<2 圈红、<5 圈琥珀，其余正常 */
@@ -101,12 +107,13 @@ body {
 }
 
 #add-row[data-level='ok'] b {
-  color: rgba(255, 255, 255, 0.62);
+  /* 油够 = 不用加，语义上该让位，但不能暗到看不清，所以只压到 0.9 */
+  color: #ffffff;
 }
 
 /* 未开始 / 等待：整体压暗，别把上次的值当实时值 */
 .hud[data-status='idle'],
 .hud[data-status='waiting'],
 .hud[data-status='error'] {
-  opacity: 0.5;
+  opacity: 0.72;
 }

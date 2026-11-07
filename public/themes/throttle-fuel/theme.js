@@ -8,16 +8,17 @@
  *   FUEL           剩余油量            car.fuel
  *   LAPS LEFT      还能跑多少圈        car.fuelLapsLeft（缺失则 fuel / fuelPerLap）
  *   PER LAP        平均每圈油耗        car.fuelPerLap
- *   SUGGESTED ADD  建议加注量（算出来） 见 suggestAdd()
+ *   最后一行按会话类型切两种口径：
+ *     · 正赛（race）    SUGGESTED ADD  进站时要补多少：剩余圈数 × 每圈油耗 × 1.03 − 当前油量
+ *     · 排位（qualify） RACE FUEL      本场正赛一共要装多少：正赛总时长 / 平均圈时 × 每圈油耗 × 1.03
+ *     · 练习 / 其它     `--`（没有终点，也就没有「该加多少」）
  *
- * 建议加油量的口径（纯前端算，不依赖后端新增字段）：
- *   需要跑完的圈数 × 每圈油耗 × (1 + 安全余量) − 当前油量
- *   圈数来源二选一：
- *     · 计时赛：session.timeLeftMs / 平均圈时   ← 这就是「当局还剩多少时间」
- *     · 圈数赛：session.lapsTotal − lap.completed
- *   平均圈时优先用上一圈 lap.lastMs（和游戏 fuelPerLap 的口径最接近），
- *   没有就退到 lap.bestMs，再退到 lap.estimatedMs。
- *   两者都拿不到（练习/无圈速）→ 显示 `--`，不瞎猜。
+ * 正赛的圈数来源：
+ *   · 计时赛：session.timeLeftMs / 平均圈时
+ *   · 圈数赛：session.lapsTotal − lap.completed
+ * 排位用不了 timeLeftMs（那是排位剩余时间），正赛总时长取后端读 ACC
+ * menuSettings.json 得到的 session.raceDurationMs；读不到就是 `--`。
+ * 平均圈时优先用上一圈 lap.lastMs，没有就退到 lap.bestMs，再退到 lap.estimatedMs。
  */
 (function () {
   'use strict';
@@ -37,6 +38,7 @@
   var perEl = $('per-val');
   var addRow = $('add-row');
   var addEl = $('add-val');
+  var addLabel = $('add-label');
 
   var gotState = false;
   var demoTimer = null;
@@ -64,10 +66,12 @@
     return null;
   }
 
-  /* 还没跑完的圈数：计时赛按剩余时间折算，圈数赛按总圈数差 */
+  /* 正赛还没跑完的圈数：计时赛按剩余时间折算，圈数赛按总圈数差。
+   * 排位/练习的 timeLeftMs 是那一节自己的剩余时间，不能拿来算正赛。 */
   function lapsToGo(st) {
     var s = st.session || {};
     var lap = st.lap || {};
+    if ((s.type || '') !== 'race') return null;
 
     var tLeft = num(s.timeLeftMs);
     if (tLeft != null && tLeft > 0) {
@@ -83,15 +87,28 @@
       return left > 0 ? left : 0;
     }
 
-    return null; // 练习/自由跑：没有终点，也就没有「该加多少」
+    return null;
   }
 
-  /* 建议加油量（L）：>0 表示还要补这么多；<=0 表示油够 */
+  /* 正赛里进站要补的油量（L）：>0 表示还要补这么多；<=0 表示油够 */
   function suggestAdd(st, fuel, per) {
     if (fuel == null || per == null || per <= 0) return null;
     var toGo = lapsToGo(st);
     if (toGo == null) return null;
     return toGo * per * FUEL_MARGIN - fuel;
+  }
+
+  /* 排位里预排正赛总油量（L）：整场比赛一共要装多少，不是「还差多少」。
+   * raceDurationMs 来自 ACC 的菜单设置（单机自定义比赛周末），拿不到就不猜。 */
+  function raceFuelTotal(st, per) {
+    var s = st.session || {};
+    if ((s.type || '') !== 'qualify') return null;
+    if (per == null || per <= 0) return null;
+    var raceMs = num(s.raceDurationMs);
+    if (raceMs == null || raceMs <= 0) return null;
+    var avg = avgLapMs(st.lap || {});
+    if (avg == null || avg <= 0) return null;
+    return (raceMs / avg) * per * FUEL_MARGIN;
   }
 
   function render(st) {
@@ -123,11 +140,19 @@
       /* ---------- PER LAP ---------- */
       perEl.textContent = per == null || per <= 0 ? '--' : per.toFixed(2);
 
-      /* ---------- SUGGESTED ADD ---------- */
-      var add = suggestAdd(st, fuel, per);
+      /* ---------- 最后一行：正赛补给量 / 排位预排正赛油量 ---------- */
+      var type = (st.session || {}).type || '';
+      var add = null;
+      if (type === 'race') add = suggestAdd(st, fuel, per);
+      else if (type === 'qualify') add = raceFuelTotal(st, per);
+
+      addLabel.textContent = type === 'qualify' ? 'RACE FUEL' : 'SUGGESTED ADD';
+      addRow.dataset.level = '';
       if (add == null) {
         addEl.textContent = '--';
-        addRow.dataset.level = '';
+      } else if (type === 'qualify') {
+        // 正赛总油量是「计划值」不是告警：正常白色，也不带正负号
+        addEl.textContent = add.toFixed(1);
       } else if (add > 0.05) {
         addEl.textContent = '+' + add.toFixed(1);
         addRow.dataset.level = 'need';

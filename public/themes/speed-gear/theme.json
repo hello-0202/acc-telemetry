@@ -1,0 +1,10 @@
+{
+  "id": "speed-gear",
+  "name": "speed-gear",
+  "version": "1.2.0",
+  "author": "acc-telemetry",
+  "desc": "透明悬浮速度表：顶部 14 格转速灯带（格子间留小间隔），左侧速度、中间挡位、右侧转速；转速逼近红线时灯带闪红提示换挡",
+  "design": { "w": 325, "h": 100 },
+  "fit": "contain",
+  "modes": ["overlay"]
+}

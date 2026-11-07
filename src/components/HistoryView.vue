@@ -21,6 +21,11 @@ const menuOpenId = ref(null);
 const scrollEl = ref(null);
 const loading = ref(false);
 const errorText = ref('');
+// 删除确认弹窗：待删记录 + 删除中 + 失败原因
+const pendingDelete = ref(null);
+const deleting = ref(false);
+const deleteError = ref('');
+const delCancelBtn = ref(null);
 // 普通变量（非 ref）：只影响图表绘制，切换时不必重建整个分析区
 let showPb = true;
 let showApex = true;
@@ -211,6 +216,8 @@ function normalizeTrack(item) {
     sessionTypes: (Array.isArray(item.sessionTypes) && item.sessionTypes.length
       ? item.sessionTypes
       : [type]).slice().sort((a, b) => sessionTypeRank(a) - sessionTypeRank(b)),
+    // 后端标记的「正在记录中的那一场」，删除它会被后端 409 拒掉
+    live: !!item.live,
     laps: [],
     lapsLoaded: false,
     // 一条记录里同时有排位赛和正赛时才分组，否则保持原来的平铺圈速列表
@@ -277,6 +284,12 @@ async function loadTracks() {
     const quiet = !!prevTrackId;
     tracks.value = list.map(normalizeTrack);
     errorText.value = '';
+    // 列表刷新会换掉所有 track 对象，删除弹窗里持有的引用要重新指到新对象，
+    // 否则弹窗里显示的是旧数据（圈数 / live 标记都停在刷新那一刻）
+    if (pendingDelete.value) {
+      const fresh = tracks.value.find((t) => t.id === pendingDelete.value.id);
+      pendingDelete.value = fresh || null;
+    }
     if (prevTrackId) {
       const tk = tracks.value.find((t) => t.id === prevTrackId);
       if (tk) {
@@ -434,20 +447,70 @@ async function selectLap(lap, { keepView = false } = {}) {
   }
 }
 
-async function removeTrack(id) {
+// 删除一条记录：先弹确认框，确认后才真的调 DELETE
+function askDeleteTrack(tk) {
+  if (deleting.value) return;
+  deleteError.value = '';
+  pendingDelete.value = tk;
   menuOpenId.value = null;
+  // 破坏性操作默认聚焦「取消」，回车不会误删
+  nextTick(() => delCancelBtn.value?.focus());
+}
+
+function closeDelete() {
+  if (deleting.value) return;
+  pendingDelete.value = null;
+  deleteError.value = '';
+}
+
+async function confirmDelete() {
+  const tk = pendingDelete.value;
+  if (!tk || deleting.value) return;
+  deleting.value = true;
+  deleteError.value = '';
   try {
-    await deleteSession(id);
+    await deleteSession(tk.id);
     invalidateLapCache();
-    if (selTrack.value?.id === id) {
+    if (selTrack.value?.id === tk.id) {
       selTrack.value = null;
       selLap.value = null;
     }
+    pendingDelete.value = null;
     await loadTracks();
   } catch (e) {
-    errorText.value = e.status === 409 ? '该记录正在监测中，请先停止监测' : ('删除失败：' + e.message);
+    // 失败原因留在弹窗里，用户能看到为什么没删掉，也能直接重试
+    deleteError.value = e.status === 409
+      ? '该记录正在监测中，请先停止监测后再删除'
+      : ('删除失败：' + (e.message || '未知原因'));
+  } finally {
+    deleting.value = false;
   }
 }
+
+// 弹窗内的键盘操作；阻止冒泡，避免 1/2/3、T 在弹窗打开时切页换主题
+function onDeleteKey(e) {
+  e.stopPropagation();
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeDelete();
+    return;
+  }
+  if (e.key === 'Enter') {
+    // 焦点在按钮上时交给按钮原生行为，否则「取消」按钮会被回车变成确认
+    if (e.target && e.target.closest && e.target.closest('button')) return;
+    e.preventDefault();
+    confirmDelete();
+  }
+}
+
+// 待删记录是不是正在监测中的那一条（后端会直接 409 拒掉）。
+// tk.live 来自后端列表，是权威判断；ui.liveSessionId 是前端实时状态，做补充。
+const deleteIsLive = computed(() => {
+  const tk = pendingDelete.value;
+  if (!tk) return false;
+  if (tk.live) return true;
+  return ui.monOn && ui.liveSessionId === tk.id;
+});
 
 function lapDeltaText(lap) {
   // PB 圈本身不显示差距秒数
@@ -1141,6 +1204,11 @@ watch(analysisHtml, () => nextTick(renderAnalysis));
 watch(() => props.visible, (v) => {
   if (!v) {
     cancelReload();
+    // 删除确认弹窗 Teleport 到 body，不会随页面一起隐藏，切走时得自己收掉
+    if (!deleting.value) {
+      pendingDelete.value = null;
+      deleteError.value = '';
+    }
     return;
   }
   loadTracks().then(() => nextTick(renderAnalysis));
@@ -1202,7 +1270,7 @@ function onDocClick(e) {
             </button>
             <button class="track-kebab" :class="{ open: menuOpenId === tk.id }" @click.stop="toggleMenu(tk.id)" aria-label="更多操作" title="更多操作">⋮</button>
             <div class="track-menu" :class="{ show: menuOpenId === tk.id }">
-              <button class="danger" @click="removeTrack(tk.id)">删除此记录</button>
+              <button class="danger" @click="askDeleteTrack(tk)">删除此记录</button>
             </div>
           </div>
 
@@ -1281,5 +1349,62 @@ function onDocClick(e) {
       </div>
       <div class="ana-scroll" ref="scrollEl" v-html="analysisHtml"></div>
     </div>
+
+    <!-- 删除一条历史记录的确认弹窗：Teleport 到 body，避免被 .view 的 transform 影响定位 -->
+    <Teleport to="body">
+      <div v-if="pendingDelete" class="dlg-mask" @click.self="closeDelete">
+        <div
+          class="dlg"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="del-dlg-title"
+          aria-describedby="del-dlg-desc"
+          @keydown="onDeleteKey"
+        >
+          <div class="dlg-head">
+            <span class="dlg-ico danger" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 4.2 3.2 19.8h17.6L12 4.2z" />
+                <path d="M12 10.2v3.9" />
+                <circle cx="12" cy="17.2" r="1.05" fill="currentColor" stroke="none" />
+              </svg>
+            </span>
+            <div class="dlg-ttl">
+              <h3 id="del-dlg-title">删除此记录</h3>
+            </div>
+          </div>
+
+          <div class="dlg-body" id="del-dlg-desc">
+            <p>将从本机数据库中永久删除 <strong>{{ pendingDelete.name }}</strong> 的这条记录。</p>
+
+            <div class="dlg-notes">{{ pendingDelete.car || '未知车型' }} · {{ pendingDelete.lapCount }} 圈 · {{ fmtSessionDate(pendingDelete.date) }}</div>
+
+            <ul class="dlg-list">
+              <li>所有圈速、分段计时与完成圈记录</li>
+              <li>逐帧遥测采样（速度 / 踏板 / 走线）</li>
+              <li>PB 记录与历史圈对比基准</li>
+            </ul>
+
+            <div class="dlg-keep"><b>保留</b>赛道地图缓存、设置项与界面偏好不受影响。</div>
+
+            <div v-if="deleteIsLive" class="dlg-warn">
+              <b>正在监测中</b>请先在「监测」页停止，否则无法删除。
+            </div>
+
+            <div v-if="deleteError" class="dlg-err"><b>失败</b>{{ deleteError }}</div>
+          </div>
+
+          <div class="dlg-foot">
+            <button ref="delCancelBtn" type="button" class="btn btn-ghost" :disabled="deleting" @click="closeDelete">取消</button>
+            <button
+              type="button"
+              class="btn btn-danger"
+              :disabled="deleting || deleteIsLive"
+              @click="confirmDelete"
+            >{{ deleting ? '删除中…' : '确认删除' }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </section>
 </template>

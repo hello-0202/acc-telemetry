@@ -104,6 +104,45 @@ const showNotice = computed(
   () => !bootGrace.value && offline.value && !noticeDismissed.value && !!noticeText.value
 );
 
+/* ------------------- 左下角状态指示灯 ------------------- */
+// 原来在监测页顶部有一整块状态面板，现在收成状态栏左侧一个小圆点：
+// 绿 = 正在接收遥测 / 黄 = 连接中或等待游戏 / 红 = 后端断开 / 灰 = 其他。
+const statusDotClass = computed(() => {
+  if (telemetry.status === 'streaming' && telemetry.frame) return 'good';
+  if (telemetry.status === 'error' && !ui.booting) return 'hot';
+  if (ui.backendOnline === false && !ui.booting) return 'hot';
+  if (ui.booting || telemetry.status === 'connecting' || telemetry.status === 'waiting') {
+    return 'warn';
+  }
+  if (ui.backendOnline === true && ui.gameRunning === false) return 'warn';
+  return 'off';
+});
+
+const statusTitle = computed(() => {
+  if (telemetry.status === 'streaming' && telemetry.frame) {
+    return '已连接' + (telemetry.fps ? ' · ' + telemetry.fps + ' Hz' : '');
+  }
+  if (ui.booting && telemetry.status !== 'streaming') return '正在连接本地服务…';
+  if (telemetry.status === 'error') return telemetry.error || '后端连接已断开';
+  if (telemetry.status === 'waiting') return '等待进入赛道，进入后自动开始记录';
+  if (telemetry.status === 'connecting') return '正在连接本地服务…';
+  if (ui.backendOnline === false) return '本地服务未连接';
+  if (ui.backendOnline === true && ui.gameRunning === false) return '等待启动 ACC';
+  return '未连接';
+});
+
+// 状态栏里显示的短说明（完整原因放在 title 里）
+const statusText = computed(() => {
+  if (telemetry.status === 'streaming' && telemetry.frame) return '已连接';
+  if (ui.booting && telemetry.status !== 'streaming') return '连接中…';
+  if (telemetry.status === 'error') return '连接断开';
+  if (telemetry.status === 'waiting') return '等待进入赛道';
+  if (telemetry.status === 'connecting') return '连接中…';
+  if (ui.backendOnline === false) return '本地服务未连接';
+  if (ui.backendOnline === true && ui.gameRunning === false) return '等待启动 ACC';
+  return '未连接';
+});
+
 // 状态恢复后重置「已关闭」，下次断开时重新提醒
 watch(offline, (value) => {
   if (!value) noticeDismissed.value = false;
@@ -381,6 +420,10 @@ onBeforeUnmount(() => {
 
         <!-- statusbar -->
         <footer class="statusbar">
+          <span class="stat" :title="statusTitle">
+            <span class="sdot" :class="statusDotClass" role="img" :aria-label="statusTitle"></span>
+            <span class="stat-text">{{ statusText }}</span>
+          </span>
           <span class="r">
             <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 切换页面</span>
             <span><kbd>T</kbd> 主题</span>

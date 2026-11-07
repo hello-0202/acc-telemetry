@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>速度挡位 HUD</title>
+    <link rel="stylesheet" href="./theme.css" />
+  </head>
+  <body>
+    <!-- 设计基准 325×100（见 theme.json），透明背景、不画底板。
+         结构照 迈速表demo.html：顶部一条 14 格转速灯带（格子间留小间隔），
+         向下隔开一段距离，再放一行三段：左侧迈速、中间挡位、右侧转速。 -->
+    <div class="hud" id="card" data-status="idle" data-shift="0">
+      <!-- 灯带格子由 theme.js 生成：前 9 格绿、中间 3 格黄、最后 2 格红 -->
+      <div class="leds" id="leds" aria-hidden="true"></div>
+
+      <div class="readout">
+        <div class="readout-cell speed-cell">
+          <span class="speed" id="speed">--</span>
+          <span class="unit">KM/H</span>
+        </div>
+
+        <div class="gear-cell">
+          <span class="gear" id="gear">-</span>
+        </div>
+
+        <div class="readout-cell rpm-cell">
+          <span class="rpm" id="rpm">--</span>
+          <span class="unit">RPM</span>
+        </div>
+      </div>
+    </div>
+
+    <script src="./theme.js"></script>
+  </body>
+</html>

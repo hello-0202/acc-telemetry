@@ -394,7 +394,7 @@ onBeforeUnmount(() => {
 
 .dv-dim {
   color: #6d7885;
-  font-family: ui-monospace, monospace;
+  font-family: ui-monospace, "Sarasa Gothic SC", "Sarasa Gothic", "Sarasa Mono SC", "Noto Sans Mono CJK SC", "SimHei", "NSimSun", "Microsoft YaHei", monospace;
   font-size: 11px;
 }
 
@@ -464,7 +464,7 @@ onBeforeUnmount(() => {
 
 .dv-row b {
   color: #e9eef4;
-  font-family: ui-monospace, monospace;
+  font-family: ui-monospace, "Sarasa Gothic SC", "Sarasa Gothic", "Sarasa Mono SC", "Noto Sans Mono CJK SC", "SimHei", "NSimSun", "Microsoft YaHei", monospace;
   font-weight: 500;
   text-align: right;
 }
@@ -581,7 +581,7 @@ onBeforeUnmount(() => {
   border-radius: 4px;
   background: #0f141a;
   color: #b9c4d0;
-  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-family: ui-monospace, "Cascadia Mono", "Sarasa Gothic SC", "Sarasa Gothic", "Sarasa Mono SC", "Noto Sans Mono CJK SC", "SimHei", "NSimSun", "Microsoft YaHei", monospace;
   font-size: 11px;
   line-height: 1.45;
 }

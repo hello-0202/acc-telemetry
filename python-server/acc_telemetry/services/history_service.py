@@ -48,17 +48,23 @@ class HistoryService:
         self.laps.insert_with_samples(lap=lap, samples=result.samples)
         return lap
 
-    def pb_ms(self, track_id: str) -> int | None:
-        return self.laps.pb_ms(track_id)
+    def pb_ms(self, track_id: str, car_name: str | None = None) -> int | None:
+        return self.laps.pb_ms(track_id, car_name)
 
-    def pb_ms_for_type(self, track_id: str, session_type: str) -> int | None:
-        return self.laps.pb_ms_for_type(track_id, session_type)
+    def pb_ms_for_type(
+        self, track_id: str, session_type: str, car_name: str | None = None
+    ) -> int | None:
+        return self.laps.pb_ms_for_type(track_id, session_type, car_name)
 
-    def pb_reference(self, track_id: str) -> dict | None:
-        return self.samples.pb_reference(track_id)
+    def pb_reference(
+        self, track_id: str, car_name: str | None = None
+    ) -> dict | None:
+        return self.samples.pb_reference(track_id, car_name)
 
-    def pb_reference_for_type(self, track_id: str, session_type: str) -> dict | None:
-        return self.samples.pb_reference_for_type(track_id, session_type)
+    def pb_reference_for_type(
+        self, track_id: str, session_type: str, car_name: str | None = None
+    ) -> dict | None:
+        return self.samples.pb_reference_for_type(track_id, session_type, car_name)
 
     # ------------------------------------------------------------------ 查询
     def list_sessions(

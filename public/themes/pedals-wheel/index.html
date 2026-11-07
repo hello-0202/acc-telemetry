@@ -8,19 +8,30 @@
   </head>
   <body>
     <!-- 设计基准 300×190（见 theme.json）。宿主按 contain 等比缩放，直接按像素写。
-         视觉：左右两根竖直矩形踏板条（从底部往上填充）+ 中间转向圆环，背景透明无底板，
-         纯色填充、直角边界、无发光。 -->
-    <div class="hud" id="hud" data-status="idle">
-      <!-- 左：刹车 -->
-      <div class="pedal brake">
-        <span class="p-lab">BRAKE</span>
-        <div class="p-bar">
-          <div class="p-fill" id="brake-fill"></div>
+         视觉：左侧两根竖直矩形踏板条（从底部往上填充，油门/刹车并排）+ 右侧转向圆环，
+         背景透明无底板，纯色填充、直角边界、无发光。 -->
+    <div class="hud" id="hud" data-status="idle" data-steer="none">
+      <!-- 左：刹车 + 油门并排 -->
+      <div class="pedals">
+        <div class="pedal brake">
+          <span class="p-lab">刹车</span>
+          <div class="p-bar">
+            <div class="p-fill" id="brake-fill"></div>
+          </div>
+          <span class="p-val" id="brake-val">--</span>
         </div>
-        <span class="p-val" id="brake-val">--</span>
+
+        <div class="pedal thr">
+          <span class="p-lab">油门</span>
+          <div class="p-bar">
+            <div class="p-fill" id="thr-fill"></div>
+          </div>
+          <span class="p-val" id="thr-val">--</span>
+        </div>
       </div>
 
-      <!-- 中：内圈圆环 + 外圈转向进度弧（无方向盘图形） -->
+      <!-- 右：内圈圆环 + 外圈转向进度弧。没有方向盘图形，也没有箭头 / 指针标记：
+           方向看弧色（蓝=左 / 橙=右），幅度看弧长，角度数字同步染同色。 -->
       <div class="steer">
         <svg class="ring" viewBox="0 0 168 168" aria-hidden="true">
           <!-- 内圈：深色底环 + 白色细环。两层是为了浅色/深色游戏画面都能看见（单层白色在浅底上会消失） -->
@@ -35,15 +46,6 @@
         <div class="st-read">
           <b id="steer-deg">0°</b>
         </div>
-      </div>
-
-      <!-- 右：油门 -->
-      <div class="pedal thr">
-        <span class="p-lab">THROTTLE</span>
-        <div class="p-bar">
-          <div class="p-fill" id="thr-fill"></div>
-        </div>
-        <span class="p-val" id="thr-val">--</span>
       </div>
     </div>
 

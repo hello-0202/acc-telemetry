@@ -19,6 +19,8 @@ from typing import Any
 
 from acc_telemetry.services.history_service import HistoryService
 from acc_telemetry.services.lap_processor import LapProcessor, LapResult
+from acc_telemetry.session_plan import race_duration_ms
+from acc_telemetry.repositories.sample_repo import build_reference
 from acc_telemetry.repositories.track_repo import TrackRepository
 from acc_telemetry.services.geometry_service import GeometryService
 from acc_telemetry.trackmaps.cars import resolve_car
@@ -128,6 +130,14 @@ class Recorder:
         self._car_name: str = ""
         self._pb_ms: int | None = None
         self._pb_ref: dict | None = None
+        # 本场（本次监测会话）已保存的最快有效圈及其「进度 → 时间」曲线。
+        # state.py 用它算 lap.deltaBestMs，口径与游戏内 DELTA（对本场最佳）一致。
+        self._session_best_ms: int | None = None
+        self._session_best_ref: dict | None = None
+        # 本场最快「任意已完成圈」（可能被判无效，但 ACC 的 iBestTime 有时仍算它）。
+        # delta 命中时优先用圈速与 iBestTime 完全相等的那条曲线。
+        self._session_fast_ms: int | None = None
+        self._session_fast_ref: dict | None = None
 
     # ------------------------------------------------------------------ 状态
     @property
@@ -192,6 +202,10 @@ class Recorder:
         self._car_name = ""
         self._pb_ms = None
         self._pb_ref = None
+        self._session_best_ms = None
+        self._session_best_ref = None
+        self._session_fast_ms = None
+        self._session_fast_ref = None
         bus.runtime["state_meta"] = None
         bus.runtime["recording"] = False
         bus.runtime["lap"] = 1
@@ -222,6 +236,11 @@ class Recorder:
         track_payload = track.to_payload()
         car_id, car_name, gear_count = resolve_car(getattr(static, "car_model", ""))
         session_id = uuid.uuid4().hex
+        # 新会话：本场最佳圈参考还不存在，等第一圈跑完再填
+        self._session_best_ms = None
+        self._session_best_ref = None
+        self._session_fast_ms = None
+        self._session_fast_ref = None
         date = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         session_type = (
             session_type
@@ -247,17 +266,22 @@ class Recorder:
 
         # 此时 track 行可能尚未落库（落库被推迟），读不到 PB 属正常；
         # 第一圈完成后会在 _persist_lap 里重新计算。
+        # PB 参考只取当前这台车：换车后拿另一台车的圈速当 delta 基准是错的。
         try:
             if session_type and session_type != "unknown":
                 pb_ms = await asyncio.to_thread(
-                    self.history.pb_ms_for_type, track.id, session_type
+                    self.history.pb_ms_for_type, track.id, session_type, car_name
                 )
                 pb_ref = await asyncio.to_thread(
-                    self.history.pb_reference_for_type, track.id, session_type
+                    self.history.pb_reference_for_type, track.id, session_type, car_name
                 )
             else:
-                pb_ms = await asyncio.to_thread(self.history.pb_ms, track.id)
-                pb_ref = await asyncio.to_thread(self.history.pb_reference, track.id)
+                pb_ms = await asyncio.to_thread(
+                    self.history.pb_ms, track.id, car_name
+                )
+                pb_ref = await asyncio.to_thread(
+                    self.history.pb_reference, track.id, car_name
+                )
         except Exception:  # noqa: BLE001
             pb_ms = None
             pb_ref = None
@@ -359,8 +383,16 @@ class Recorder:
                 "maxPower": 0.0,
             },
             "pbMs": self._pb_ms,
-            # pbRef 只在内存里给 delta 用，绝不进 state 消息（上千点会撑爆 30Hz 推送）
+            # pbRef / sessionRef 只在内存里给 delta 用，绝不进 state 消息
+            # （上千点会撑爆 30Hz 推送）
             "pbRef": self._pb_ref,
+            # 本场最快有效圈的曲线。state.py 优先用它算「对当场最佳」的 delta，
+            # 与游戏内 DELTA 同口径；本场还没有有效圈时为 None。
+            "sessionRef": self._session_best_ref,
+            "sessionFastRef": self._session_fast_ref,
+            # 本周末正赛总时长（ms）：排位阶段主题据此估算正赛加油量。
+            # 来自 ACC 本地 menuSettings.json，读不到就是 None。
+            "raceDurationMs": race_duration_ms(self._track_id),
         }
 
     async def _persist_session(self) -> None:
@@ -588,6 +620,11 @@ class Recorder:
             )
             if type_changed:
                 self._session_type = snapshot_type
+                # 练习 / 排位 / 正赛各自有独立的「本场最佳」，换类型后旧参考作废
+                self._session_best_ms = None
+                self._session_best_ref = None
+                self._session_fast_ms = None
+                self._session_fast_ref = None
                 bus.runtime["lap"] = self._lap_seq + 1
                 await self._emit_pbref()
             else:
@@ -621,20 +658,43 @@ class Recorder:
             logger.exception("本圈保存失败")
             self._emit({"type": "warning", "message": "本圈保存失败，采集继续"})
 
+        # 记住本场最快有效圈的曲线：游戏内 DELTA 的比较对象是「本场最佳」，
+        # 不是历史 PB。参考曲线留在内存，只用来算 deltaBestMs，不进 state。
+        session_best_changed = False
+        if result.kind in ("ok", "invalid"):
+            ref = build_reference(result.samples or [], result.ms, lap_no=result.no)
+            if ref is not None:
+                # 任意已完成圈里最快的一条：ACC 的 iBestTime 有时包含被判无效的圈
+                if self._session_fast_ms is None or result.ms <= self._session_fast_ms:
+                    self._session_fast_ms = result.ms
+                    self._session_fast_ref = ref
+                    session_best_changed = True
+                # 有效圈里最快的一条（常规口径）
+                if result.valid and (
+                    self._session_best_ms is None or result.ms <= self._session_best_ms
+                ):
+                    self._session_best_ms = result.ms
+                    self._session_best_ref = ref
+                    session_best_changed = True
+
         pb_ms: int | None = None
         pb_ref: dict | None = None
         stype = result.session_type
         try:
             if self._track_id and stype and stype != "unknown":
                 pb_ms = await asyncio.to_thread(
-                    self.history.pb_ms_for_type, self._track_id, stype
+                    self.history.pb_ms_for_type, self._track_id, stype, self._car_name
                 )
                 pb_ref = await asyncio.to_thread(
-                    self.history.pb_reference_for_type, self._track_id, stype
+                    self.history.pb_reference_for_type, self._track_id, stype, self._car_name
                 )
             elif self._track_id:
-                pb_ms = await asyncio.to_thread(self.history.pb_ms, self._track_id)
-                pb_ref = await asyncio.to_thread(self.history.pb_reference, self._track_id)
+                pb_ms = await asyncio.to_thread(
+                    self.history.pb_ms, self._track_id, self._car_name
+                )
+                pb_ref = await asyncio.to_thread(
+                    self.history.pb_reference, self._track_id, self._car_name
+                )
         except Exception:  # noqa: BLE001
             pb_ms = None
             pb_ref = None
@@ -645,6 +705,9 @@ class Recorder:
             self._pb_ref = pb_ref
             self._publish_meta()
             self._emit({"type": "pbref", "pbMs": pb_ms, "pbRef": pb_ref})
+        elif session_best_changed:
+            # 没有历史 PB 也要把本场最佳参考发布出去，否则 deltaBestMs 会一直是 null
+            self._publish_meta()
 
         return {
             "type": "lap",
@@ -670,10 +733,16 @@ class Recorder:
             return
         try:
             pb_ms = await asyncio.to_thread(
-                self.history.pb_ms_for_type, self._track_id, self._session_type
+                self.history.pb_ms_for_type,
+                self._track_id,
+                self._session_type,
+                self._car_name,
             )
             pb_ref = await asyncio.to_thread(
-                self.history.pb_reference_for_type, self._track_id, self._session_type
+                self.history.pb_reference_for_type,
+                self._track_id,
+                self._session_type,
+                self._car_name,
             )
         except Exception:  # noqa: BLE001
             return

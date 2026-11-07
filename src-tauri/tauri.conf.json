@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "acc-telemetry",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "identifier": "com.acc.telemetry",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -15,17 +15,19 @@
         "title": "acc-telemetry",
         "width": 1000,
         "height": 680,
+        "minWidth": 900,
+        "minHeight": 560,
         "decorations": false
       },
       {
-      "label": "overlay-1",
-      "url": "overlay.html",
-      "title": "ACC Overlay 1",
-      "width": 380,
-      "height": 150,
-      "minWidth": 220,
-      "minHeight": 90,
-      "resizable": true,
+        "label": "overlay-1",
+        "url": "overlay.html",
+        "title": "ACC Overlay 1",
+        "width": 380,
+        "height": 150,
+        "minWidth": 220,
+        "minHeight": 90,
+        "resizable": true,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
@@ -56,12 +58,14 @@
   },
   "plugins": {
     "updater": {
-    "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZDNEQyRkZCMzdDOTFEQkMKUldTOEhjazMreTlOYkdYOU9FaEl2cXV1VDRndHl1QkR3YXhZZ1lrRmNzdVg5dlBZU29scUpyZ1AK",
-    "endpoints": [
-      "https://github.com/hello-0202/acc-telemetry/releases/latest/download/latest.json"
-    ],
-    "windows": { "installMode": "passive" },
-    "requireSignedVersion": true
-  }
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZDNEQyRkZCMzdDOTFEQkMKUldTOEhjazMreTlOYkdYOU9FaEl2cXV1VDRndHl1QkR3YXhZZ1lrRmNzdVg5dlBZU29scUpyZ1AK",
+      "endpoints": [
+        "https://github.com/hello-0202/acc-telemetry/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      },
+      "requireSignedVersion": true
+    }
   }
 }

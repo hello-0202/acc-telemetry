@@ -1,0 +1,220 @@
+@import url('/fonts/sarasa-gothic-sc/fonts.css');
+/* 轮胎磨损 —— 设计基准 304×196，全部 px 写死，缩放交给宿主（contain）。
+ *
+ * 和其他悬浮窗主题保持同一套语言：
+ *   - 全透明背景、无底板、无发光 / 模糊；
+ *   - 数字用等宽字体 + 800 字重，标签用 Chakra Petch；
+ *   - 文字只往正下方投 1px 硬影，保证压在游戏画面上也清楚。
+ *
+ * 2×2 布局：每个角一块「百分比 + 磨损条 + 每圈损耗」。
+ * 磨损条按剩余磨损从左往右填充（0% = 空，100% = 满）。
+ */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Segoe UI', 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', sans-serif;
+  color: #ffffff;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+  -webkit-font-smoothing: antialiased;
+  --ink-edge: 0 1px 0 rgba(0, 0, 0, 0.85);
+  --ink-soft: #ffffff;
+  --ink-dim: rgba(255, 255, 255, 0.85);
+  --track: rgba(255, 255, 255, 0.18);
+}
+
+/* 宿主切「不透明背景」时，给一块干净的深色底板；默认透明。 */
+html[data-bg='opaque'] body {
+  background: #0b0f14;
+}
+
+.hud {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---------------- 顶部：标题 / 数据来源 / 剩余圈数 ---------------- */
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 18px;
+}
+
+.title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: #ffffff;
+  text-shadow: var(--ink-edge);
+}
+
+.badge {
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', monospace;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  padding: 2px 5px 1px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: var(--ink-dim);
+  text-shadow: var(--ink-edge);
+}
+
+/* 原始共享内存值可用（罕见）：绿色提示「实测」 */
+.badge[data-source='shared'] {
+  border-color: #00e676;
+  color: #00e676;
+}
+
+/* 模型推算：琥珀色提示「估算」 */
+.badge[data-source='estimated'] {
+  border-color: #ffab00;
+  color: #ffab00;
+}
+
+.badge[data-source='none'] {
+  border-color: rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.laps {
+  margin-left: auto;
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  text-shadow: var(--ink-edge);
+}
+
+/* ---------------- 2×2 四轮 ---------------- */
+.grid {
+  flex: 1;
+  display: grid;
+  /* minmax(0, 1fr)：默认的 1fr = minmax(auto, 1fr)，列宽会被内容顶开，
+   * 设计基准 304px 时右列会溢出被 body 裁掉。 */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px 14px;
+}
+
+.corner {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: #ffffff;
+  text-shadow: var(--ink-edge);
+  width: 22px;
+  flex: 0 0 auto;
+}
+
+.pct {
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', monospace;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.06em;
+  color: #ffffff;
+  text-shadow: var(--ink-edge);
+}
+
+.unit {
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--ink-dim);
+  text-shadow: var(--ink-edge);
+}
+
+.rate {
+  margin-left: auto;
+  min-width: 0;
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', monospace;
+  font-size: 9px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  color: var(--ink-dim);
+  text-shadow: var(--ink-edge);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 磨损条：轨道 + 填充。不加过渡 —— 30Hz 数据会把过渡每帧打断。 */
+.bar {
+  position: relative;
+  height: 6px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #00e676;
+}
+
+/* 磨损分档：< 30% 绿 / 30~60% 琥珀 / ≥ 60% 红 */
+.corner[data-level='ok'] .bar i {
+  background: #00e676;
+}
+
+.corner[data-level='warn'] .bar i {
+  background: #ffab00;
+}
+
+.corner[data-level='bad'] .bar i {
+  background: #ff2136;
+}
+
+.corner[data-level='ok'] .pct {
+  color: #ffffff;
+}
+
+.corner[data-level='warn'] .pct {
+  color: #ffd166;
+}
+
+.corner[data-level='bad'] .pct {
+  color: #ff5a68;
+}
+
+/* 未开始 / 等待 / 出错：整体压暗，不把上一场的数据当成实时值 */
+.hud[data-status='idle'],
+.hud[data-status='waiting'],
+.hud[data-status='error'] {
+  opacity: 0.72;
+}

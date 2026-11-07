@@ -7,7 +7,6 @@ import { getConfig } from './api.js';
 export const prefs = reactive({
   sampleHz: 100,
   pushHz: 50,
-  autoStart: true,
   backgroundResident: false,
 });
 
@@ -15,7 +14,6 @@ export function applyPrefs(values) {
   if (!values) return;
   if (values.sampleHz != null) prefs.sampleHz = Number(values.sampleHz);
   if (values.pushHz != null) prefs.pushHz = Number(values.pushHz);
-  if (values.autoStart != null) prefs.autoStart = !!values.autoStart;
   if (values.backgroundResident != null) {
     prefs.backgroundResident = !!values.backgroundResident;
   }

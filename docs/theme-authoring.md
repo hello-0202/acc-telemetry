@@ -84,7 +84,7 @@ html { font-size: clamp(10px, calc(1.5vh + 0.4vw), 20px); }  /* 534px 高 ≈ 13
 ```
 
 布局用 `flex` / `grid` + `%`，不要假设固定宽度；也不要让 `height:100%` 叠在没有确定高度的父级上。
-可直接参考 `public/themes/monitor-grid/`（1200×640 的 2 列仪表盘，`modes:["monitor"]`、`fit:"fluid"`）。
+可直接参考 `public/themes/gt-cockpit/`（1280×640 的仪表盘，`modes:["monitor"]`、`fit:"fluid"`）。
 
 ## 四、收数据（三段消息）
 
@@ -157,6 +157,9 @@ function applyUi(msg) {
 | `track.title` / `track.lengthM` | | 赛道名 / 长度 |
 | `wheels[]` | 4 个元素 | 胎温、胎压、磨损、刹车温度 |
 | `session.type` | `unknown`/`practice`/`qualify`/`race` | |
+| `session.timeLeftMs` / `session.lapsTotal` | ms / 圈 | 当前会话剩余（计时赛）或总圈数 |
+| `session.driversTotal` | 辆 | 参赛车总数（含 AI），和 `lap.position` 配对显示「当前/总数」 |
+| `session.raceDurationMs` | ms | 本周末正赛总时长；排位阶段做正赛油量规划用，联机/未知为 `null` |
 
 字段缺失时显示 `—` 或 `0` 都可以，但**不要假设它一定存在**（不同车/赛道拿得到的字段不同）。
 
@@ -177,6 +180,9 @@ function applyUi(msg) {
 > 不用重启、不用点重试。改了 `design` 也会连带把窗口尺寸调过去。
 
 内置主题（`public/themes/`）没有热重载 —— 它们编译进了二进制，改完要重新 `npm run build`。
+另外「把文件放进 `public/themes/<id>/`」只是第一步：目录里的文件不会被 import 分析，
+`public/` 也没法枚举，所以**必须再把这个 id 加进 `src/telemetry/themes.js` 的 `BUILTIN_THEME_IDS`**，
+否则列表里根本不会出现它。
 
 ## 六、必须知道的几条
 
@@ -187,7 +193,7 @@ function applyUi(msg) {
 3. **背景默认保持透明**（`background: transparent`）。悬浮窗是透明窗口，画不透明底色会挡住游戏。
    用户可以在设置里把悬浮窗背景切成「不透明」——宿主会自己铺实心底板，并把
    `background: "opaque"` 通过 `acc:init` / `acc:ui` 告诉主题；主题想让自带卡片也变实心，
-   就加一条 `html[data-bg="opaque"] .card { background: #0b0e13; }`。
+   就加一条 `html[data-bg="opaque"] .card { background: #0b0f14; }`。
    主面板主题可以画底色（它占满数据区），但更推荐面板色 + 透明，让黑白主题都好看。
 4. **不要连 WebSocket，也不要自己算 delta**。数据只能从 `acc:state` 来，别的来源都会和主面板对不上。
 5. **不要读本地文件 / 发网络请求**。主题跑在 sandbox iframe 里，读不到宿主的存储，
@@ -210,6 +216,22 @@ function applyUi(msg) {
    否则把实时字段当空值显示 `--` / `–`（内置主题都是这么做的）。
 
    另外把 `render()` 包进 `try/catch`，一帧脏数据不该让面板停更。
+
+10. **主面板主题要做深/浅两套**（悬浮窗无所谓，它盖在游戏画面上）。
+   宿主把当前界面是黑还是白，放在 `acc:init.theme` / `acc:ui.theme` 里（取值 `dark` / `light`），
+   用户随时可能在设置里切，切完会补发一条 `acc:ui`，**不会重新握手**。
+   只做深色的话，浅色界面的用户会看到一块黑面板钉在白窗口里 —— 内置的 `gt-cockpit` 做了两套，可以直接抄结构：
+
+   ```css
+   :root { --page: #000; --ink: #fff; }          /* 深色值 */
+   html[data-theme='light'] { --page: #f2f4f7; }  /* 只覆盖变量 */
+   html[data-theme='light'] body { --ink: #10151b; }
+   ```
+
+   两条经验：**颜色必须全部走变量**（写死一个 `#fff`，白底主题里就有一块会消失）；
+   **只换颜色、不动布局**（字号、行高、间距两套必须完全一致，否则切换时整块面板会跳一下）。
+   状态色在浅底上通常要压深一档：满饱和的 `#00ff6a` / `#ffe600` 放在白底上会糊成荧光噪点，
+   而给黑底做的 `box-shadow` 辉光在浅底上会变成一圈脏晕，记得在浅色分支里去掉。
 
 ## 七、常见症状对照
 

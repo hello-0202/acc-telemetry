@@ -45,7 +45,7 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
   "seq": 84213,
   "t": 1793030400123,
   "status": "streaming",
-  "session": { "type": "practice", "timeLeftMs": 0, "lapsTotal": 0, "index": 0 },
+  "session": { "type": "practice", "timeLeftMs": 0, "lapsTotal": 0, "driversTotal": 20, "index": 0, "raceDurationMs": 1200000 },
   "track": { "name": "monza", "title": "Monza", "configuration": "", "lengthM": 5793.0, "sectorCount": 3 },
   "car": {
     "name": "Ferrari 488 GT3 Evo",
@@ -55,22 +55,23 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
     "throttle": 0.98, "brake": 0.0, "steer": -0.04, "clutch": 0.0,
     "fuel": 62.5, "fuelPerLap": 2.85, "fuelLapsLeft": 21.9, "fuelUsed": 8.4,
     "brakeBias": 0.56,
-    "tcLevel": 3, "tcActive": 0.0, "absLevel": 2, "absActive": 0.0, "engineMap": 1,
+    "tcLevel": 3, "tcCutLevel": 2, "tcActive": 0.0, "absLevel": 2, "absActive": 0.0, "engineMap": 1,
     "pitLimiter": false, "drs": false, "autoShifter": false, "aiControlled": false,
     "tyreCompound": "dry_compound", "rainTyres": false,
+    "indicatorLeft": false, "indicatorRight": false, "lightsStage": 1, "flashingLights": false, "wiperLevel": 0,
     "gLong": 0.18, "gLat": -1.24
   },
   "lap": {
     "num": 4, "completed": 3,
     "timeMs": 41230, "lastMs": 92310, "bestMs": 91980, "pbMs": 91820,
-    "deltaMs": -310, "estimatedMs": 92100,
+    "deltaMs": -310, "deltaBestMs": -280, "estimatedMs": 92100,
     "progress": 0.62, "sector": 2, "sectorLastMs": 31450, "splitMs": 31200,
     "valid": true, "inPit": false, "inPitLane": false,
     "position": 7, "penaltyMs": 0
   },
   "position": { "x": 812.4, "z": -1533.2, "heading": 1.5708, "distanceM": 14233.7 },
   "wheels": [
-    { "corner": "FL", "pressure": 27.4, "temp": 78.2, "brakeTemp": 412.0, "slip": 0.02, "slipRatio": 0.01, "slipAngle": 0.03, "suspensionTravel": 0.041, "wear": 0.12 }
+    { "corner": "FL", "pressure": 27.4, "temp": 78.2, "brakeTemp": 412.0, "slip": 0.02, "slipRatio": 0.01, "slipAngle": 0.03, "suspensionTravel": 0.041, "wear": 0.0, "wearEst": 0.12, "wearRatePerLap": 0.021, "wearLapsLeft": 41.9, "wearSource": "estimated" }
   ],
   "env": { "airTemp": 26.0, "roadTemp": 31.0, "airDensity": 1.18, "rainIntensity": 0, "rainIn10min": 0, "rainIn30min": 0, "grip": 2, "surfaceGrip": 1.0, "windSpeed": 1.6, "windDirection": 2.1, "timeOfDay": 52200.0 },
   "flags": { "yellow": 0, "white": 0, "green": 1, "chequered": 0, "red": 0, "trackStatus": "GREEN", "mandatoryPitMissing": 0 }
@@ -97,7 +98,9 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 | `session.type` | enum | `graphics.session` | 练习/排位/正赛…，菜单里可能 `unknown` |
 | `session.timeLeftMs` | int(ms) | `graphics.sessionTimeLeft` | 计时赛剩余，圈数赛为 0 |
 | `session.lapsTotal` | int | `graphics.numberOfLaps` | 0 = 不限 |
+| `session.driversTotal` | int | `graphics.activeCars` | 参赛车总数（含 AI），和 `lap.position` 配对显示「当前/总数」；0 = 未知 |
 | `session.index` | int | `graphics.sessionIndex` | 会话序号 |
+| `session.raceDurationMs` | int(ms) | ACC 本地 `menuSettings.json` 的 `CustomRace.raceLength` | 本周末正赛总时长，排位阶段预估正赛油量用；联机/读不到时为 `null` |
 
 ### track
 
@@ -130,7 +133,7 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 | `car.fuelLapsLeft` | float | 圈 | `graphics.fuelEstimatedLaps` | 游戏估算 |
 | `car.fuelUsed` | float | L | `graphics.usedFuel` | 本场累计 |
 | `car.brakeBias` | float | 0..1 | `physics.brakeBias` | 前轴占比 |
-| `car.tcLevel` / `car.absLevel` | int | | `graphics.tcLevel` / `absLevel` | 0 = 关 |
+| `car.tcLevel` / `car.tcCutLevel` / `car.absLevel` | int | | `graphics.tcLevel` / `tcCutLevel` / `absLevel` | 0 = 关；tcCutLevel 是 TC 第二级（TC Cut） |
 | `car.tcActive` / `car.absActive` | float | 0..1 | `physics.tcActive` / `absActive` | 是否正在介入 |
 | `car.engineMap` | int | | `graphics.engineMap` | |
 | `car.pitLimiter` | bool | | `physics.pitLimiterOn` | |
@@ -139,6 +142,10 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 | `car.aiControlled` | bool | | `physics.isAIControlled` | 回放/接管时 true |
 | `car.tyreCompound` | str | | `graphics.tyreCompound` | 游戏原样字符串 |
 | `car.rainTyres` | bool | | `graphics.rainTyres` | |
+| `car.indicatorLeft` / `car.indicatorRight` | bool | | `graphics.directionLightsLeft/Right` | 转向灯是否在闪 |
+| `car.lightsStage` | int | | `graphics.lightsStage` | 大灯档位，0=关 |
+| `car.flashingLights` | bool | | `graphics.flashingLights` | 正在闪远光；瞬时动作，档位不变，灯图标要 `lightsStage > 0 \|\| flashingLights` |
+| `car.wiperLevel` | int | | `graphics.wiperLV` | 雨刷档位，0=关 |
 | `car.gLong` / `car.gLat` | float | g | 计算 | 车体坐标，已除 9.81 |
 
 ### lap
@@ -150,8 +157,9 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 | `lap.timeMs` | int | ms | `graphics.iCurrentTime` | 本圈已用 |
 | `lap.lastMs` | int | ms | `graphics.iLastTime` | 0 = 暂无 |
 | `lap.bestMs` | int | ms | `graphics.iBestTime` | 游戏内本场最佳 |
-| `lap.pbMs` | int | ms | SQLite | 本工具历史最快，0/null = 无参考 |
-| `lap.deltaMs` | int | ms | 计算 | 对 PB 实时差，**负 = 更快**，无参考为 null |
+| `lap.pbMs` | int | ms | SQLite | 同赛道 + 同车历史最快，0/null = 无参考 |
+| `lap.deltaMs` | int | ms | 计算 | 对**历史 PB**（同赛道 + 同车 + 同会话类型）实时差，**负 = 更快**，无参考为 null |
+| `lap.deltaBestMs` | int | ms | 计算 | 对**游戏内本场最佳**的实时差，与 ACC HUD 的 DELTA 同口径，**负 = 更快**；本场暂无最佳圈为 null |
 | `lap.estimatedMs` | int | ms | `graphics.iEstimatedLapTime` | 游戏估算 |
 | `lap.progress` | float | 0..1 | `graphics.normalizedCarPosition` | |
 | `lap.sector` | int | | `graphics.currentSectorIndex` | 1 起 |
@@ -183,7 +191,19 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 | `wheels[].slipRatio` | float | | `physics.slipRatio` | 纵向滑移率 |
 | `wheels[].slipAngle` | float | rad | `physics.slipAngle` | 横向滑移角 |
 | `wheels[].suspensionTravel` | float | m | `physics.suspensionTravel` | |
-| `wheels[].wear` | float | 0..1 | `physics.tyreWear` | 文档标 unused，实测有值 |
+| `wheels[].wear` | float | 0..1 | `physics.tyreWear` | 原始值。ACC 官方文档标红 unused，通常恒为 0，仅调试用 |
+| `wheels[].wearEst` | float | 0..1 | 计算（`TyreWearEstimator`） | **主题推荐使用**：磨损估算，0 = 新胎 |
+| `wheels[].wearRatePerLap` | float | 0..1/圈 | 计算 | 上一圈磨损增量；还没跑完一圈为 null |
+| `wheels[].wearLapsLeft` | float | 圈 | 计算 | 按上一圈速率外推的剩余圈数；无速率为 null |
+| `wheels[].wearSource` | enum | | 计算 | `shared` = 实测 / `estimated` = 估算 / `none` = 无数据 |
+
+> **磨损是估算值。** ACC 共享内存的 `tyreWear` 被官方标记为「not used」，比赛里基本恒为 0；
+> 后端用 `wheelSlip / slipRatio / slipAngle / 胎温 / 胎压 / 车速` 做滑移耗散能量积分，
+> 并在每完成一圈后用该圈实测能量自校准（正常驾驶约 2.5%/圈，≈40 圈寿命），
+> 换胎（`currentTyreSet` 变化）、圈数回退、session 切换时清零。
+> 相对趋势（前后 / 左右差异、每圈损耗）比绝对百分比可信；绝对寿命只能逼近，
+> 主题请按 `wearSource` 标注「实测 / 估算」，不要让用户误以为是与游戏 1:1 的真值。
+> 估算从后端开始收到帧时起算，中途启动应用时不会包含之前的磨损。
 
 ### env
 
@@ -218,6 +238,8 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 | `lap.num` | 取自 `bus.runtime["lap"]`（记录层圈序号），与主面板显示的圈号一致。**过线瞬间 ACC 先加 `completedLaps`、下一帧才把 `progress` 绕回 0**，短暂错位属正常 |
 | `lap.pbMs` | 查 SQLite：同赛道 + 同车的最快有效圈 |
 | `lap.deltaMs` | 用当前 `progress` 在 PB 参考圈上插值取时间，减去当前 `lap.timeMs`；无参考返回 `null` |
+| `lap.deltaBestMs` | 游戏内 DELTA 的比较对象是**本场最佳圈**。优先用本场已记录、且圈速等于 `graphics.iBestTime` 的曲线（先找最快有效圈，再找最快任意圈——ACC 可能把无效圈算进最佳）；没有时退回 PB 曲线并按圈速比例缩放（起点 0、终点对齐 `iBestTime`），再退回 `pbMs × progress` 线性估算；本场无最佳圈返回 `null` |
+| `session.raceDurationMs` | 共享内存不提供正赛长度；读 ACC 本地 `menuSettings.json` 里当前赛季 `CustomRace.raceLength`（秒）×1000。读不到 / 联机 → `null` |
 | `status` | `recording=false` → `idle`（有未清除的错误则 `error`）；recording 中但超过 1.5s 没有新帧 → `waiting`；否则 `streaming`。`GAME_NOT_FOUND`（还没进赛道）不算错误 |
 
 ## 七、稳定性规则
@@ -245,7 +267,7 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 - ✅ **P0（本文 + JSON）**：字段冻结。
 - ✅ **P1**：`backend/api/state.py` 组装 + `{"type":"state"}`（录制 30Hz / 待机 2Hz）+ `GET /api/contract` + `GET /api/state`。
   `contracts/telemetry-state.json` 已随 PyInstaller 打进包里（`_MEIPASS/contracts/`）。
-- ✅ **P2**：`ThemeHost`（iframe 沙箱 + contain 缩放 + postMessage）+ 第一个预设主题 `overlay-min`（悬浮窗）。
+- ✅ **P2**：`ThemeHost`（iframe 沙箱 + contain 缩放 + postMessage）+ 第一个预设主题 `speed-gear`（悬浮窗）。
 ### 实现细节（给后续接手的人）
 
 | 位置 | 职责 |
@@ -256,14 +278,15 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 | `backend/api/state.py::build_state()` | 组装 + delta 插值 + status 判定，纯函数式读取总线 |
 | `backend/api/broadcaster.py` | 与旧帧并行推送，`state_hz` / `state_idle_hz` 可在 `bus.runtime` 调 |
 
-**PB 参考圈不进 state**：`pbRef` 有上千点，只留在内存算 `lap.deltaMs`；逐点曲线仍走原来的 `pbref` 事件。
+**参考圈曲线不进 state**：`pbRef`（历史 PB）和 `sessionRef`（本场最佳）都有上千点，只留在内存算
+`lap.deltaMs` / `lap.deltaBestMs`；逐点曲线仍走原来的 `pbref` 事件（那一路是历史 PB 口径）。
 
 ## 十、主题包格式与宿主协议（P2）
 
 ### 目录结构
 
 ```
-public/themes/overlay-min/
+public/themes/speed-gear/
   theme.json     # 元信息 + 设计基准，宿主据此决定窗口尺寸与缩放
   index.html     # 结构
   theme.css      # 样式
@@ -274,8 +297,8 @@ public/themes/overlay-min/
 
 ```json
 {
-  "id": "overlay-min",
-  "name": "极简 HUD",
+  "id": "speed-gear",
+  "name": "speed-gear",
   "version": "1.0.0",
   "author": "acc-telemetry",
   "desc": "速度 / 档位 / 本圈 / DELTA，适合小尺寸悬浮窗",
@@ -306,7 +329,7 @@ iframe 直接 `width:100%; height:100%`、不做 transform，**主题的视口�
 - 根字号是最省事的自适应手法：`html{font-size:clamp(10px, calc(1.5vh + 0.4vw), 20px)}`，其余尺寸全写 `rem`；
 - 主题被拉伸到任意比例都要能看：不要假设固定宽度，也不要用 `height:100%` 叠在没定高的父级上。
 
-内置示例：`public/themes/monitor-grid/`（1200×640 的 2 列仪表盘，`modes:["monitor"]`、`fit:"fluid"`）。
+内置示例：`public/themes/gt-cockpit/`（1280×640 的仪表盘，`modes:["monitor"]`、`fit:"fluid"`）。
 
 ### postMessage 协议
 
@@ -326,7 +349,7 @@ iframe 直接 `width:100%; height:100%`、不做 transform，**主题的视口�
 
 ### 独立预览
 
-双击 `index.html`（`file://`）或直接开 `http://localhost:4176/themes/overlay-min/index.html`：
+双击 `index.html`（`file://`）或直接开 `http://localhost:4176/themes/speed-gear/index.html`：
 没有宿主时 2 秒后自动跑演示数据，改 CSS 不用开游戏、不用起后端。
 
 ### 主题放在哪 / 怎么被加载
@@ -372,7 +395,7 @@ WebView2 只认 http(s)，Windows 上写 `theme://...` 必定加载失败。
   `WebviewWindow`（label 前缀 `preview-`，**capability 里只有 `core:event:allow-listen`，
   不给任何 app 命令** —— 不是"权限列表为空"，空了连 state 都收不到；数据靠 `emit` 推过去）——
   这条是 P6 之后的前置条件，别在 iframe 里预览陌生主题。
-- 回归信号：`public/themes/overlay-min/theme.js` 里 `console.log('[theme] __TAURI_INTERNALS__ =', typeof ...)`，
+- 回归信号：`public/themes/speed-gear/theme.js` 里 `console.log('[theme] __TAURI_INTERNALS__ =', typeof ...)`，
   值为 `object` 说明注入确实进了子 frame（ACL 是唯一防线），改成 `undefined` 也不能撤掉 ACL。
 
 ### 主题清单与选择（设置页）

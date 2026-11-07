@@ -9,14 +9,18 @@ import { isTauriRuntime, themeBaseUrl } from './theme-url.js';
 // 内置主题登记表：新增一个内置主题 = 放进 public/themes/<id>/ + 这里加一行。
 // （public/ 下的文件不会被 import 分析，没法自动枚举，所以只能显式列。）
 export const BUILTIN_THEME_IDS = [
-  'overlay-min',
-  'monitor-grid',
+  'speed-gear',
   'pedals-wheel',
   'throttle-fuel',
   'tyres',
+  // 轮胎磨损：后端滑移能量估算 + 每圈损耗 / 剩余圈数
+  'tyre-wear',
+  // 主面板：纯黑底白线框的 GT 座舱。原来只作为外部主题发过 zip，
+  // 现在内置 —— 它同时做了深/浅两套配色（宿主切黑白主题会通过 acc:ui 通知）。
+  'gt-cockpit',
 ];
 
-export const DEFAULT_THEME = { id: 'overlay-min', source: 'builtin' };
+export const DEFAULT_THEME = { id: 'speed-gear', source: 'builtin' };
 
 // 主面板的「零号主题」：不是主题，而是编译进主程序的 Vue 面板（含实时赛道图，
 // 主题拿不到地图几何，所以内置面板仍然是功能最全的那个）。MonitorShell 见到这个 id

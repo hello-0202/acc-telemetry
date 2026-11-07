@@ -48,9 +48,8 @@ acc-telemetry/
 │   ├── telemetry_core.spec # PyInstaller 打包配置（生成 sidecar）
 │   └── requirements.txt    # Python 运行依赖
 ├── .github/workflows/      # CI：打 v* tag 自动构建并出 Release 草稿
-├── docs/                   # 设计说明与前后端数据契约文档
+├── docs/                   # 设计说明、数据契约、模型说明（索引见 docs/README.md）
 ├── public/                 # 前端静态资源
-├── 资料/                    # 参考资料（ACC 共享内存文档、分析笔记等，不参与构建）
 ├── index.html              # Vite 入口
 ├── package.json            # 前端依赖与版本号
 ├── vite.config.js          # Vite 配置

@@ -83,10 +83,19 @@ class Snapshot:
     distance_m: float = 0.0
     session_time_left_ms: float = 0.0
     laps_total: int = 0
+    drivers_total: int = 0
     session_index: int = 0
     tyre_compound: str = ""
     rain_tyres: bool = False
+    # 指示灯（ACC graphics 块）：转向灯是开关量，大灯/雨刷是档位（0=关）；
+    # flashing_lights 是「拉远光闪灯」这个瞬时动作，档位不变，必须单独读
+    indicator_left: bool = False
+    indicator_right: bool = False
+    lights_stage: int = 0
+    flashing_lights: bool = False
+    wiper_level: int = 0
     tc_level: int = 0
+    tc_cut_level: int = 0
     abs_level: int = 0
     engine_map: int = 0
     fuel_per_lap: float = 0.0
@@ -120,6 +129,13 @@ class Snapshot:
     slip_angle: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     suspension_travel: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     tyre_wear: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    # 刹车片 / 刹车盘磨损。ACC 官方文档对这两个字段是绿色（working as intended），
+    # 与 tyreWear 的红色（not used）不同，可以直接展示。
+    pad_life: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    disc_life: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    # 当前使用的轮胎组编号（graphics.currentTyreSet）。
+    # 换胎后编号变化，轮胎磨损估算器据此清零，避免把上一套胎的磨损累加进来。
+    current_tyre_set: int = 0
 
 
 @dataclass(frozen=True, slots=True)

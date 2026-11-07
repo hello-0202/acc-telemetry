@@ -98,7 +98,7 @@ function medianLoopValues(values, radius) {
  *
  * 输入点：{ x, z, l, r }，l / r 是 AI 线到左 / 右边界的距离。
  *
- * 做法（详见 资料/MAP_RENDERING_NOTES.md）：
+ * 做法（规范见 docs/ENGINEERING-NOTES.md 第 4 节「赛道地图」）：
  *   1. 清洗 + 去重（首尾重复点会让切线退化成 0），然后**按弧长等距重采样**。
  *      fastlane 的原始点直道稀、弯里密，间距不均；不重采样的话同样的角度
  *      在直道和弯里对应的“米”不一样，路宽和法线都会失真。

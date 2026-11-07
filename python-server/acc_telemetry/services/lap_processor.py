@@ -190,6 +190,17 @@ class LapProcessor:
         # 2) 圈边界。ACC 的 completedLaps 有时会滞后（尤其出场圈不计圈），
         #    所以同时用「进度回绕」和「圈计时器归零」兜底。
         counter_boundary = snap.completed_laps > self._last_completed_laps
+        # ACC 更新 completedLaps 常比进度回绕晚 0.5~1.5 秒。若边界刚刚由「进度回绕」
+        # 判过（2 秒内，远小于最短有效圈 15 秒），这次计数前进只是同一事件的延迟信号，
+        # 不能再 finalize 一次 —— 否则会把新圈开头不足 1 秒的采样当成一整圈落库：
+        # 圈速看起来正常，但走线只有起跑线一小段，PB 参考也被污染成几百毫秒的残片，
+        # 实时 delta 会从第一米起就偏出几十秒。
+        if (
+            counter_boundary
+            and (snap.t_mono - self._last_boundary_mono) < 2.0
+            and self._max_progress < 0.20
+        ):
+            counter_boundary = False
         # 用「本圈见过的最大圈计时」而不是 _last_lap_time_ms 做 5 秒门槛：
         # ACC 过线前会先发一帧计时已归零、进度仍为 1.0 的残留帧，把
         # _last_lap_time_ms 覆盖成 ≈0。出场圈过线时 completedLaps 常常不前进，

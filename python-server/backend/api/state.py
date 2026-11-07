@@ -6,9 +6,10 @@
 
 设计原则：
 - 这里只做「换名 + 定单位 + 语义化」，采集层不加计算，避免污染记录链路；
-- 计算类字段（`lap.deltaMs` / `car.gearText` / `lap.num`）在这里算好，主题不用自己推；
-- **体积控制**：PB 参考圈有上千点，绝不进 state；state 只给 `lap.pbMs` / `lap.deltaMs`，
-  逐点曲线仍走一次性的 `pbref` 事件（历史图表用）。
+- 计算类字段（`lap.deltaMs` / `lap.deltaBestMs` / `car.gearText` / `lap.num`）在这里算好，
+  主题不用自己推；
+- **体积控制**：参考圈有上千点，绝不进 state；state 只给 `lap.pbMs` / `lap.deltaMs` /
+  `lap.deltaBestMs`，逐点曲线仍走一次性的 `pbref` 事件（历史图表用）。
 """
 
 from __future__ import annotations
@@ -105,7 +106,9 @@ def current_status() -> str:
 
 
 # --------------------------------------------------------------------- 组装
-def _tyre(index: int, snap: Any) -> dict[str, Any]:
+def _tyre(
+    index: int, snap: Any, estimate: dict[str, Any] | None = None
+) -> dict[str, Any]:
     def pick(name: str) -> tuple:
         return tuple(getattr(snap, name, ()) or ())
 
@@ -115,6 +118,7 @@ def _tyre(index: int, snap: Any) -> dict[str, Any]:
         except (IndexError, TypeError, ValueError):
             return None
 
+    est = estimate or {}
     return {
         "corner": _CORNERS[index],
         "pressure": at(pick("wheel_pressure"), 2),
@@ -124,7 +128,13 @@ def _tyre(index: int, snap: Any) -> dict[str, Any]:
         "slipRatio": at(pick("slip_ratio"), 3),
         "slipAngle": at(pick("slip_angle"), 4),
         "suspensionTravel": at(pick("suspension_travel"), 4),
+        # 原始值：ACC 官方标 unused，通常恒为 0；保留给兼容 / 调试
         "wear": at(pick("tyre_wear"), 3),
+        # 推荐主题使用：wearSource 为 shared 时是实测，estimated 时是模型估算
+        "wearEst": _r(est.get("wear"), 3),
+        "wearRatePerLap": _r(est.get("ratePerLap"), 4),
+        "wearLapsLeft": _r(est.get("lapsLeft"), 1),
+        "wearSource": est.get("source") or "none",
     }
 
 
@@ -146,9 +156,59 @@ def _delta_ms(snap: Any, meta: dict[str, Any]) -> int | None:
     return None
 
 
+def _delta_best_ms(snap: Any, meta: dict[str, Any]) -> int | None:
+    """对「游戏内本场最佳」的实时差值，与 ACC HUD 的 DELTA 同口径。
+
+    游戏里的 DELTA 比较的是**本场最佳圈**，不是历史 PB。优先用本场已记录的
+    最快有效圈曲线（meta.sessionRef）；它的圈速必须等于 `graphics.iBestTime`
+    才算命中——应用中途启动、本场最佳不是我们记录的那一圈时，退回历史 PB
+    曲线并按圈速比例缩放，保证起点为 0、过线时的差值与游戏一致。
+    """
+    lap_time = _i(getattr(snap, "lap_time_ms", None))
+    progress = _r(getattr(snap, "progress", None), 5)
+    best_ms = _i(getattr(snap, "best_lap_ms", None))
+    if lap_time is None or progress is None or not best_ms:
+        return None
+
+    # 本场已记录的圈里，找圈速与 iBestTime 完全相等的那条曲线。
+    # 同时看「最快有效圈」和「最快任意圈」：ACC 的 iBestTime 有时会包含
+    # 被判无效的圈，只认有效圈会错过它，导致 delta 一直为空。
+    ref = None
+    for candidate in (meta.get("sessionRef"), meta.get("sessionFastRef")):
+        if candidate and _i(candidate.get("ms")) == best_ms:
+            ref = candidate
+            break
+    if ref is None:
+        pb_ref = meta.get("pbRef") or {}
+        if pb_ref.get("p") and pb_ref.get("tMs"):
+            ref = pb_ref
+        else:
+            pb_ms = _i(meta.get("pbMs"))
+            if not pb_ms:
+                return None
+            # 没有逐点曲线：按进度线性估算，终点同样对齐本场最佳
+            return int(round(lap_time - best_ms * progress))
+
+    reference = interp_reference(
+        ref.get("p") or [], ref.get("tMs") or [], progress
+    )
+    if reference is None:
+        return None
+    ref_ms = _i(ref.get("ms"))
+    if ref_ms and ref_ms != best_ms:
+        # 参考圈不是本场最佳：按圈速比例缩放，使起点仍是 0、终点等于 iBestTime。
+        # （不能整体平移——平移到起点会变成负数，差值为 0 的起跑线反而显示 -2s。）
+        reference *= best_ms / ref_ms
+    return int(round(lap_time - reference))
+
+
 def _build_live(snap: Any, meta: dict[str, Any]) -> dict[str, Any]:
     track = meta.get("track") or {}
     car = meta.get("car") or {}
+    # 轮胎磨损估算（acc_telemetry.services.tyre_wear）：
+    # 估算器在采集循环里逐帧积分，这里只取最新结果合并，不做计算。
+    tyre_wear = bus.runtime.get("tyre_wear") or {}
+    wear_wheels = tyre_wear.get("wheels") or []
     session_type = (
         meta.get("sessionType")
         or getattr(snap, "session_type", "unknown")
@@ -161,7 +221,11 @@ def _build_live(snap: Any, meta: dict[str, Any]) -> dict[str, Any]:
             "type": session_type,
             "timeLeftMs": _i(getattr(snap, "session_time_left_ms", 0)),
             "lapsTotal": _i(getattr(snap, "laps_total", 0)),
+            # 参赛车总数（含 AI），主题拿来把名次显示成「当前/总数」
+            "driversTotal": _i(getattr(snap, "drivers_total", 0)),
             "index": _i(getattr(snap, "session_index", 0)),
+            # 本周末正赛总时长（ACC menuSettings.json，未知为 null）
+            "raceDurationMs": _i(meta.get("raceDurationMs")),
         },
         "track": {
             "name": track.get("name") or "",
@@ -192,6 +256,7 @@ def _build_live(snap: Any, meta: dict[str, Any]) -> dict[str, Any]:
             "fuelUsed": _r(getattr(snap, "fuel_used", 0.0), 2),
             "brakeBias": _r(getattr(snap, "brake_bias", 0.0), 3),
             "tcLevel": _i(getattr(snap, "tc_level", 0)),
+            "tcCutLevel": _i(getattr(snap, "tc_cut_level", 0)),
             "tcActive": _r(getattr(snap, "tc_active", 0.0), 2),
             "absLevel": _i(getattr(snap, "abs_level", 0)),
             "absActive": _r(getattr(snap, "abs_active", 0.0), 2),
@@ -202,6 +267,13 @@ def _build_live(snap: Any, meta: dict[str, Any]) -> dict[str, Any]:
             "aiControlled": bool(getattr(snap, "ai_controlled", False)),
             "tyreCompound": getattr(snap, "tyre_compound", "") or "",
             "rainTyres": bool(getattr(snap, "rain_tyres", False)),
+            # 指示灯：主题的灯带三块靠这几个字段点亮。
+            # flashingLights 是「闪远光」的瞬时状态，此时 lightsStage 通常没变
+            "indicatorLeft": bool(getattr(snap, "indicator_left", False)),
+            "indicatorRight": bool(getattr(snap, "indicator_right", False)),
+            "lightsStage": _i(getattr(snap, "lights_stage", 0)),
+            "flashingLights": bool(getattr(snap, "flashing_lights", False)),
+            "wiperLevel": _i(getattr(snap, "wiper_level", 0)),
             "gLong": _r(getattr(snap, "g_long", None), 2),
             "gLat": _r(getattr(snap, "g_lat", None), 2),
         },
@@ -214,6 +286,8 @@ def _build_live(snap: Any, meta: dict[str, Any]) -> dict[str, Any]:
             "bestMs": _i(getattr(snap, "best_lap_ms", 0)),
             "pbMs": _i(meta.get("pbMs")),
             "deltaMs": _delta_ms(snap, meta),
+            # 对游戏内本场最佳（与 HUD 的 DELTA 同口径）；无本场最佳时为 null
+            "deltaBestMs": _delta_best_ms(snap, meta),
             "estimatedMs": _i(getattr(snap, "estimated_lap_ms", 0)),
             "progress": _r(getattr(snap, "progress", 0.0), 5),
             "sector": _i(getattr(snap, "sector_index", 0)),
@@ -231,7 +305,10 @@ def _build_live(snap: Any, meta: dict[str, Any]) -> dict[str, Any]:
             "heading": _r(getattr(snap, "heading", 0.0), 4),
             "distanceM": _r(getattr(snap, "distance_m", 0.0), 1),
         },
-        "wheels": [_tyre(i, snap) for i in range(4)],
+        "wheels": [
+            _tyre(i, snap, wear_wheels[i] if i < len(wear_wheels) else None)
+            for i in range(4)
+        ],
         "env": {
             "airTemp": _r(getattr(snap, "air_temp", 0.0), 1),
             "roadTemp": _r(getattr(snap, "road_temp", 0.0), 1),
@@ -260,7 +337,14 @@ def _build_live(snap: Any, meta: dict[str, Any]) -> dict[str, Any]:
 def _blank_state() -> dict[str, Any]:
     """还没收到任何遥测时的骨架：结构齐全、实时值为 null，主题不会因缺 key 崩。"""
     return {
-        "session": {"type": "unknown", "timeLeftMs": None, "lapsTotal": None, "index": None},
+        "session": {
+            "type": "unknown",
+            "timeLeftMs": None,
+            "lapsTotal": None,
+            "driversTotal": None,
+            "index": None,
+            "raceDurationMs": None,
+        },
         "track": {
             "name": "",
             "title": "",
@@ -289,6 +373,7 @@ def _blank_state() -> dict[str, Any]:
             "fuelUsed": None,
             "brakeBias": None,
             "tcLevel": None,
+            "tcCutLevel": None,
             "tcActive": None,
             "absLevel": None,
             "absActive": None,
@@ -299,6 +384,11 @@ def _blank_state() -> dict[str, Any]:
             "aiControlled": False,
             "tyreCompound": "",
             "rainTyres": False,
+            "indicatorLeft": False,
+            "indicatorRight": False,
+            "lightsStage": 0,
+            "flashingLights": False,
+            "wiperLevel": 0,
             "gLong": None,
             "gLat": None,
         },
@@ -310,6 +400,7 @@ def _blank_state() -> dict[str, Any]:
             "bestMs": None,
             "pbMs": None,
             "deltaMs": None,
+            "deltaBestMs": None,
             "estimatedMs": None,
             "progress": None,
             "sector": None,
@@ -333,6 +424,10 @@ def _blank_state() -> dict[str, Any]:
                 "slipAngle": None,
                 "suspensionTravel": None,
                 "wear": None,
+                "wearEst": None,
+                "wearRatePerLap": None,
+                "wearLapsLeft": None,
+                "wearSource": "none",
             }
             for i in range(4)
         ],

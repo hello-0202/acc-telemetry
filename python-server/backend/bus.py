@@ -70,6 +70,9 @@ runtime: dict[str, Any] = {
     "state_meta": None,
     # 最近一次 error 事件的消息，非空且未在推流时 state.status 报 "error"
     "state_error": None,
+    # 轮胎磨损估算结果（acc_telemetry.services.tyre_wear.TyreWearEstimator.snapshot）。
+    # state.py 把它合并进 wheels[]，主题按 wearSource 区分实测 / 估算。
+    "tyre_wear": None,
 }
 
 # 运行统计
@@ -99,5 +102,6 @@ def reset() -> None:
         state_idle_hz=2,
         state_meta=None,
         state_error=None,
+        tyre_wear=None,
     )
     stats.update(produced=0, dropped=0, written=0, laps=0)

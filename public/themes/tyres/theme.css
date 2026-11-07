@@ -1,3 +1,4 @@
+@import url('/fonts/sarasa-gothic-sc/fonts.css');
 /* 轮胎数据 —— 设计基准 220×220，全部 px 写死，缩放交给宿主（contain）。
  *
  * 视觉取向：四个圆环 2×2 紧凑排列（左上 FL / 右上 FR / 左下 RL / 右下 RR），全透明背景。
@@ -18,12 +19,21 @@ body {
 }
 
 body {
-  /* 与软件外壳同一套字体栈（src/style.css 的 --font-display），数字单独用 --font-mono */
-  font-family: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Microsoft YaHei', sans-serif;
+  /* 与软件外壳同一套字体栈（src/style.css 的 --font-display），数字单独用 --font-mono。
+   * 逐字和 gt-cockpit 的 --font-ui 对齐（含 'Segoe UI' 这一层回退），
+   * 两台悬浮窗才不会在缺 Chakra Petch 的机器上落到不同的字体。 */
+  font-family: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Segoe UI', 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', sans-serif;
   color: #ffffff;
   -webkit-user-select: none;
   user-select: none;
   cursor: default;
+  /* 和 gt-cockpit 同一套字形渲染：不加这行，同样的 JetBrains Mono / Chakra Petch
+   * 在另一个悬浮窗里会显得更细、更“虚”，两块面板并排能看出差别。 */
+  -webkit-font-smoothing: antialiased;
+
+  /* 文字落影：只往正下方投 1px 硬影，不描边、不发光。
+   * 环心三行字压在环内，靠纯白 + 800 字重拉开层次，不靠给字加圈。 */
+  --ink-edge: 0 1px 0 rgba(0, 0, 0, 0.85);
 }
 
 /* 2×2 紧凑网格：两列两行，画面正中，不留中间空档 */
@@ -53,24 +63,18 @@ body {
   overflow: visible;
 }
 
-/* pathLength="100" → dasharray 的单位就是百分比，75 = 270°（底部留缺口） */
+/* 胎温：整圈常亮，只靠颜色表达温度 */
 .arc-bg {
   fill: none;
   stroke: rgba(255, 255, 255, 0.2);
   stroke-width: 9;
   stroke-linecap: butt;
-  stroke-dasharray: 75 100;
 }
 
-/* 不做 dasharray / stroke 过渡：数据 60ms 一刷，过渡每帧被打断，
- * 颜色会永远卡在初始档（实测胎温弧一直是 t-na 的灰色，看起来像没画）。
- * 线帽平切：弧的端头是齐口，和另两份主题一致。 */
 .arc-fg {
   fill: none;
   stroke-width: 9;
   stroke-linecap: butt;
-  stroke-dasharray: 0 100;
-  opacity: 0;
 }
 
 /* 胎温分档：高饱和纯色，不加 filter 发光 */
@@ -94,32 +98,27 @@ body {
   stroke: #ff2136;
 }
 
-/* 外圈细环 = 磨损 */
-.wear-bg {
+/* 内圈 = 刹车盘温度：270° 弧（底部留缺口给读数），颜色随盘温变化 */
+.brake-bg {
   fill: none;
   stroke: rgba(255, 255, 255, 0.2);
-  stroke-width: 2;
-}
-
-.wear-fg {
-  fill: none;
-  stroke-width: 2;
+  stroke-width: 4;
   stroke-linecap: butt;
-  stroke-dasharray: 0 100;
-  opacity: 0;
+  stroke-dasharray: 75 100;
 }
 
-.wear-fg.w-ok {
-  stroke: #00e676;
+.brake-fg {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: butt;
+  stroke-dasharray: 75 100;
 }
 
-.wear-fg.w-warn {
-  stroke: #ffab00;
-}
-
-.wear-fg.w-bad {
-  stroke: #ff2136;
-}
+.brake-fg.b-na { stroke: rgba(255, 255, 255, 0.32); }
+.brake-fg.b-cold { stroke: #2b8fff; }
+.brake-fg.b-ok { stroke: #00e676; }
+.brake-fg.b-warm { stroke: #ffab00; }
+.brake-fg.b-hot { stroke: #ff2136; }
 
 /* ---------------- 环心读数 ---------------- */
 .c-read {
@@ -129,52 +128,63 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  /* 三行挤在环心，行距收紧 + 底部留白减小，把字整体往里收，别顶到环上 */
   gap: 1px;
-  padding-bottom: 8px;
+  padding-bottom: 4px;
   pointer-events: none;
 }
 
-/* 主读数：纯白 + 高饱和分档色以外不加装饰，只靠 1px 硬投影压住底下的弧 */
+/* 环心三行的排版跟 gt-cockpit 悬浮窗的四轮读数对齐：
+ * 等宽数字 -0.055em 字距、800 字重；psi 用 --ink-soft 那档柔白，
+ * 胎温纯白、刹车温琥珀 —— 和那块面板里的层级完全一致，
+ * 两个悬浮窗摆在一起时同一种字，不会被看成两套设计。 */
 .c-read b {
-  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace;
-  font-size: 20px;
-  font-weight: 700;
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', monospace;
+  font-size: 15px;
+  font-weight: 800;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.055em;
   color: #ffffff;
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+  text-shadow: var(--ink-edge);
 }
 
 .c-temp {
-  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace;
-  font-size: 11px;
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', monospace;
+  font-size: 10px;
   line-height: 1;
-  font-weight: 700;
-  color: #e6edf5;
+  font-weight: 800;
+  color: #ffffff;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+  letter-spacing: -0.055em;
+  text-shadow: var(--ink-edge);
 }
 
 .c-brake {
-  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace;
-  font-size: 9px;
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', monospace;
+  font-size: 10px;
   line-height: 1;
-  font-weight: 700;
-  color: #a9b6c4;
+  font-weight: 800;
+  color: #ffb300;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+  letter-spacing: -0.055em;
+  text-shadow: var(--ink-edge);
 }
+
+.c-brake[data-level='na'] { color: rgba(255, 255, 255, 0.6); }
+.c-brake[data-level='cold'] { color: #2b8fff; }
+.c-brake[data-level='ok'] { color: #00e676; }
+.c-brake[data-level='warm'] { color: #ffab00; }
+.c-brake[data-level='hot'] { color: #ff2136; }
 
 /* 角落位置标：压在环外侧，不占环内空间 */
 .c-tag {
   position: absolute;
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  color: rgba(255, 255, 255, 0.8);
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #ffffff;
+  text-shadow: var(--ink-edge);
   pointer-events: none;
 }
 
@@ -202,5 +212,5 @@ body {
 .hud[data-status='idle'],
 .hud[data-status='waiting'],
 .hud[data-status='error'] {
-  opacity: 0.5;
+  opacity: 0.72;
 }

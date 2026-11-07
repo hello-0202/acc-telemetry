@@ -230,7 +230,9 @@ async function confirmDelete(t) {
     }
     await reload();
   } catch (e) {
-    error.value = '删除失败：' + e.message;
+    // Tauri 命令返回 Err(String) 时，这里 reject 的是字符串而不是 Error，
+    // 直接取 e.message 会变成 "删除失败：undefined"，把真正的原因（比如回收站失败）吞掉。
+    error.value = '删除失败：' + (typeof e === 'string' ? e : (e && e.message) || String(e));
   } finally {
     deletingKey.value = '';
   }

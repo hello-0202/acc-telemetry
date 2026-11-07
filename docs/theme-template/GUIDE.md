@@ -299,9 +299,9 @@ html { font-size: clamp(10px, calc(1.5vh + 0.4vw), 20px); }
 ```css
 :root {
   /* 标题 / 标签 / 单位：Windows 上通常落到 Bahnschrift（DIN 风格） */
-  --font-display: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Microsoft YaHei', sans-serif;
+  --font-display: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', sans-serif;
   /* 数字：等宽 + 表格数字，防止数字变化时宽度抖动 */
-  --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', monospace;
 }
 ```
 
@@ -311,7 +311,7 @@ html { font-size: clamp(10px, calc(1.5vh + 0.4vw), 20px); }
 - **标签用 `--font-display`**（`BRAKE` / `THROTTLE` / `LAP` 这类大写短词），配 `letter-spacing: .14em ~ .2em`。
 - 这和软件主面板的 `.big-num` / `.unit` / `.gear-num` 是同一套观感（见 `src/style.css`）。
 
-字体栈里的中文项别删：`--font-mono` 里的 `'Microsoft YaHei'` 是给「L/圈」这类混排兜底的。
+字体栈里的中文项别删：`'Sarasa Gothic SC'` / `'SimHei'` / `'Microsoft YaHei'` 是给「L/圈」这类混排兜底的；装了 Sarasa 会优先用它。
 
 ---
 
@@ -346,7 +346,7 @@ if (msg.theme) document.documentElement.dataset.theme = msg.theme;
 免得两层叠出色差：
 
 ```css
-html[data-bg="opaque"] .card { background: #0b0e13; }
+html[data-bg="opaque"] .card { background: #0b0f14; }
 ```
 
 值只有 `transparent` / `opaque` 两种；`data-bg` 由 `applyUi(msg)` 写入。

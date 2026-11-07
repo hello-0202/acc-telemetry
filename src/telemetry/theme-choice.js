@@ -39,8 +39,27 @@ export function themeChoiceKey(kind, slot = 1) {
   return kind === 'monitor' ? 'monitor' : `overlay${clampSlot(slot)}`;
 }
 
+// 内置主题改过名的话在这里登记旧 id → 新 id。
+// localStorage 里存的是 id，改名后老用户的选择会指向一个不存在的主题（悬浮窗只剩报错卡），
+// 所以读取时先做一次映射，把旧值悄悄搬过去。
+//
+// 同名映射（id 不变）用来表达另一件事：**这个主题从「外部」转成「内置」了**。
+// gt-cockpit 以前只以 zip 形式在外部安装过，存下来的选择是 { id, source: 'user' }，
+// 内置之后那份用户目录随时会被删掉；走到这里就顺手把 source 改回 builtin，
+// 免得升级后主面板指向一个已经不存在的外部主题、只剩一张报错卡。
+const RENAMED_THEMES = {
+  'overlay-min': 'speed-gear',
+  'gt-cockpit': 'gt-cockpit',
+  // monitor-grid 已从内置主题移除：老用户的选择回退到内置主面板，
+  // 避免打开应用后主题加载失败再等 4 秒回退。
+  'monitor-grid': '_panel',
+};
+
 function normalize(raw, kind) {
   if (raw && typeof raw.id === 'string' && raw.id) {
+    // 旧 id 指向的是内置主题，改名后按新 id 继续用
+    const renamed = RENAMED_THEMES[raw.id];
+    if (renamed) return { id: renamed, source: 'builtin' };
     return { id: raw.id, source: raw.source === 'user' ? 'user' : 'builtin' };
   }
   return { ...FALLBACK[kind] };

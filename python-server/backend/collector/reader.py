@@ -97,13 +97,29 @@ async def _read_static(provider: Any) -> Any | None:
     return last
 
 
+def _reset_estimator(estimator: Any | None) -> None:
+    """游戏退出 / 共享内存关闭时清空磨损积分，避免下一场继承上一场。"""
+    if estimator is None:
+        return
+    try:
+        estimator.reset()
+    except Exception:  # noqa: BLE001 - 估算器异常不能拖死采集循环
+        logger.exception("重置轮胎磨损估算器失败")
+    bus.runtime["tyre_wear"] = None
+
+
 async def collect_loop(
     provider: Any,
     stop_event: asyncio.Event,
     hz: float = 100,
     frame_builder: FrameBuilder | None = None,
+    estimator: Any | None = None,
 ) -> None:
-    """以近似 hz 的频率读取 provider，并把帧分发给两条下游路径。"""
+    """以近似 hz 的频率读取 provider，并把帧分发给两条下游路径。
+
+    `estimator`（TyreWearEstimator）每帧吃一份 Snapshot，结果写
+    `bus.runtime["tyre_wear"]`，供主题状态快照合并。它只做纯计算，不碰 I/O。
+    """
     interval = 1.0 / max(1.0, float(hz))
     next_tick = time.monotonic()
     opened = False
@@ -161,6 +177,7 @@ async def collect_loop(
                         bus.event_queue.put_nowait({"type": "stopped"})
                         prev_live = False
                         non_live_since = None
+                    _reset_estimator(estimator)
                     try:
                         provider.close()
                     except Exception:  # noqa: BLE001
@@ -176,6 +193,7 @@ async def collect_loop(
                 bus.runtime["game_running"] = False
                 bus.latest_static = None
                 bus.latest_snapshot = None
+                _reset_estimator(estimator)
                 try:
                     provider.close()
                 except Exception:  # noqa: BLE001
@@ -207,6 +225,15 @@ async def collect_loop(
             # 恢复直播：重置非直播计时，后续帧重新进入「活跃」态
             prev_live = True
             non_live_since = None
+
+            # 轮胎磨损估算：只在直播帧上积分，暂停 / 回放不推进。
+            # 估算器内部吞掉所有异常，这里再包一层，保证采集节拍不受影响。
+            if estimator is not None:
+                try:
+                    estimator.update(raw)
+                    bus.runtime["tyre_wear"] = estimator.snapshot()
+                except Exception:  # noqa: BLE001
+                    logger.exception("轮胎磨损估算失败，跳过该帧")
 
             try:
                 if frame_builder is not None:
@@ -249,4 +276,5 @@ async def collect_loop(
                 provider.close()
             except Exception:  # noqa: BLE001
                 pass
+        _reset_estimator(estimator)
         bus.runtime["game_running"] = False

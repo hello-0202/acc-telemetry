@@ -236,7 +236,7 @@ onBeforeUnmount(disconnect);
   gap: 14px;
   background: radial-gradient(circle at top, #151b26 0%, #0b0e14 60%);
   color: #e8edf5;
-  font-family: "Segoe UI", system-ui, sans-serif;
+  font-family: "Segoe UI", "Sarasa Gothic SC", "Sarasa Gothic", "Sarasa Mono SC", "Noto Sans Mono CJK SC", "SimHei", "NSimSun", "Microsoft YaHei", system-ui, sans-serif;
 }
 
 .bar {
@@ -303,7 +303,7 @@ onBeforeUnmount(disconnect);
   border-radius: 8px;
   background: #121722;
   color: #cdd6e4;
-  font-family: Consolas, monospace;
+  font-family: Consolas, "Sarasa Gothic SC", "Sarasa Gothic", "Sarasa Mono SC", "Noto Sans Mono CJK SC", "SimHei", "NSimSun", "Microsoft YaHei", monospace;
   font-size: 12px;
   outline: none;
 }
@@ -371,7 +371,7 @@ onBeforeUnmount(disconnect);
 }
 
 .speed {
-  font-family: Consolas, "SF Mono", monospace;
+  font-family: Consolas, "SF Mono", "Sarasa Gothic SC", "Sarasa Gothic", "Sarasa Mono SC", "Noto Sans Mono CJK SC", "SimHei", "NSimSun", "Microsoft YaHei", monospace;
   font-size: 52px;
   font-weight: 700;
   line-height: 1;
@@ -386,7 +386,7 @@ onBeforeUnmount(disconnect);
 }
 
 .gear {
-  font-family: Consolas, "SF Mono", monospace;
+  font-family: Consolas, "SF Mono", "Sarasa Gothic SC", "Sarasa Gothic", "Sarasa Mono SC", "Noto Sans Mono CJK SC", "SimHei", "NSimSun", "Microsoft YaHei", monospace;
   font-size: 64px;
   font-weight: 700;
   line-height: 1;
@@ -401,7 +401,7 @@ onBeforeUnmount(disconnect);
 }
 
 .value {
-  font-family: Consolas, monospace;
+  font-family: Consolas, "Sarasa Gothic SC", "Sarasa Gothic", "Sarasa Mono SC", "Noto Sans Mono CJK SC", "SimHei", "NSimSun", "Microsoft YaHei", monospace;
   font-size: 13px;
   color: #cdd6e4;
 }
@@ -443,7 +443,7 @@ onBeforeUnmount(disconnect);
 }
 
 .lap {
-  font-family: Consolas, "SF Mono", monospace;
+  font-family: Consolas, "SF Mono", "Sarasa Gothic SC", "Sarasa Gothic", "Sarasa Mono SC", "Noto Sans Mono CJK SC", "SimHei", "NSimSun", "Microsoft YaHei", monospace;
   font-size: 30px;
   color: #fff;
 }
@@ -451,7 +451,7 @@ onBeforeUnmount(disconnect);
 .foot {
   display: flex;
   justify-content: space-between;
-  font-family: Consolas, monospace;
+  font-family: Consolas, "Sarasa Gothic SC", "Sarasa Gothic", "Sarasa Mono SC", "Noto Sans Mono CJK SC", "SimHei", "NSimSun", "Microsoft YaHei", monospace;
   font-size: 11px;
   color: #5f6979;
 }

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>轮胎磨损</title>
+    <link rel="stylesheet" href="./theme.css" />
+  </head>
+  <body>
+    <!-- 设计基准 304×196（见 theme.json）。宿主按 contain 等比缩放，内部直接用 px。
+         视觉与其他悬浮窗一致：全透明背景、无底板、无发光，数字用等宽字体。 -->
+    <div class="hud" id="hud" data-status="idle">
+      <header class="head">
+        <span class="title">TYRE WEAR</span>
+        <span class="badge" id="source" data-source="none">--</span>
+        <span class="laps" id="laps">剩余 -- 圈</span>
+      </header>
+
+      <div class="grid">
+        <section class="corner" id="c-FL" data-level="ok">
+          <div class="row">
+            <span class="tag">FL</span>
+            <b class="pct" id="pct-FL">--</b><span class="unit">%</span>
+            <span class="rate" id="rate-FL">--</span>
+          </div>
+          <div class="bar"><i id="bar-FL"></i></div>
+        </section>
+
+        <section class="corner" id="c-FR" data-level="ok">
+          <div class="row">
+            <span class="tag">FR</span>
+            <b class="pct" id="pct-FR">--</b><span class="unit">%</span>
+            <span class="rate" id="rate-FR">--</span>
+          </div>
+          <div class="bar"><i id="bar-FR"></i></div>
+        </section>
+
+        <section class="corner" id="c-RL" data-level="ok">
+          <div class="row">
+            <span class="tag">RL</span>
+            <b class="pct" id="pct-RL">--</b><span class="unit">%</span>
+            <span class="rate" id="rate-RL">--</span>
+          </div>
+          <div class="bar"><i id="bar-RL"></i></div>
+        </section>
+
+        <section class="corner" id="c-RR" data-level="ok">
+          <div class="row">
+            <span class="tag">RR</span>
+            <b class="pct" id="pct-RR">--</b><span class="unit">%</span>
+            <span class="rate" id="rate-RR">--</span>
+          </div>
+          <div class="bar"><i id="bar-RR"></i></div>
+        </section>
+      </div>
+    </div>
+
+    <script src="./theme.js"></script>
+  </body>
+</html>

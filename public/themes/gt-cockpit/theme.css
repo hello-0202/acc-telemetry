@@ -1,0 +1,1403 @@
+@import url('/fonts/sarasa-gothic-sc/fonts.css');
+/* GT 座舱 —— 主面板主题（modes: monitor，fit: fluid）。
+ *
+ * 布局按设计稿（1280×640）还原：
+ *   行 1 左列上方 ：四格信息条 TRACK / LAP / FUEL / POS
+ *   行 2 三列     ：左 302 · 中 200 · 右 302，列间各留 192 的空列
+ *                   左 = 2×2 四轮圆环
+ *                   中 = 顶条（车名）+ 差值 / 换挡灯 / 档位 / 转速 / 迈速
+ *                   右 = 剩余 / 最佳 / 上圈 / 本圈，四行等分
+ *   行 3 通栏     ：八格数据方块，铺满整行
+ *
+ * 列宽和列间距都用 fr 摊在同一行里（302 192 200 192 302），
+ * 这样比例与设计稿一致，窗口缩放时不会跑形 —— 别改成 gap + 百分比。
+ *
+ * fluid 模式：视口即容器，根字号跟随视口，其余全部用 rem。
+ */
+
+/* 外部字体已全部下线（曾试用 Nasalization，授权边界 + 观感都退回）。
+ * 现在只用系统字体，字体栈和应用主界面（src/style.css 的 --font-display / --font-mono）**逐字一致**，
+ * 主题和软件看起来才是同一套产品，而不是「面板是面板、界面是界面」。
+ * 两条栈的来源：`--font-display` = 'Chakra Petch','Bahnschrift','DIN Alternate'；
+ * `--font-mono` = 'JetBrains Mono','Cascadia Code',Consolas。
+ * 注意 Chakra Petch / JetBrains Mono 在多数机器上没装，实际落到 Bahnschrift / Cascadia，
+ * 这是应用本来就有的行为，不是主题的锅 —— 想强制统一就把字体内嵌进应用（那是另一个决定）。 */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+/* 色板与字体栈挂在 :root（= html）而不是 body：
+ * 宿主切黑白主题时只改 <html data-theme>，变量定义在同一个元素上才覆盖得动。 */
+:root {
+  /* 纯黑底上的线框：白就写纯白，任何降透明度都会在 OLED/高对比屏上读成灰 */
+  --ink: #ffffff;
+  --ink-soft: #eef4fa;   /* 胎压读数：比主文字柔一档 */
+  --ink-label: #dde6ef;  /* 时间行标签：再柔一档 */
+  --dim: #a9b6c2;
+  --faint: #7d8996;
+  /* 外层和内部小组件同为纯白，层次靠线宽与留白区分，不靠把线调灰 */
+  --wire: #ffffff;
+  --wire-soft: #ffffff;
+  /* 全站线宽：所有白框共用一处真源，想整体加粗/减细只改这里。
+   * 用 clamp 而不是写死 px：根字号随视口从 ~14px 走到 18px，
+   * 线宽跟着一起长，1080p 下才不会显得比 640p 细一截。 */
+  --bw: clamp(3px, 0.22rem, 4.5px);
+  /* 左列四轮之间的十字细线：比边框细一半，它是分隔不是框，太粗会像又画了一层格子。
+   * 下限 1px，避免小窗口下缩成亚像素一条虚线。 */
+  --cross-w: max(1px, calc(var(--bw) * 0.5));
+  /* 状态色走满饱和：GT 座舱的灯就是这个亮度，压暗会像蒙了层灰 */
+  --red: #ff2330;
+  --amber: #ffb300;
+  --green: #00ff6a;
+  --cool: #29b6ff;
+  /* ---- 分层色板：凡是「会随黑白主题翻转」的颜色都必须走变量 ----
+   * 直接写死 #fff 的地方，在白底主题里会整块消失；加新颜色前先想清楚它属于哪一层。
+   * 深色值写在这里，浅色值统一在文件末尾 html[data-theme='light'] 覆盖。 */
+  --page: #000;                /* 页面底 = 八格标题用来盖住边框的那块「挖空」色 */
+  --plate: #2b3037;            /* 中列灰底盘（差值条无数据态 / 换挡灯 / 档位 / 转速） */
+  --plate-ink: #aebbc7;        /* 灰底盘上的次要字（差值条占位读数） */
+  --plate-ink-strong: #d7dfe8; /* 灰底盘上要提亮一档的字（空挡 N） */
+  --paper: #ffffff;            /* 迈速块：深色主题里唯一的亮块 */
+  --on-paper: #0b1015;         /* 迈速块上的字 */
+  --on-accent: #0b1015;        /* 绿 / 红差值底色上的字 */
+  --hair: rgba(255, 255, 255, 0.26);        /* 细分隔线 / 占位灰 */
+  --hair-strong: rgba(255, 255, 255, 0.34); /* 顶部信息条的格间竖线 */
+  --hair-soft: rgba(255, 255, 255, 0.18);   /* 胎温弧的底槽 */
+  --veil: rgba(255, 255, 255, 0.08);        /* 无旗时旗语格的占位底 */
+  --ring: rgba(255, 255, 255, 0.5);         /* 换挡灯空心圈 */
+  --lamp-off: #4d5763;         /* 指示灯灭：比底盘再亮一档，黑底上仍看得见轮廓 */
+  --lamp-on: #ffe600;          /* 大灯 / 转向灯亮 */
+  /* 底部功能格的色相：深色下要满饱和（暗一档会被白线框吃掉），
+   * 浅色下必须整体压深，否则 #ffe600 在白纸上等于没画。 */
+  --fn-abs: #ffe600;
+  --fn-map: #ff35a8;
+  --fn-fuel: #ffc400;
+  --fn-cons: #ff7a1a;
+  --fn-laps: #ff3b3b;
+
+  /* 全站数字按**等宽数字**（tabular figures）渲染。
+   * 读数每帧都在跳，非等宽下 1 比 8 窄 —— 实测同一字号：
+   * "1:31.980" 130.98px、"8:48.888" 153.39px，差 17%，
+   * 圈速从 1:31 刷到 1:48 时整串会左右抖。挂上 tabular 后两个都是 145.86px。
+   * 数字本身还要再走 --font-num（见下面的读数规则），这里留着是给标签的 0/1 之类兜底。 */
+  font-variant-numeric: tabular-nums;
+  /* 和应用主界面同一套（src/style.css::--font-display） */
+  --font-ui: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Segoe UI', 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', sans-serif;
+  /* 读数字体 = 应用「赛道记录」里圈速用的那一套（src/style.css::--font-mono）。
+   * 等宽字形，天生 tabular，和圈速列表里的数字一模一样。 */
+  --font-num: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', monospace;
+}
+
+html {
+  /* 设计稿 1280×640 下 ≈ 14px。字号取「宽、高两条等比线里的小者」：
+   *   min(1.09vw, 2.19vh) —— 1280 宽 / 640 高 都是 14px。
+   * 不能把宽、高两项相加：面板被窗口外壳挤成又宽又矮时（比如最大化后
+   * 数据区只有 ~570px 高、1870px 宽），按宽度加权算出来的字号会偏大，
+   * 中列的「差值 / 灰底盘 / 迈速 / 指示灯」整摞撑出可视区，
+   * 底部指示灯被下面的数据格切掉；按高度这条线缩，整摞才塞得进去。
+   *
+   * 只留 9px 下限，**不设上限**。原来卡在 18px：窗口态（数据区 ~1000×570）
+   * 算出来是 11px 左右，卡不到；一旦沉浸全屏（1920×1080 要 20.9px），字号被削在 18px，
+   * 而格子/边框/行高全是 rem、跟着字号走 —— 于是整块内容没跟上视口，
+   * 多出来的高度被 1fr 那一行和 height:80% 的左右面板吃掉，
+   * 看起来就是「窗口态被上下拉伸」：框变高、字没变大、右列四行之间空出一大片。
+   * 去掉上限后 1920×1080 就是 1000×570 的 1.92 倍等比放大，比例与窗口态完全一致。 */
+  font-size: max(9px, min(1.09vw, 2.19vh));
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  /* 页面底色。深色 = 纯黑（线框风的前提，任何渐变都会把白线衬灰）；
+   * 浅色 = 浅灰白，见文件末尾 html[data-theme='light']。 */
+  background: var(--page);
+}
+
+body {
+  font-family: var(--font-ui);
+  color: var(--ink);
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* .mono 现在只是「这是读数」的语义标记：字体与等宽数字都由下面的读数规则统一处理，
+ * 这里不再重复写 —— 两处都能生效时就变成两份真源，改一处忘一处就会不一致。 */
+
+/* 读数 = 等宽字体（JetBrains Mono / Cascadia Code / Consolas），和应用「赛道记录」里的圈速一致。
+ *
+ * 代价先说清楚：等宽字形一个字符固定 0.6em（JetBrains Mono / Cascadia 都一样），
+ * 同样一串 "1:31.980" 比 Bahnschrift 的 tabular 宽 ~31%（3.65em → 4.80em）。
+ * 所以这里不能只换字号，必须同时把字距收紧：-0.055em × 7 个间隙 ≈ 找回落差的一半，
+ * 再配合各块字号下调（下面逐个写在对应规则里）。
+ *
+ * -0.055em 不是拍的：等宽字体的字腔（sidebearing）本来就宽，收到这个量字与字刚刚不碰，
+ * 再紧 "1:" 和 "0" 就会黏在一起；小字号（0.6rem 级标签）不跟这条走，那里不收紧。
+ *
+ * 只挂「读数」，不挂整块：
+ *   - `.chip .v` 而不是 `.chip b`：单位（L / L/LAP）是 b 里的同级子元素，
+ *     挂在 b 上负字距会传给单位，末位那一格负字距正好抵消 `.chip .u` 的 margin-left，
+ *     "42.5 L" 会黏成 "42.5L"。
+ *   - `.strip b.mono` 而不是 `.strip b`：那一行里 TRACK / WX / GRIP 是**词**（Monza / DRY / OPT），
+ *     词走展示字体；AIR / ROAD / POS / LAP 是数字，HTML 里本来就有 .mono 标记，直接拿来用。 */
+.strip b.mono, .read .t, .read .p, .read .b,
+.delta, .gear-box b, .rpm-meta b, .speed-box b,
+.trow b, .chip .v {
+  font-family: var(--font-num);
+  letter-spacing: -0.055em;
+}
+
+/* ------------------------------ 网格 ------------------------------ */
+
+.app {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: grid;
+  /* 左 370 · 空 80 · 中 280 · 空 80 · 右 370（设计稿是 302/192/200，这里为了紧凑把空列压窄） */
+  grid-template-columns: 370fr 80fr 280fr 80fr 370fr;
+  grid-template-rows: auto minmax(0, 1fr) 7.2rem;
+  /* 顶部那条是页面级的一行（以后右侧还要再挂组件），不属于任何一列的 panel */
+  grid-template-areas:
+    "topbar topbar topbar topbar topbar"
+    "left   .      mid    .      right"
+    "bottom bottom bottom bottom bottom";
+  /* 顶部灯带 / 主区三块 / 底部八格之间的纵向留白 */
+  row-gap: 1.1rem;
+  padding: 0.7rem 1.3rem 0.6rem;
+}
+
+.zone {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  border: var(--bw) solid var(--wire);
+  /* 0.85rem：3px 粗的白线压在小圆角上，转角看着还是方的 —— 圆角半径得明显大于线宽才看得出来 */
+  border-radius: 0.85rem;
+  background: transparent;
+  overflow: hidden;
+}
+
+.left { grid-area: left; }
+.mid { grid-area: mid; }
+.right { grid-area: right; }
+.bottom { grid-area: bottom; }
+
+/* 左右两块比中列矮一档：中间行满高时两侧面板拉太长，上下的空白读起来像没画满。
+ * 收到 80% 再垂直居中 —— 三块不再是「一样高的三个框」，视线会先落到中列，
+ * 两侧退成陪衬。百分比是相对这一行的行高（1fr，已确定），不是视口高。
+ * 右列四行是 flex:1 均分的，这一下调同时把行距一起收紧 —— 两块组件的高度
+ * 和「右侧时间紧凑」其实是同一件事，别拆成两个 magic number。
+ * 竖屏也沿用 80%：那里三列并排、列窄，圆环本来就受**宽度**限制（格高再大也不长个），
+ * 收到 80% 只是把面板里多余的竖向留白去掉。 */
+.left,
+.right {
+  align-self: center;
+  height: 80%;
+}
+
+/* 顶部通栏：内部复用 .app 那套列比例（370 80 280 80 370），
+ * 左 strip 落在第 1 列、右 strip 落在第 5 列 → 各自正好压在 .left / .right 上方。
+ * 中间第 3 列是空的（原来放灯带，已去掉），列比例保留着——
+ * 别改成 flex 两端对齐：列比例一旦不一致，两块信息条就再也对不齐下面的面板。 */
+.topbar {
+  grid-area: topbar;
+  display: grid;
+  /* 必须和 .app 的列比例逐字一致，改一处就要改另一处，漏一处两块信息条就偏 */
+  grid-template-columns: 370fr 80fr 280fr 80fr 370fr;
+  align-items: center;
+  min-width: 0;
+}
+
+.cap {
+  font-style: normal;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  color: var(--dim);
+}
+
+/* ------------------------------ 顶部信息条（左 WX/AIR/ROAD/GRIP · 右 FLAG/TRACK/POS/LAP） ------------------------------
+ * 两块各是**一个整框**：四格之间只用一条竖细分隔线断开，不再每格各画一个框。
+ * 四个小圆角框并排时，边线互相顶着，远看像四个按钮、近看全是碎线；
+ * 合成一个框之后它才是「一条信息」，和底部八格（八格各自成块）也区分得开。
+ * 标题也从「骑在上边框」改成**压在数值下面**：数值才是要读的东西，位置越高越好；
+ * 而且不骑线就不用一块黑底去盖边框，格子内部完全干净。 */
+
+.strip {
+  display: grid;
+  /* 四格不等宽，按内容分配：FLAG 只有色块，TRACK 要装 Monza，
+   * POS 只有 "P7"，LAP 最多 "43/50"。顺序和 DOM 一致：FLAG / TRACK / POS / LAP。
+   * 必须包 minmax(0,·)：纯 fr 的最小尺寸是内容宽，长文本照样能把整行撑破。 */
+  grid-template-columns:
+    minmax(0, 0.9fr) minmax(0, 1.4fr)
+    minmax(0, 0.72fr) minmax(0, 0.8fr);
+  width: 100%;
+  align-items: stretch;
+  border: var(--bw) solid var(--wire);
+  /* 和左右两块大面板同一个半径：它们现在是同一层的框，不是面板里的小格子 */
+  border-radius: 0.85rem;
+  padding: 0.3rem 0.25rem 0.34rem;
+}
+
+/* 顶部这一行只有左右两块，高 3.5rem：左右两边必须同高，
+ * 否则中间空着的时候两块一高一矮看着像没对齐。 */
+.topbar > .strip {
+  grid-column: 5;
+  height: 3.5rem;
+}
+
+/* 一格 = 上「数值」下「标题」两行。
+ * 行高 1fr + auto：数值那行吃掉多余高度并居中，标题行贴底 ——
+ * 四条标题因此永远落在同一条基线上（包括旗语那种没有数字的格）。 */
+.strip .cell {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: center;
+  justify-items: center;
+  row-gap: 0.22rem;
+  padding: 0 0.28rem;
+  background: transparent;
+  border: 0;
+  text-align: center;
+}
+
+/* 分隔线比边框细一半、上下各收 18% —— 它是「分隔」不是「框」，
+ * 两头到边就会又读成一个个格子。 */
+.strip .cell + .cell::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 18%;
+  bottom: 18%;
+  width: var(--cross-w);
+  background: var(--hair-strong);
+}
+
+/* 标题：数值下面那行小字。用 --dim 而不是纯白 ——
+ * 它是注解，纯白会和上面 1.5rem 的数值抢注意力。 */
+.strip i {
+  font-style: normal;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  /* letter-spacing 在最后一个字母后面也留一格，居中会看着偏左，补回来 */
+  padding-left: 0.16em;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--dim);
+}
+
+/* ------------------------------ 左上角天气条（WX / AIR / ROAD / GRIP） ------------------------------
+ * 和右上角共用上面全部规则，只改两件事 —— 落在 topbar 的第 1 列、四格宽度按内容重新分配。 */
+.topbar > .strip.tl { grid-column: 1; }
+
+.strip.tl {
+  /* WX 最宽：它是「图标 + 天气词」，右侧还要留一块和图标等宽的对称配重
+   * （见下面 #wx[data-w]::after），六个词里最长的 DRIZZLE 才不会被省略号截掉、
+   * 图标也不会顶出格子。GRIP 装 GREASY 次之；两个温度只有 2~3 个字符，最窄。
+   * 比例是实测出来的：1.5 时 WX 内容宽 ~133px，恰好放下「配重 23px + DRIZZLE ~81px + 配重 23px」
+   * 还留几像素余量；再窄一档长天气词就开始截断。 */
+  grid-template-columns:
+    minmax(0, 1.5fr) minmax(0, 0.65fr)
+    minmax(0, 0.65fr) minmax(0, 1.2fr);
+}
+
+/* 天气 = 图标 + 单词，同一行居中。
+ * 图标是内联 SVG 线稿（theme.js 的 WX_ICONS），颜色继承 #wx 的 color，
+ * 所以下面那条 data-w 配色规则同时管住图标和文字，不用写第二套色。
+ *
+ * 对齐约定（顶部条所有格子通用）：**数值和它下方的英文共用格子的中轴**。
+ * 天气格麻烦在它是「图标 + 词」两件东西：图标在左会把词顶到中轴右侧
+ * (0.85em + 0.24em)/2 = 0.545em。
+ * 之前试过两种都不行：把 WX 标题右移去追词 → 标题离开中轴、和旁边三格标题不齐；
+ * 把整组左移 0.545em → 词是压轴了，但整组（尤其图标）明显往左偏出 11px，
+ * 1280×640 下 DRIZZLE 还会被省略号截断、图标溢出格子。
+ * 现在用**左右对称配重**：词右侧补一块和图标等宽的空位，左右配重相等，
+ * flex 组的中心和词的中心、格中轴三者重合 —— 既不用任何 transform，
+ * 整组也不会看着偏。配重空间由上面 .strip.tl 给 WX 加宽的列来出，
+ * 不吃词宽，六个天气词实测全不截断。 */
+#wx {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.24em;
+}
+
+/* 配重只在「有天气数据」时生成（[data-w] 由 theme.js 的 setWx 挂）。
+ * 宽度逐字跟 .wx-ico 的 0.85em 对齐，间隔由 #wx 的 gap 自动补上 0.24em；
+ * 空内容不占高度，align-items:center 下不会影响图标和词的基线。 */
+#wx[data-w]::after {
+  content: '';
+  flex: none;
+  width: 0.85em;
+  height: 0;
+}
+
+/* 待机时 setWx 只删 data-w 和图标内容：图标退出布局、上面的配重也不生成，
+ * 占位符「—」才是单独一个元素，稳稳落在正中（和另外六格同一条中轴）。 */
+#wx:not([data-w]) .wx-ico { display: none; }
+
+#wx .wx-ico {
+  display: inline-flex;
+  flex: none;
+  width: 0.85em;
+  height: 0.85em;
+  /* 上移 0.06em：图标是几何居中，而文字的中线在字框偏上（line-height:1 时
+   * 下半截留给降部），不补这一下图标会比单词低一两个像素。 */
+  transform: translateY(-0.06em);
+}
+
+/* 文字是可收缩的那一半：格子太窄时省略号落在 DRIZZLE 上，图标不被压扁 */
+#wxText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#wx .wx-ico svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 天气按雨量上色：干地纯白 → 小雨冷蓝 → 大雨琥珀 → 暴雨红。
+ * 颜色挂在 #wx 的 data-w（0..5）上，值由 theme.js 写 ——
+ * 不用 inline style，否则待机时没法把颜色一并清掉。 */
+#wx[data-w='1'],
+#wx[data-w='2'] { color: var(--cool); }
+
+#wx[data-w='3'],
+#wx[data-w='4'] { color: var(--amber); }
+
+#wx[data-w='5'] { color: var(--red); }
+
+/* 气温 / 路温的 '28°' 不再做整串右移补偿。
+ * 原来按「度数符号吞掉半格、数字偏左」把整串右推 0.2em，等于把数值
+ * 推离格中轴 3.5px，下面的 AIR / ROAD 还在轴上 —— 两行反而错开。
+ * 现在整串和标题都严格居中，读数优先对齐；度数符号的那点视觉偏差接受。 */
+
+/* 抓地力：绿=有抓地、琥珀=油腻、蓝=湿。
+ * 不用功能色那套 #00ff6a 之外的新色，全站色板保持一致。 */
+#grip[data-g='1'],
+#grip[data-g='2'] { color: var(--green); }
+
+#grip[data-g='3'] { color: var(--amber); }
+
+#grip[data-g='4'] { color: var(--cool); }
+
+#grip[data-g='5'] { color: #2f7bff; }
+
+/* 旗语：只留一个旗色块，连标题都不写（以前下面挂一行 FLAG 小字）。
+ * 旗是余光里看的东西 —— 颜色比单词快，写 FLAG 只是多一行噪音。
+ * 红 > 格子 > 黄 > 白 > 绿，由 theme.js 判优先级，这里只负责填色。
+ * 无旗 / 待机：属性被删掉 → 回到很淡的灰底占位，和其他格的「—」是一个意思。 */
+/* 这一格没有标题行，只留「数值」一行：
+ * 不写死行数的话，.cell 的第二行（auto / 0 高）+ row-gap 会把色块顶得偏上一点，
+ * 远看是歪的。 */
+.strip .cell-flag { grid-template-rows: minmax(0, 1fr); row-gap: 0; }
+
+#flag {
+  display: block;
+  width: 100%;
+  /* 数值那一行是 minmax(0,1fr)，高度确定，height:100% 直接撑满；
+   * min-height 兜住竖屏（那里整条高度是 auto，1fr 只按内容算，会塌成一条线）。 */
+  height: 100%;
+  /* 上限比数值的 1.5rem 略高一档：这一格已经没有标题行，色块是唯一内容，
+   * 压到 1.55rem 会缩成中间一小片、四周全是空 —— 2rem 才和旁边的赛道名 / 圈数同重量。 */
+  max-height: 2rem;
+  min-height: 1.1rem;
+  border-radius: 0.26rem;
+  background: var(--veil);
+}
+
+#flag[data-f='green'] { background-color: var(--green); }
+#flag[data-f='yellow'] { background-color: var(--lamp-on); }
+#flag[data-f='red'] { background-color: var(--red); }
+#flag[data-f='white'] { background-color: #ffffff; }
+
+/* 格子旗没有单一颜色，画真的黑白棋盘：conic-gradient 的四等分正好拼出方格，
+ * 白底 + 一个黑方块 = 一格黑白。比用两个灰凑更清楚，边缘也不会糊。 */
+#flag[data-f='cheq'] {
+  background-color: #ffffff;
+  background-image: conic-gradient(
+    #0b0b0b 25%, transparent 0 50%, #0b0b0b 0 75%, transparent 0
+  );
+  background-size: 0.62rem 0.62rem;
+}
+
+.strip b {
+  max-width: 100%;
+  /* 标题已经在下面，数值这一行独占上半部分，放大到 1.5rem
+   * （仍在格宽内，长赛道名有省略号兜底） */
+  font-size: 1.5rem;
+  font-weight: 800;
+  /* line-height 必须是 1：默认 1.2 会把值往下推，3px 粗框下底部就贴线了 */
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 无数据占位：不用字体里的 '—' 字符，改由 CSS 画一条统一短横。
+ * 两个原因：
+ *  1) 顶部四格是展示字体、三格是等宽字体（.mono），'—' 的宽度差近一倍
+ *     （约 1em vs 0.6em），七条横线长短粗细参差，看着就没对齐；
+ *  2) em dash 的墨迹贴着基线，落在数值行的下半截，和下面的英文标题挨得
+ *     比有数据时更近，横线像"掉下去"了。
+ * [data-empty] 时把字符染透明（保留盒子尺寸），由 ::before 画一条定宽定高的横线：
+ * b 盒本身在数值行里是居中的，横线再相对 b 盒居中 → 七格同高、左右严格压在
+ * 格中轴上，与下方英文共用同一条中轴；宽高和颜色都不再受字体影响。
+ * 属性由 theme.js 的 syncStripEmpty() 按文本内容自动挂/摘；横线用 --ink，
+ * 深浅主题切换时会自动翻转，不会在白底上消失。 */
+.strip b[data-empty] {
+  position: relative;
+  color: transparent;
+  /* 横线宽 1rem，而 .mono 格里被染透明的 '—' 只占 0.9rem —— 不兜住最小宽度，
+   * .strip b 的 overflow:hidden 会把横线两端（连同圆角）裁掉。
+   * 给 0.2rem 余量；每格最窄也有 4rem 以上，撑不破布局。 */
+  min-width: 1.2rem;
+}
+.strip b[data-empty]::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  /* 1rem ≈ 一个等宽字符宽：和原来 mono 格的破折号差不多重，
+   * 又不会像展示字体那个 1.5rem 长横一样压过下方英文。 */
+  width: 1rem;
+  height: 0.1rem;
+  min-height: 2px;
+  border-radius: 0.05rem;
+  /* 沿用数值本身的 --ink（浅色主题会翻成深色），占位符只统一形状、
+   * 不额外调暗 —— 调暗会让它读成「禁用」而不是「暂无数据」。 */
+  background: var(--ink);
+}
+
+/* --- 温度：只让数字压中轴，单位不计入对齐 ---
+ * 原来 theme.js 写的是 '26°' 一整串，度数符号也占一份字符宽，整串居中时
+ * 数字被推到格中轴左边约半个字符；而字体里的 ° 本身是个略斜的小椭圆，
+ * 缀在数字末尾更显得整串歪。现在只写数字，单位由 ::after 画成一个**正圆**
+ * 挂在数字盒右上方 —— 绝对定位不进布局、不占宽度，严格居中的只有数字；
+ * 几何正圆也不会有字体符号那种斜感。
+ * 只在有数据时生成（:not([data-empty])）：待机没有数字，不该挂一个孤零零的圈。
+ * overflow 必须放开：.strip b 默认 hidden 是给长赛道名的省略号用的，
+ * 挂在盒外的单位圈会被它裁掉；温度最多 3 位数字，用不着省略号。 */
+.strip b.temp {
+  position: relative;
+  overflow: visible;
+}
+.strip b.temp:not([data-empty])::after {
+  content: '';
+  position: absolute;
+  left: 100%;
+  top: 0.06em;
+  margin-left: 0.1em;
+  width: 0.22em;
+  height: 0.22em;
+  border: 0.055em solid currentColor;
+  border-radius: 50%;
+  opacity: 0.88;
+}
+
+/* --- POS：当前排名放大，参赛车总数缩小 ---
+ * 名次才是要读的数，'/20' 只是参照；拿不到总数时的 'P' 前缀同样走小字号。
+ * 三段用 baseline 对齐，小字不会飘起来；整组仍由 .cell 的 justify-items 居中。
+ * HTML 里 #posPre / #posRank / #posTotal 常驻，theme.js 逐帧只改文本。 */
+#pos {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  letter-spacing: 0;
+}
+#pos .rank { font-size: 1.16em; line-height: 1; }
+#pos .u { font-size: 0.62em; opacity: 0.72; }
+
+/* ------------------------------ 左：四轮 ------------------------------ */
+
+/* 左栏只放四轮这一块：用 grid 居中，四轮整块的正方形才能跟着栏的短边收放 */
+.left {
+  display: grid;
+  place-items: center;
+  padding: 0.75rem 0.85rem;
+}
+
+/* 四轮之间用一条细灰十字切开，但**两头不到边**：靠边逐渐变淡直到消失。
+ * 做法是用两条渐变当线（不是 border）：每条线都是「透明 → 灰 → 透明」，
+ * 再靠 background-size 压成一条细线、background-position 居中。
+ * 渐变两端在 4% 处才归零：线一直伸到很靠边的地方才化掉，但端点仍然不碰边框，
+ * 不会像真边框那样把面板切成四个死格子。
+ * 位置用 inset:0 —— 就是 padding 盒，线正好落在四轮中间的空档里。 */
+.left::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    /* 竖线：两头留空 4%，再用 12% 的长度淡入淡出 */
+    linear-gradient(to bottom,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0) 4%,
+      var(--hair) 16%,
+      var(--hair) 84%,
+      rgba(255, 255, 255, 0) 96%,
+      rgba(255, 255, 255, 0) 100%),
+    /* 横线：同上，左右各淡出一次 */
+    linear-gradient(to right,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0) 4%,
+      var(--hair) 16%,
+      var(--hair) 84%,
+      rgba(255, 255, 255, 0) 96%,
+      rgba(255, 255, 255, 0) 100%);
+  background-size: var(--cross-w) 100%, 100% var(--cross-w);
+  background-position: center center;
+  background-repeat: no-repeat;
+}
+
+/* 四轮：2×2 圆环。
+ * 整块必须自己是个正方形：格子跟着栏的宽高各自拉伸时，2×2 的每格就是长方形，
+ * 圆环虽然不会被 SVG 拉扁，但圆盘只能取短边、留白全堆在长的那一边，
+ * 放大或全屏（尤其超宽/超扁的窗口）时四轮会散成一条宽排。
+ * 正方形交给下面 @supports 里的 cq 单位按栏的短边算，格子自然也是方的。 */
+.tyres {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 1.1rem;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.tyre {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+
+/* 圆盘铺满整个格子：格子已经是正方形（见上），这里不再自己算尺寸，
+ * 标签/读数永远贴着圆走，不会因为某一轴被拉伸而飞到角上。
+ * 不支持 cq 单位时退回「块铺满、格子长方形」的旧行为，SVG 的
+ * preserveAspectRatio 仍会保住圆环是正圆，只是留白偏到一边。 */
+.dial {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+@supports (width: 1cqh) {
+  /* 以左栏为查询容器，四轮整块取「栏宽」和「栏高」里较短的一条做正方形边长 */
+  .left { container-type: size; }
+  .tyres {
+    width: min(100%, 100cqh);
+    height: min(100%, 100cqw);
+  }
+}
+
+.dial svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* 起点挪到左下：270° 弧的缺口正好落在正下方，看读数不挡字 */
+  transform: rotate(135deg);
+  overflow: visible;
+}
+
+/* 中圈 = 胎温：整圈常亮，只靠颜色区分温度档位 */
+.arc-bg {
+  fill: none;
+  stroke: var(--hair-soft);
+  stroke-width: 8;
+}
+
+.arc-fg {
+  fill: none;
+  stroke-width: 8;
+  stroke-linecap: butt;
+}
+
+.arc-fg.t-na { stroke: var(--hair); }
+.arc-fg.t-cold { stroke: #00a6ff; }
+.arc-fg.t-ok { stroke: var(--green); }
+.arc-fg.t-warm { stroke: var(--amber); }
+.arc-fg.t-hot { stroke: var(--red); }
+
+/* 内圈 = 刹车盘温度：270° 弧（下方留缺口给读数），颜色随盘温变化 */
+.brake-bg {
+  fill: none;
+  stroke: var(--hair-soft);
+  stroke-width: 4;
+  stroke-dasharray: 75 100;
+}
+
+.brake-fg {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: butt;
+  stroke-dasharray: 75 100;
+}
+
+.brake-fg.b-na { stroke: var(--hair); }
+.brake-fg.b-cold { stroke: #00a6ff; }
+.brake-fg.b-ok { stroke: var(--green); }
+.brake-fg.b-warm { stroke: var(--amber); }
+.brake-fg.b-hot { stroke: var(--red); }
+
+.dial .tag {
+  position: absolute;
+  top: 4%;
+  left: 10%;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: var(--dim);
+}
+
+.read {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.02rem;
+  /* 读数整体往下让一档：圆环的 270° 缺口在正下方（svg 转了 135°），
+   * 上面那半圈是有弧线的，psi 做首行后离弧太近，会看着「顶到圆上」。
+   * 往下挪正好用上缺口那块空白，别再用 padding-bottom 把内容往上推。 */
+  padding-top: 0.85rem;
+  pointer-events: none;
+}
+
+/* 胎温退到 psi 下面后不再当主读数：胎压才是这块的主读数，
+ * 胎温只做第二行。之前 2rem 太抢，先收到 1.7rem，再压一档到 0.85rem ——
+ * 现在和刹车温（0.86rem）同一量级，读数层级是「胎压 > 刹车温 ≈ 胎温」，
+ * 四轮中间那一坨不再抢 psi 的视线。 */
+.read .t {
+  font-size: 0.85rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.025em;
+}
+
+/* 胎压挪到第一行并放大：现在它是这块的主读数，胎温退到它下面一行。
+ * 0.94rem 是按「胎温下面的小注脚」定的，做首行太小，抬到 1.55rem。 */
+.read .p {
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: var(--ink-soft);
+  line-height: 1.1;
+}
+
+.read .b {
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: var(--amber);
+  line-height: 1.1;
+  opacity: 0.9;
+}
+
+/* 刹车盘温度文字与内圈同步变色 */
+.read .b[data-level='na'] { color: var(--dim); }
+.read .b[data-level='cold'] { color: #00a6ff; }
+.read .b[data-level='ok'] { color: var(--green); }
+.read .b[data-level='warm'] { color: var(--amber); }
+.read .b[data-level='hot'] { color: var(--red); }
+
+/* ------------------------------ 中 ------------------------------ */
+
+.mid {
+  /* 中列完全撤框：上下左右都不画线。
+   * 中列现在靠一块灰底盘撑住视觉重心，再套白框就是「框里套块」，太憋。 */
+  border: 0;
+  /* 整簇居中，重心再往上提一点点：底部多留 0.3rem 给灯条和下面八格之间透气。
+   * 用「居中 + 底部多留 padding」做偏置，比写死 margin-top 稳 ——
+   * 视口变了只按比例偏，不会在别的分辨率上变成压边。 */
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  padding: 0.3rem 0.4rem 0.9rem;
+}
+
+/* 中列那一簇：整簇垂直居中，只留一点点向上偏。
+ * 原来 3.4rem 是为了让「差值 / 灯点 / 档位 / 转速 / 迈速」五段散件聚拢后不塌在中间，
+ * 现在下面三件套合并成一块灰底盘，整簇本身就是一整块，再往下压就成了上紧下松。 */
+.core {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* 块与块之间 0.9rem（原 1.5）：灯条并进来之后这一列变成四段，
+   * 间距按老值整簇会顶出中列（差值条顶边被切）。三段间距各收 0.6rem，
+   * 加上灯条 1.6rem，刚好换回来 —— 收得再紧三件套就挤成一坨了。 */
+  gap: 0.9rem;
+  min-height: 0;
+  padding-bottom: 0;
+}
+
+/* 差值条：中列顶上的一个「标签块」。
+ * 形状是上圆下方 —— 上边跟灰底盘同款圆角，下边直角，像从底盘里伸出来的抬头标签。
+ * 底色三态：无数据 = 跟底盘同一块灰（不抢眼）；比 PB 快 = 绿；慢 = 红。
+ * 上色后数字必须转深色：#00ff6a / #ff2330 上压白字对比不够，远处看会糊成一团。 */
+.delta-pill {
+  width: 100%;
+  padding: 0.4rem 0.6rem 0.45rem;
+  border-radius: 0.55rem 0.55rem 0 0;
+  background: var(--plate);
+  text-align: center;
+}
+
+.delta-pill.is-fast { background: var(--green); }
+.delta-pill.is-slow { background: var(--red); }
+
+.delta {
+  font-size: 1.9rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  /* 灰底（无数据）上用浅灰字，别用纯白冒充有效读数 */
+  color: var(--plate-ink);
+  letter-spacing: 0.02em;
+}
+
+/* 彩色底上一律深色字 —— 颜色只由 .delta-pill 的状态类决定，
+ * 不再用 .delta.neg/.pos 给文字上色（绿底绿字会看不见） */
+.delta-pill.is-fast .delta,
+.delta-pill.is-slow .delta { color: var(--on-accent); }
+
+/* 灰底盘：换挡灯 / 档位 / 转速 / 迈速 共用一块底板。
+ * 铺满中列 —— 它是这一列的主视觉，左右边界和上方的差值落在同一条竖线上。
+ * 内部 gap 比 .core 的 21px 略紧（一个块内部不需要像块与块之间那样透气）。 */
+.gear-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.15rem;
+  width: 100%;
+  min-width: 0;
+  /* 上边现在要给内边距了：换挡灯点排是第一个孩子，它没有字形留白，
+   * 不给 padding 的话圆点会直接贴到灰块顶边。下边同理收着给（单位有下伸部）。 */
+  padding: 0.75rem 1.1rem 0.9rem;
+  border-radius: 0.6rem;
+  background: var(--plate);
+}
+
+/* 十个圆点：既是转速进度，也是换挡灯 */
+.shift {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 0.16rem;
+  width: 100%;
+}
+
+.shift s {
+  display: block;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: transparent;
+  /* 用 inset 描边而不是 border：亮起时 .on/.warn/.red 会整条覆盖 box-shadow，
+   * 圆点填充后不会留一圈多余的白边 */
+  box-shadow: inset 0 0 0 2px var(--ring);
+}
+
+.shift s.on {
+  background: var(--green);
+  box-shadow: 0 0 0.5rem rgba(0, 255, 106, 0.6);
+}
+
+.shift s.warn {
+  background: var(--amber);
+  box-shadow: 0 0 0.5rem rgba(255, 179, 0, 0.6);
+}
+
+.shift s.red {
+  background: var(--red);
+  box-shadow: 0 0 0.6rem rgba(255, 35, 48, 0.72);
+}
+
+/* 到换挡点：整排圆点**一起**硬切闪烁 —— 不是逐个跑马，也不是渐变呼吸。
+ * 用 steps(1)：灯是开关量，渐变会糊成一团看不出节奏。
+ * 0.18s 一个周期（约 5.5Hz）：再快人眼只剩一片抖动，再慢就像故障闪。
+ * 只闪已点亮的那几颗：万一以后把阈值调低，没亮的空心圈不会跟着一起眨眼。 */
+@keyframes shift-flash {
+  0%,
+  49.99% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.12;
+  }
+}
+
+.shift.blink s.on,
+.shift.blink s.warn,
+.shift.blink s.red {
+  animation: shift-flash 0.18s steps(1, end) infinite;
+}
+
+/* 档位数字：只负责站位，底色和圆角都交给外层 .gear-panel。
+ * 行盒自带的字形留白（11.8rem 的字上下各约 23px）现在正好是数字在灰块里的呼吸，
+ * 不需要再用负 margin 抵消。 */
+.gear-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gear-box b {
+  font-size: 11.8rem;
+  font-weight: 800;
+  /* 0.9 是安全的：Bahnschrift 字面（数字高）约 0.72em，行盒 0.9em 仍比字面高，
+   * 字形不会溢出底座。把行盒从 1em 收到 0.9em，数字上下各留 ~0.09em 的灰边，
+   * 档位到转速的视觉间距才不会空出一大截。*/
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+}
+
+/* 灰底上不要再叠辉光：雾状光晕在灰块里会糊成一团脏边 */
+.gear-box b.r {
+  color: var(--red);
+}
+
+/* 空挡在灰底上要提亮一档，否则 #a9b6c2 贴着 #2b3037 只剩半档对比 */
+.gear-box b.n {
+  color: var(--plate-ink-strong);
+}
+
+/* 转速数字要和上面的档位、灯点排在一条中轴上。
+ * 单位（RPM）已经去掉，这里仍用 grid 单列而不是 flex：grid 的 justify-self:center
+ * 是按格子中线算的，档位 / 灯点排也是同一套逻辑，三者中轴严格重合（字宽不同也不会偏）。 */
+.rpm-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: baseline;
+  width: 100%;
+}
+
+.rpm-meta b {
+  justify-self: center;
+  font-size: 1.34rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+/* 迈速：从灰底盘里独立出来，自己占一格。
+ * 底色改成纯白 —— 中列三块里只有它是亮块，视线第一眼就落在这里；
+ * 白底上数字必须是深色，白字压白底直接看不见。 */
+.speed-box {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  width: 100%;
+  padding: 0.45rem 0.6rem 0.5rem;
+  /* 上平下圆：和上面的差值条（.delta-pill，上圆下方）正好反着切。
+   * 底块下方没有东西要接，圆角落在这一竖条的收口处，读起来是「落地的托盘」；
+   * 上方紧贴灰底盘，切直角才不留一道黑缝。 */
+  border-radius: 0 0 0.6rem 0.6rem;
+  background: var(--ink);
+}
+
+.speed-box b {
+  font-size: 1.86rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--on-paper);
+}
+
+/* 指示灯一条：左转向 / 大灯 / 雨刷 / 右转向。
+ * 撤掉灰底方块，只留图标 —— 上面三件套（灰底盘 + 白迈速块）已经很重，
+ * 再摆四个色块会把这列读成两坨。没有底之后「灭」只能靠颜色表达：
+ * 灭 = 暗灰（不是纯黑，纯黑根本看不出那里有个灯），亮 = 功能色。 */
+.lamp-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: center;
+  justify-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  /* 不设高度，由图标撑；icons 统一 height 之后四块自然等高 */
+}
+
+.lamp-box {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  /* 灭灯色 --lamp-off 是「看得见的暗」，比 --plate 底盘再亮一档，
+   * 在黑底上仍能看清轮廓，又不至于抢过上面的读数。 */
+  color: var(--lamp-off);
+}
+
+.lamp-box svg {
+  /* 四个图标的 viewBox 已各自收窄到自身内容框（见 index.html），
+   * 所以这里统一给**高度**、宽度交给 auto —— 同高之后四个图标的视觉大小才一致
+   * （共用 1:1 画板时，满画板的大灯比只占四成高的箭头大出一倍）。
+   * max-width 兜底：窄窗口里箭头/雨刷这种宽扁图形自动等比缩小，不会顶出格子。 */
+  height: 1.6rem;
+  width: auto;
+  max-width: 100%;
+  display: block;
+}
+
+/* 亮灯语义：**只亮图标，不亮背景**（现在连背景都没了，只剩 color）。
+ * 大灯：黄常亮。 */
+.lamp-box[data-on='lamp'] { color: var(--lamp-on); }
+
+/* 雨刷：亮蓝。用 --cool 而不是自造一个色，和天气条里的「小雨」是同一个色源 */
+.lamp-box[data-on='wipe'] { color: var(--cool); }
+
+/* 转向灯：黄/灰硬切。用 steps(1) 而不是渐变 —— 灯是开关量，拖影会像故障。 */
+.lamp-box[data-on='blink'] {
+  animation: lamp-blink 0.64s steps(1, end) infinite;
+}
+
+@keyframes lamp-blink {
+  0%,
+  49.99% {
+    color: var(--lamp-on);
+  }
+  50%,
+  100% {
+    color: var(--lamp-off);
+  }
+}
+
+/* ------------------------------ 右：时间四行 ------------------------------ */
+
+.right {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  /* 左右留够：成绩数字贴着面板右边框会显得挤，标签也别顶到左框上。
+   * 下边比上边多一档：文字现在全部坐在行底线上，最后一行没有横线托着，
+   * 底下不留够就会直接贴到面板边框上。 */
+  padding: 0.4rem 1.35rem 0.55rem;
+  /* 右列字号（下面 .trow 那几个 clamp 里的 cqw）要按这一列的**内宽**算，
+   * 不能按 rem：rem 只跟视口高度走，窗口一窄（比如 4:3 预览）列宽塌下去、
+   * 字号不跟着收，REMAIN + 圈速就会直接撞在一起。 */
+  container-type: inline-size;
+}
+
+/* 成绩板：四行不各自围框，只靠底部分隔线切开（末行压一条亮白收口）
+ * 文字全部**坐**在分隔线上（flex-end）而不是在行里居中 ——
+ * 这样标签和数字共用一条底线，看起来像是「贴着横线排的一版成绩」。
+ * 两边的 line-height 都是 1，所以 flex-end 对齐时基线也自动对齐。 */
+.trow {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0 0.25rem 0.06rem;
+  border-bottom: var(--bw) solid var(--wire-soft);
+}
+
+/* 只切前三行：最后一行（现在是 LAST）是这一列的收口，
+ * 底下再压一条线就顶到面板边了。行序怎么调都由 :last-child 自动跟着走。 */
+.trow:last-child {
+  border-bottom: 0;
+}
+
+.trow i {
+  font-style: normal;
+  /* 标签翻倍：1280×640 下就是 2.2rem（8.6cqw），比上一版 1.14rem 大一倍左右。
+   * 用 cqw 而不是 rem：列变窄时标签跟着收，不会把数字挤出框。
+   * 字距 0.1em → 0.05em：大字号下 0.1em 会把 REMAIN 拉得很散。 */
+  font-size: clamp(1.05rem, 8.6cqw, 2.2rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  color: var(--ink-label);
+  white-space: nowrap;
+}
+
+.trow b {
+  /* 标签翻倍后数字必须跟着抬一档，否则一行里标签比数字还大，读数主次就反了。
+   * 同样按列宽 clamp（1280×640 下 ≈ 2.45rem）。 */
+  font-size: clamp(1.15rem, 10cqw, 2.45rem);
+  font-weight: 800;
+  /* line-height:1 —— 和标签共底线，别让行盒的高矮把数字平白抬起来 */
+  line-height: 1;
+  letter-spacing: -0.012em;
+  white-space: nowrap;
+}
+
+/* 本圈是这一列的主角（现在置顶第一行），稍大一点、亮一点 */
+.trow.hero i { color: var(--ink); }
+
+/* 最佳圈用绿色 —— 赛车惯例里的「个人最快」就是这个绿（全场最快才是紫）。
+ * 只上色「有成绩」的那一帧：空值（--:--.---）不让它染绿，否则占位符看着像有效读数。
+ * 类名由 theme.js 按有没有值来挂。 */
+.trow b.best { color: var(--green); }
+
+.trow.hero b {
+  font-size: clamp(1.35rem, 12cqw, 3.05rem);
+  color: var(--ink);
+  letter-spacing: -0.028em;
+}
+
+/* ------------------------------ 底：八格数据方块 ------------------------------ */
+
+/* 底部不是一整块面板：前四格是独立方块，所以这里不加 .zone。
+ * 前四格各占一列，油量组占 3.3fr —— 它是「三个单格 + 两个格间空隙」的宽度，
+ * 这样组内三列和左边的单格能对上，不会一边宽一边窄（gap 变了这个数也要跟着算）。 */
+.bottom {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 3.3fr);
+  /* 行高必须显式 1fr：auto 时格子只到内容高，方块会贴着底栏顶部缩成一条 */
+  grid-auto-rows: 1fr;
+  gap: 1.7%;
+  min-height: 0;
+}
+
+/* 每个方块：线框 + 标题压在「上边框中段」，那一段线留空。
+ * 留空不是真的开口子，是给标题一块纯黑底把线盖掉 —— 底板本来就是纯黑，看不出来。
+ * 边框、标题、数值三者统一走 --fn：一格一套颜色，框和字同色。
+ * 没有 --fn 时（理论上不会出现）回退成面板用的白线。 */
+.chip {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.24rem 0.28rem 0.1rem;
+  border-radius: 0.55rem;
+  background: transparent;
+  border: var(--bw) solid var(--fn, var(--wire));
+}
+
+/* 标题：骑在上边框的中点上（translate 的 -50% 纵向正好压在线上）。
+ * 必须绝对定位 + 黑底，否则它会把框撑高、而且盖不住那段线。 */
+.chip .tag {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0 0.5rem;
+  background: var(--page);
+  font-style: normal;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  color: var(--fn, var(--ink));
+  white-space: nowrap;
+}
+
+.chip b {
+  /* 标题移到边框上以后，框里只剩数值，可以做大一些。
+   * 3.8rem 是格宽能容的极限：最长的 "56.0" 四个字符再大就会顶到白框。 */
+  font-size: 3.8rem;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip .v { color: var(--fn, var(--ink)); }
+
+/* 单位现在全是拉丁字符（L / L/LAP），不再需要中文字体兜底，
+ * 让它跟数字一样走 Bahnschrift 那一套，才不会出现两种字形拼在一行里。 */
+.chip .u {
+  font-style: normal;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  /* 读数换成等宽字体后，字腔比 Bahnschrift 窄，0.2rem 的间距看着像黏在一起；
+   * 抬到 0.3rem 才有正常的「数字＋单位」呼吸感（单位是 1rem，绝对值很小）。 */
+  margin-left: 0.3rem;
+  opacity: 0.85;
+}
+
+/* 未开始监测 / 没数据：数值退成灰，别拿功能色冒充有效读数 */
+.chip .v.off { color: var(--hair); }
+
+/* 数值退灰时框也跟着退 —— 字和线始终同一颜色，不然会出现灰字配亮色框 */
+.chip:has(.v.off) { border-color: var(--hair); }
+
+/* TC 正在介入：这一格瞬间转红，边框一起红 —— 只红字不红框会变成红字配彩框 */
+.chip .v.hot { color: var(--red); }
+.chip:has(.v.hot) { border-color: var(--red); }
+
+/* 介入时标题也要跟着红。TC 的标题平时是蓝，只红数值和框会变成「蓝字 + 红数字 + 红框」
+ * 三色打架（就是 ABS 那次反馈的同一种毛病）。整格一个颜色才读得出是「这一格在报警」。 */
+.chip:has(.v.hot) .tag { color: var(--red); }
+
+/* ABS 例外：介入时数值、边框、标题都不转红，恒跟标题同色（黄）。
+ * 介入是常态（每个重刹点都会亮），红字红框会让这一格长期读成"报警"，
+ * 旁边 TC 的红才是真信号；ABS 只报档位，不需要第二个红色。 */
+.chip[data-fn='abs'] .v.hot { color: var(--fn); }
+.chip[data-fn='abs']:has(.v.hot) { border-color: var(--fn); }
+.chip[data-fn='abs']:has(.v.hot) .tag { color: var(--fn); }
+
+/* ------------------------------ 油量组（三格共用一条外框） ------------------------------ */
+
+.chip-group {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 0.4rem;
+  /* 组标题骑在上边框，上边留一档避开它；下边留给刚挪到下面的那行标题，别贴着框 */
+  padding: 0.5rem 0.45rem 0.35rem;
+  border: var(--bw) solid var(--wire);
+  border-radius: 0.55rem;
+}
+
+/* 组标题：跟八格标题同款骑在上边中点，但固定纯白 —— 组是容器，不抢功能的色 */
+.chip-group > .tag {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0 0.6rem;
+  background: var(--page);
+  font-style: normal;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  line-height: 1;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* 组内三列：不画框、标题也不压边框 —— 数值在上、标题在下（column-reverse 直接翻转，
+ * DOM 顺序还是 tag → 数值，只是视觉顺序反过来，改文案不用动结构）。 */
+.chip.bare {
+  flex-direction: column-reverse;
+  gap: 0.18rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.chip.bare .tag {
+  position: static;
+  transform: none;
+  padding: 0;
+  background: none;
+  /* 英文标签字距放宽才有仪表味；中文那会儿是 0.02em，拉丁字母挤在一起会糊成一块 */
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  /* 油量组整组走白：数值是白的，标题再挂功能色就只剩一堆小色块 */
+  color: var(--ink);
+}
+
+/* 组内数值统一纯白：功能色只留在左边五格（TC 到 MAP） */
+.chip.bare .v { color: var(--ink); }
+
+/* 组内数值比左五格小一档：这三列还要在数字旁边挂 "L / L圈 / 圈"，
+ * 按 3.8rem 排，"2.85 L/圈" 和 "21.9 圈" 会顶到组框上。 */
+.chip.bare b { font-size: 3.1rem; }
+
+/* 没数据时仍然要退灰占位，别用白色冒充有效读数 */
+.chip.bare .v.off { color: var(--hair); }
+
+/* 功能色：五个电子辅助走冷色 → 粉。
+ * 饱和度和亮度都拉满 —— 纯黑底 + 纯白线框下，暗一档的色会被线框吃掉。
+ * TC 和 TC2 是同一套牵引力控制的两级（介入量 / 切断量），用同一个蓝，
+ * 色相相同才不会读成两个不相干的系统；靠标题和数值区分，不靠颜色。
+ * 蓝色取 --cool（#29b6ff），和雨刷 / 小雨同一个色源，不另造新蓝。
+ * fuel/cons/laps 三个仍在油量组里，但组内标题和数值都定死纯白，
+ * 这三条 --fn 目前不落色（留着是为了哪天把油量组拆回独立格子能直接用）。 */
+.chip[data-fn='tc']    { --fn: var(--cool); }
+.chip[data-fn='tc2']   { --fn: var(--cool); }
+.chip[data-fn='abs']   { --fn: var(--fn-abs); }
+.chip[data-fn='map']   { --fn: var(--fn-map); }
+.chip[data-fn='fuel']  { --fn: var(--fn-fuel); }
+.chip[data-fn='cons']  { --fn: var(--fn-cons); }
+.chip[data-fn='laps']  { --fn: var(--fn-laps); }
+
+/* 非 streaming：整体压暗，别把上一场的冻结值当实时值看 */
+.app[data-status='idle'] .strip,
+.app[data-status='idle'] .left,
+.app[data-status='idle'] .mid,
+.app[data-status='idle'] .right,
+.app[data-status='idle'] .bottom,
+.app[data-status='waiting'] .strip,
+.app[data-status='waiting'] .left,
+.app[data-status='waiting'] .mid,
+.app[data-status='waiting'] .right,
+.app[data-status='waiting'] .bottom,
+.app[data-status='error'] .strip,
+.app[data-status='error'] .left,
+.app[data-status='error'] .mid,
+.app[data-status='error'] .right,
+.app[data-status='error'] .bottom {
+  opacity: 0.68;
+}
+
+/* 只压暗 .strip 本身，别再压一层 .topbar：
+ * 两块信息条就住在 topbar 里，两条规则同时命中会叠成 0.68 × 0.68 = 0.46，
+ * 待机时比别的面板暗一大截。 */
+
+/* 窄比例（比如 4:3 的小预览窗 / 竖屏）：列间距改成真实 gap，底部方块换成 4 列两行 */
+@media (max-aspect-ratio: 1/1) {
+  .app {
+    grid-template-columns: 1fr 0.82fr 1fr;
+    grid-template-rows: auto minmax(0, 1fr) 9.6rem;
+    grid-template-areas:
+      "topbar topbar topbar"
+      "left   mid    right"
+      "bottom bottom bottom";
+    column-gap: 0.55rem;
+    row-gap: 0.8rem;
+    padding: 0.6rem 0.55rem 0.55rem;
+  }
+
+  /* 顶部两块竖着摞：窄窗口没有横向空间左右并排 */
+  .topbar {
+    grid-template-columns: 1fr;
+    row-gap: 0.5rem;
+  }
+
+  .topbar > .strip { grid-column: 1; }
+
+  /* 竖屏没有横屏那条固定高度：整条按内容撑，四格靠 min-height 对齐 */
+  .topbar > .strip { height: auto; }
+
+  .strip { padding: 0.24rem 0.2rem 0.26rem; }
+  .strip .cell { min-height: 2.1rem; row-gap: 0.12rem; padding: 0 0.18rem; }
+  .strip b { font-size: 0.95rem; }
+  .strip i { font-size: 0.5rem; letter-spacing: 0.1em; }
+
+  /* 竖屏根字号小：'/20' 再乘 0.62 只剩 5px 出头，会糊成一团。
+   * 这里抬一档，排名仍然明显更大（1.16em vs 0.72em），层级不丢。 */
+  #pos .u { font-size: 0.72em; }
+
+  .left { padding: 0.7rem; }
+  /* 竖屏列窄：四轮块的正方形已经由上面的 cq 单位按短边（这时是栏宽）算好，
+   * 这里只把格间距收一档，别再改行高 —— 改回 auto 会把正方形格子撑成长方形 */
+  .tyres { gap: 0.8rem; }
+
+  .bottom {
+    /* 前四格排一行，油量组整条占第二行 —— 挤在 4 列里三列会被压到底 */
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-rows: 1fr 1fr;
+    gap: 0.45rem;
+  }
+
+  .chip-group {
+    grid-column: 1 / -1;
+    /* 数值在上、标题在下：下边要留出一行标题的高度，不然 REMAIN 会贴着框 */
+    padding: 0.5rem 0.35rem 0.42rem;
+  }
+
+  .read .t { font-size: 0.65rem; }
+  /* 竖屏圆盘只有横屏一半大，1.55rem 的胎压会顶到弧线，跟着缩一档 */
+  .read .p { font-size: 1.1rem; }
+  /* 竖屏右列只有 ~200px 宽，横屏那套 1.35rem 内边距会把数字挤到一起 */
+  .right { padding: 0.35rem 0.8rem 0.3rem; }
+  .trow { padding: 0 0.15rem 0.06rem; }
+  /* 竖屏圆盘只有横屏一半大，标签按原比例会压到圆环上，往上收一点并缩小 */
+  .dial .tag { top: 1%; left: 5%; font-size: 0.5rem; letter-spacing: 0.1em; }
+  .gear-box b { font-size: 7.2rem; }
+  /* 竖屏中列窄，灰底盘的内边距和内部间距一起收一档，别把三件套挤成一坨 */
+  .gear-panel { gap: 0.8rem; padding: 0 0.5rem 0.6rem; border-radius: 0.45rem; }
+  .speed-box b { font-size: 1.3rem; }
+  /* 竖屏只收字距：字号已经由上面的 cqw 跟着列宽走了，再叠一组 rem 数值
+   * 就是两份真源，改一处忘一处。 */
+  .trow i { letter-spacing: 0.04em; }
+  .chip b { font-size: 2.05rem; }
+  /* 组内那条 3.1rem 是横屏的，竖屏格宽只有 ~100px，会盖掉上面这条，必须单独压回来 */
+  .chip.bare b { font-size: 2.3rem; }
+  .chip.bare .tag { font-size: 0.68rem; letter-spacing: 0.08em; }
+}
+
+
+/* ------------------------------ 浅色主题（跟随软件黑 / 白） ------------------------------
+ * 宿主在 acc:init / acc:ui 里推 theme: 'dark' | 'light'，theme.js 把它写到 <html data-theme>，
+ * 这里只覆盖变量、不改任何布局 —— 两套主题的行高、列宽、字号必须完全一致，
+ * 否则一切换整块面板会跳一下。
+ *
+ * 翻的是「明暗关系」，不是逐色反相：底与线互换（黑底白线 → 白底黑线），
+ * 灰底盘换成浅灰、上面的字反过来变深；迈速块从「最亮的白块」变成「最深的黑块」，
+ * 保住它在中列里的视觉重量。状态色一律压深：满饱和的 #00ff6a / #ffe600
+ * 在浅底上对比度不够，会读成一片荧光噪点。 */
+html[data-theme='light'] {
+  --page: #f2f4f7;
+}
+
+html[data-theme='light'] body {
+  --ink: #10151b;
+  --ink-soft: #1a222c;
+  --ink-label: #131a22;
+  --dim: #4e5a66;
+  --faint: #78848f;
+  --wire: #10151b;
+  --wire-soft: #10151b;
+
+  --plate: #e2e7ec;
+  --plate-ink: #56626e;
+  --plate-ink-strong: #2b353f;
+  --paper: #10151b;
+  --on-paper: #f7f9fb;
+  --on-accent: #ffffff;
+
+  --hair: rgba(11, 16, 22, 0.22);
+  --hair-strong: rgba(11, 16, 22, 0.34);
+  --hair-soft: rgba(11, 16, 22, 0.14);
+  --veil: rgba(11, 16, 22, 0.08);
+  --ring: rgba(11, 16, 22, 0.38);
+
+  --lamp-off: #9aa6b2;
+  --lamp-on: #b57f00;
+
+  --red: #d3121f;
+  --amber: #a86f00;
+  --green: #00874a;
+  --cool: #0a6fb8;
+
+  --fn-abs: #a87400;
+  --fn-map: #c4006f;
+  --fn-fuel: #a87400;
+  --fn-cons: #c85000;
+  --fn-laps: #cc1a1a;
+}
+
+/* 白旗在白底上会整格消失：给所有旗色块补一圈内描边 ——
+ * 既是白旗的轮廓，也让绿 / 黄 / 红在浅底上有明确边界。 */
+html[data-theme='light'] #flag {
+  box-shadow: inset 0 0 0 1px rgba(11, 16, 22, 0.28);
+}
+
+/* 这两处是写死的中蓝，浅底上偏亮，跟着 --cool 一起压深 */
+html[data-theme='light'] .arc-fg.t-cold { stroke: #0a6fb8; }
+html[data-theme='light'] .brake-fg.b-cold { stroke: #0a6fb8; }
+html[data-theme='light'] .read .b[data-level='cold'] { color: #0a6fb8; }
+html[data-theme='light'] #grip[data-g='5'] { color: #1f5fd0; }
+
+/* 换挡灯的辉光（box-shadow）是为黑底做的「发光」；浅底上它会变成一圈荧光晕，
+ * 圆点看着毛边、也不像实心灯。浅色主题只留实心色块。 */
+html[data-theme='light'] .shift s.on,
+html[data-theme='light'] .shift s.warn,
+html[data-theme='light'] .shift s.red {
+  box-shadow: none;
+}

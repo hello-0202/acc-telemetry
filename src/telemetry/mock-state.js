@@ -71,6 +71,7 @@ export function nextMockState() {
     timeMs: lapMs,
     progress: Math.min(0.999, lapMs / lapTotal),
     deltaMs: Math.round(wave(9000) * 780),
+    deltaBestMs: Math.round(wave(9000) * 780),
     sector: Math.min(3, 1 + Math.floor((lapMs / lapTotal) * 3)),
     inPit: false,
     inPitLane: false,

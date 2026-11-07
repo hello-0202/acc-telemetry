@@ -1,0 +1,32 @@
+/* 内置中文字体：Sarasa Gothic SC（更纱黑体 SC，SIL Open Font License 1.1）。
+ *
+ * 只做了子集：覆盖仓库源码 / 主题里实际出现的中文字符（约 1300 个），
+ * 三个字重合计 ~500 KB；完整字体单个字重就 13 MB，不适合随桌面应用分发。
+ *
+ * 字重映射：
+ *   400 Regular / 600 SemiBold / 700~800 Bold（800 由浏览器从 Bold 合成或直接用 Bold）
+ * 版权与许可证见同目录 LICENSE.txt。
+ */
+@font-face {
+  font-family: 'Sarasa Gothic SC';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./SarasaGothicSC-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Sarasa Gothic SC';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./SarasaGothicSC-SemiBold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Sarasa Gothic SC';
+  font-style: normal;
+  font-weight: 700 800;
+  font-display: swap;
+  src: url('./SarasaGothicSC-Bold.woff2') format('woff2');
+}

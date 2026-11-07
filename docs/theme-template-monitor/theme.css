@@ -19,8 +19,8 @@
   --hot: #ff4d4d;
   --cold: #4aa3ff;
   /* 字体与软件外壳保持同一套栈（src/style.css 的 --font-mono / --font-display） */
-  --mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace;
-  --sans: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Microsoft YaHei', sans-serif;
+  --mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', monospace;
+  --sans: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', sans-serif;
 }
 
 html[data-theme="light"] {

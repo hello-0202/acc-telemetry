@@ -201,10 +201,20 @@ class AccSharedMemoryProvider:
             distance_m=float(getattr(g, "distanceTraveled", 0.0)),
             session_time_left_ms=float(getattr(g, "sessionTimeLeft", 0.0)),
             laps_total=int(getattr(g, "numberOfLaps", 0)),
+            # 参赛车总数（含 AI）：名次那一格显示成「当前/总数」用
+            drivers_total=int(getattr(g, "activeCars", 0)),
             session_index=int(getattr(g, "sessionIndex", 0)),
             tyre_compound=str(getattr(g, "tyreCompound", "")).strip(),
             rain_tyres=bool(getattr(g, "rainTyres", 0)),
+            # 指示灯：转向灯是 0/1，大灯/雨刷是档位（0=关），闪远光不改变档位。
+            # 四个都在 graphics 块里
+            indicator_left=bool(getattr(g, "directionLightsLeft", 0)),
+            indicator_right=bool(getattr(g, "directionLightsRight", 0)),
+            lights_stage=int(getattr(g, "lightsStage", 0)),
+            flashing_lights=bool(getattr(g, "flashingLights", 0)),
+            wiper_level=int(getattr(g, "wiperLV", 0)),
             tc_level=int(getattr(g, "tcLevel", 0)),
+            tc_cut_level=int(getattr(g, "tcCutLevel", 0)),
             abs_level=int(getattr(g, "absLevel", 0)),
             engine_map=int(getattr(g, "engineMap", 0)),
             fuel_per_lap=float(getattr(g, "fuelXLap", 0.0)),
@@ -239,6 +249,11 @@ class AccSharedMemoryProvider:
                 getattr(p, "suspensionTravel", (0.0, 0.0, 0.0, 0.0))
             ),
             tyre_wear=_wheel_tuple(getattr(p, "tyreWear", (0.0, 0.0, 0.0, 0.0))),
+            # 刹车片/盘磨损：ACC 文档里是「working as intended」（绿色），可直接用。
+            pad_life=_wheel_tuple(getattr(p, "padLife", (0.0, 0.0, 0.0, 0.0))),
+            disc_life=_wheel_tuple(getattr(p, "discLife", (0.0, 0.0, 0.0, 0.0))),
+            # 轮胎组：换胎后编号变化，磨损估算器据此清零
+            current_tyre_set=int(getattr(g, "currentTyreSet", 0)),
         )
 
     def read_static(self) -> StaticInfo:

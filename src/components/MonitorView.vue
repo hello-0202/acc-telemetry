@@ -1,92 +1,19 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { gripText, rainText } from '../telemetry/model.js';
 import { ui } from '../telemetry/store.js';
-import { start as startTelemetry, stop as stopTelemetry, telemetry } from '../telemetry/useTelemetry.js';
-import { loadPrefs, prefs } from '../telemetry/prefs.js';
-import { immersive } from '../telemetry/immersive.js';
-import { getBaseUrl } from '../telemetry/api.js';
+import { start as startTelemetry, telemetry } from '../telemetry/useTelemetry.js';
 import MonitorShell from './MonitorShell.vue';
 
-function wsLabel() {
-  return getBaseUrl().replace(/^http/, 'ws');
-}
+// 打开应用即进入监测：不再有「开始 / 停止监测」按钮和顶部的状态数据条。
+// 下面的监督循环会在后端 / 游戏就绪后自动接入记录；连接状态由左下角状态栏的小圆点表示。
+const monitoring = ref(false);
 
-/* ----------------------------- session state ----------------------------- */
-const userStarted = ref(false);
-const liveShown = computed(() => userStarted.value);
-// 没有真实数据时由各 computed 的 0 值兜底（速度 0、转速 0、踏板 0 等）
-const frame = computed(() => telemetry.frame);
 const session = computed(() => telemetry.session);
-
-const monOn = computed(() => userStarted.value);
-const startOn = userStarted;
-const iconPlay = computed(() => !userStarted.value);
-const startLabel = computed(() => userStarted.value ? '停止监测' : '开始监测');
-
-// 数据展示区已壳化到 MonitorShell（内置面板 / 主题二选一），这里只留外壳要用的状态
 const shell = ref(null);
 
-// 服务连接指示灯（绿=已连接 / 红=断开）
-// 启动宽限期内（ui.booting）后端可能还没起来，任何「断开」都先按「连接中」显示
-const dotClass = computed(() => {
-  if (telemetry.status === 'streaming' && frame.value) return 'good';
-  if (telemetry.status === 'error' && !ui.booting) return 'hot';
-  if (telemetry.status === 'connecting' || telemetry.status === 'waiting' || ui.booting || (userStarted.value && !frame.value)) return 'warn';
-  return 'off';
-});
-const connText = computed(() => {
-  if (telemetry.status === 'streaming' && frame.value) return '已连接';
-  if (telemetry.status === 'error' && !ui.booting) return '连接断开';
-  if (telemetry.status === 'connecting' || ui.booting) return '连接中…';
-  if (telemetry.status === 'waiting') return '等待游戏';
-  if (userStarted.value) return '等待数据';
-  return '未连接';
-});
-const connTitle = computed(() => {
-  // 启动中不暴露「连接被拒」之类的瞬时错误，容易误导
-  if (ui.booting && telemetry.status !== 'streaming') return '正在连接本地后端 · ' + wsLabel();
-  if (telemetry.status === 'error') return telemetry.error || '后端连接已断开';
-  if (telemetry.status === 'streaming') return '本地后端已连接 · ' + wsLabel();
-  if (telemetry.status === 'connecting') return '正在连接 ' + wsLabel();
-  if (telemetry.status === 'waiting') return '等待进入赛道 · 进入后自动开始记录 · ' + wsLabel();
-  return '未连接 · ' + wsLabel();
-});
-const trackText = computed(() => session.value?.track?.name || '—');
-const carText = computed(() => session.value?.car?.name || '—');
-
-const datasetText = computed(() => {
-  if (!userStarted.value) return '—';
-  if (!session.value) return '默认数据';
-  return telemetry.lapsThisSession + ' 圈 · ' + telemetry.fps + ' Hz';
-});
-
-// 场景信息随帧下发；没有实时帧时保持占位符，避免误报 0 度
-const airTempText = computed(() => {
-  const v = Number(frame.value?.airTemp);
-  return frame.value && Number.isFinite(v) ? v.toFixed(1) + ' °C' : '—';
-});
-const roadTempText = computed(() => {
-  const v = Number(frame.value?.roadTemp);
-  return frame.value && Number.isFinite(v) ? v.toFixed(1) + ' °C' : '—';
-});
-const weatherText = computed(() =>
-  frame.value ? rainText(frame.value.rainIntensity) : '—'
-);
-const gripTextValue = computed(() =>
-  frame.value ? gripText(frame.value.trackGrip) : '—'
-);
-
-/* ----------------------------- actions / ui ----------------------------- */
-// 监督循环间隔：游戏/后端稍后才就绪时自动接入，不必用户再点一次
+// 监督循环间隔：游戏/后端稍后才就绪时自动接入，不必用户再操作
 const SUPERVISE_MS = 3000;
 let retryTimer = null;
-
-// sidecar 冷启动期间读不到配置，prefs 此时还是默认值（autoStart=true），
-// 不能拿默认值判断是否自动开始，否则用户关掉开关也会被忽略。
-let autoStartDecided = false;
-let autoStartBusy = false;
-let autoStartTimer = null;
 
 function stopRetry() {
   if (retryTimer !== null) {
@@ -96,12 +23,12 @@ function stopRetry() {
 }
 
 /**
- * 只要还处于「监测」状态（手动点开 或 启动时自动开始），就在条件满足时自动接入记录。
- * 用于覆盖：应用启动时游戏还没开、退出赛道回菜单、游戏重启后重新进赛道。
+ * 只要处于监测状态，就在条件满足时自动接入记录。
+ * 覆盖：启动时游戏还没开、退出赛道回菜单、游戏重启后重新进赛道。
  * 游戏没开 / 后端离线时不发 start——否则每 3 秒刷一次 GAME_NOT_FOUND。
  */
 function tickSupervisor() {
-  if (!userStarted.value) return;
+  if (!monitoring.value) return;
   if (telemetry.status === 'streaming' || telemetry.status === 'connecting') return;
   // 后端还没确认在线（启动中 / 未知）时先别发：连接必然失败，
   // 还会在界面上留下一条「无法连接本地后端」。等 /health 探到在线再接。
@@ -115,101 +42,35 @@ function startRetry() {
   retryTimer = setInterval(tickSupervisor, SUPERVISE_MS);
 }
 
-function setMon(on, { auto = false } = {}) {
-  // 用户亲手点过开关后，就不再让「启动时自动开始」覆盖他的选择
-  if (!auto) {
-    autoStartDecided = true;
-    stopAutoStartProbe();
-  }
-  userStarted.value = on;
-  // 只有「用户亲手点开」才需要在游戏没开时弹提示；自动开始属于后台待命
-  ui.manualStart = on && !auto;
-  if (on) {
-    // 无真实数据时展示 0 值默认面板，先清掉上一次会话的残值（胎温、地图走线由壳转给内置面板）
-    shell.value?.reset?.();
-    // 自动开始时后端多半还没起来（sidecar 冷启动 6 秒左右）：
-    // 交给监督循环在探测到在线后再接入，避免开局就留下连接失败的错误状态。
-    // 手动点击则立即尝试，给用户即时反馈。
-    if (!auto || ui.backendOnline === true) startTelemetry();
-    startRetry();
-  } else {
-    stopTelemetry();
-    stopRetry();
-  }
+function beginMonitoring() {
+  if (monitoring.value) return;
+  monitoring.value = true;
+  ui.manualStart = false;
+  // 先清掉上一次会话的残值（胎温、地图走线等）
+  shell.value?.reset?.();
+  // 自动开始通常早于 sidecar 冷启动完成：交给监督循环在探测到在线后再接入，
+  // 避免开局就留下连接失败的错误状态；游戏没开时也不发 start。
+  if (ui.backendOnline === true && ui.gameRunning !== false) startTelemetry();
+  startRetry();
 }
 
-async function decideAutoStart() {
-  if (autoStartDecided || autoStartBusy) return;
-  autoStartBusy = true;
-  try {
-    const values = await loadPrefs();
-    // 等配置期间用户可能已经手动操作过，或者后端仍未就绪
-    if (autoStartDecided || !values) return;
-    autoStartDecided = true;
-    // 自动开始：即使游戏还没进赛道也先置位，由监督循环在就绪后自动接入
-    if (prefs.autoStart && !userStarted.value) setMon(true, { auto: true });
-  } finally {
-    autoStartBusy = false;
-  }
-}
-
-function stopAutoStartProbe() {
-  if (autoStartTimer !== null) {
-    clearInterval(autoStartTimer);
-    autoStartTimer = null;
-  }
-}
-
-onMounted(() => {
-  // 配置读回后再决定是否自动开始；sidecar 冷启动期间每秒重试
-  decideAutoStart();
-  autoStartTimer = setInterval(() => {
-    if (autoStartDecided) stopAutoStartProbe();
-    else decideAutoStart();
-  }, 1000);
-});
-
-onBeforeUnmount(() => {
-  stopRetry();
-  stopAutoStartProbe();
-});
+onMounted(beginMonitoring);
+onBeforeUnmount(stopRetry);
 
 // 后端刚探到在线的一瞬间就接入，不必等监督循环下一个 3 秒节拍
 watch(() => ui.backendOnline, (online) => {
   if (online === true) tickSupervisor();
 });
 
+// HistoryView 的主面板依赖这几个总线字段（当前是否监测 / 正在记录哪一场）
 watch(
-  [() => telemetry.status, () => telemetry.fps, session, userStarted],
+  [() => telemetry.status, session, monitoring],
   () => {
-    ui.monOn = userStarted.value;
+    ui.monOn = monitoring.value;
     if (telemetry.status === 'streaming' && session.value) {
-      ui.statLeft = '已连接 · ' + telemetry.fps + ' Hz · ' + session.value.track.name;
       ui.liveTrackId = session.value.track.id;
       ui.liveSessionId = session.value.sessionId ?? null;
-    } else if (!userStarted.value) {
-      ui.statLeft = '未连接 · ' + wsLabel();
-      ui.liveTrackId = null;
-      ui.liveSessionId = null;
-    } else if (ui.booting) {
-      // 启动宽限期：后端可能还没起来，别把瞬时失败当故障写进状态栏
-      ui.statLeft = '连接中 · ' + wsLabel() + ' · 默认数据';
-      ui.liveTrackId = null;
-      ui.liveSessionId = null;
-    } else if (telemetry.status === 'error') {
-      ui.statLeft = '未连接 · ' + (telemetry.error || '后端错误') + ' · 默认数据';
-      ui.liveTrackId = null;
-      ui.liveSessionId = null;
-    } else if (telemetry.status === 'waiting') {
-      ui.statLeft = '等待进入赛道 · ' + wsLabel() + ' · 默认数据';
-      ui.liveTrackId = null;
-      ui.liveSessionId = null;
-    } else if (telemetry.status === 'connecting') {
-      ui.statLeft = '连接中 · ' + wsLabel() + ' · 默认数据';
-      ui.liveTrackId = null;
-      ui.liveSessionId = null;
     } else {
-      ui.statLeft = '默认数据 · 等待游戏数据';
       ui.liveTrackId = null;
       ui.liveSessionId = null;
     }
@@ -220,48 +81,8 @@ watch(
 
 <template>
   <section class="view" id="view-monitor">
-    <div class="mon-top">
-      <div class="panel mon-status">
-        <div class="mon-col">
-          <div class="mon-line">
-            <span class="sdot" :class="dotClass" :title="connTitle"></span>
-            <span class="mon-title">{{ connText }}</span>
-          </div>
-          <div class="mon-line"><span class="k">赛道</span><span class="v" :title="trackText">{{ trackText }}</span></div>
-          <div class="mon-line"><span class="k">车辆</span><span class="v" :title="carText">{{ carText }}</span></div>
-          <div class="mon-line"><span class="k">数据集</span><span class="v">{{ datasetText }}</span></div>
-        </div>
-        <div class="mon-col">
-          <div class="mon-line"><span class="k">环境温度</span><span class="v">{{ airTempText }}</span></div>
-          <div class="mon-line"><span class="k">路面温度</span><span class="v">{{ roadTempText }}</span></div>
-          <div class="mon-line"><span class="k">天气</span><span class="v">{{ weatherText }}</span></div>
-          <div class="mon-line"><span class="k">路面</span><span class="v">{{ gripTextValue }}</span></div>
-        </div>
-      </div>
-      <div class="mon-action">
-        <button class="start-btn" :class="{ on: startOn }" @click="setMon(!monOn)" aria-label="开始监测">
-          <svg v-if="iconPlay" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5L8 5.5z" /></svg>
-          <svg v-else viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="1" /></svg>
-          <span class="sb-col"><span class="sb-t">{{ startLabel }}</span></span>
-        </button>
-      </div>
-    </div>
-
-    <!-- 沉浸态把顶部操作区藏了，没在监测时给个说明，避免一片空白 -->
-    <div v-if="immersive && !liveShown" class="imm-empty">
-      <span>未开始监测</span>
-      <span class="hint">按 Esc 退出全屏 → 点「开始监测」→ 再进全屏</span>
-    </div>
-
-    <div class="live-wrap" v-show="liveShown">
+    <div class="live-wrap">
       <MonitorShell ref="shell" />
-    </div>
-    <!-- 沉浸态由上面的 .imm-empty 统一说明，这里不再重复 -->
-    <div class="live-off" v-show="!liveShown && !immersive">
-      {{ ui.booting && telemetry.status !== 'streaming' ? '正在连接本地后端…'
-        : telemetry.status === 'error' ? telemetry.error
-        : telemetry.status === 'waiting' ? '已开启自动监测 · 进入赛道后自动开始记录'
-        : '未监测 · 点击右侧「开始监测」后显示实时数据' }}
     </div>
   </section>
 </template>

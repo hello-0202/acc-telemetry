@@ -28,6 +28,7 @@ from acc_telemetry.repositories.session_repo import SessionRepository
 from acc_telemetry.repositories.track_repo import TrackRepository
 from acc_telemetry.services.geometry_service import GeometryService
 from acc_telemetry.services.history_service import HistoryService
+from acc_telemetry.services.tyre_wear import TyreWearEstimator
 from acc_telemetry.trackmaps.resolver import TrackResolver
 
 from .. import bus
@@ -48,6 +49,20 @@ def create_app(
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Windows + Proactor 事件循环的已知噪声：WebView 窗口关闭 / 刷新时，客户端
+        # 强断连接（WinError 10054），asyncio 的 _call_connection_lost 会抛
+        # ConnectionResetError，默认处理器把整段 traceback 打到 stderr。
+        # 只静默这一类（连同 10053 ConnectionAbortedError），其它异常照旧走默认处理。
+        loop = asyncio.get_running_loop()
+        _default_handler = loop.default_exception_handler
+
+        def _quiet(loop, context):  # noqa: ANN001 - asyncio 约定的回调签名
+            if isinstance(context.get("exception"), (ConnectionResetError, ConnectionAbortedError)):
+                return
+            _default_handler(context)
+
+        loop.set_exception_handler(_quiet)
+
         path = Path(db_path) if db_path is not None else DB_PATH
         if db_path is not None:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -71,8 +86,12 @@ def create_app(
         geometry = GeometryService(tracks)
         provider = provider_factory()
         recorder = Recorder(provider, history, resolver, tracks, geometry)
+        # 轮胎磨损估算器：采集循环每帧喂一份 Snapshot，结果进 bus.runtime。
+        # 只做纯计算，和记录链路解耦；主面板 / 悬浮窗共用同一份结果。
+        tyre_wear = TyreWearEstimator()
 
         app.state.db = db
+        app.state.tyre_wear_estimator = tyre_wear
         app.state.history = history
         app.state.config_repo = config_repo
         app.state.geometry = geometry
@@ -100,7 +119,13 @@ def create_app(
             broadcast_worker(stop_event, hz=broadcast_hz), name="broadcast"
         )
         collect_task = asyncio.create_task(
-            collect_loop(provider, stop_event, hz=collector_hz), name="collector"
+            collect_loop(
+                provider,
+                stop_event,
+                hz=collector_hz,
+                estimator=tyre_wear,
+            ),
+            name="collector",
         )
         app.state.stop_event = stop_event
         app.state.tasks = [recorder_task, broadcast_task, collect_task]

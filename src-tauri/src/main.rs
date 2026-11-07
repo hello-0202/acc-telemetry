@@ -612,10 +612,19 @@ fn open_themes_dir(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|e| format!("打开目录失败: {e}"))
 }
 
-/// 删除用户主题：走系统回收站（可恢复），不做永久删除。
+/// 删除用户主题：优先走系统回收站（可恢复），不做永久删除。
 /// 只允许删 `themes/<合法 id>` 这一层，canonicalize 之后再校验一次前缀。
+///
+/// 为什么要 async + spawn_blocking：`trash` 在 Windows 上走 `IFileOperation`（Shell COM），
+/// 在 Tauri 的同步命令线程（阻塞事件循环的 STA）里实测会返回
+/// `Unknown { description: "Some operations were aborted" }` —— 回收站明明可用、
+/// 文件也没有被占用，换到独立线程调用就正常。删完再由前端刷新列表。
+///
+/// 回收站仍失败时兜底：同盘 rename 到 `themes/.trash/<id>-<时间戳>`。
+/// 同一卷上的重命名是原子的，不会失败在权限/Shell 上；数据也还在，能手动捡回来。
+/// `.trash` 因为含 `.` 不满足 `valid_theme_id`，不会被 `list_user_themes` 当成主题列出来。
 #[tauri::command]
-fn delete_user_theme(id: String) -> Result<(), String> {
+async fn delete_user_theme(id: String) -> Result<(), String> {
     if !valid_theme_id(&id) {
         return Err("主题 id 不合法".into());
     }
@@ -628,7 +637,32 @@ fn delete_user_theme(id: String) -> Result<(), String> {
     if dir == root || !dir.starts_with(&root) {
         return Err("拒绝删除：路径越界".into());
     }
-    trash::delete(&dir).map_err(|e| format!("移入回收站失败: {e}"))
+
+    let target = dir.clone();
+    let trashed = tauri::async_runtime::spawn_blocking(move || trash::delete(&target))
+        .await
+        .map_err(|e| format!("删除线程异常: {e}"))?;
+    if trashed.is_ok() {
+        return Ok(());
+    }
+
+    eprintln!(
+        "[theme] 回收站删除失败，改用应用回收目录: {:?}",
+        trashed.as_ref().err()
+    );
+    let trash_root = root.join(".trash");
+    std::fs::create_dir_all(&trash_root).map_err(|e| format!("创建回收目录失败: {e}"))?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let dest = trash_root.join(format!("{id}-{stamp}"));
+    std::fs::rename(&dir, &dest).map_err(|e| {
+        format!(
+            "移入回收站失败: {} / 移到应用回收目录也失败: {e}",
+            trashed.err().map(|e| e.to_string()).unwrap_or_default()
+        )
+    })
 }
 
 // ───────────────────────── 主题模板导出 ─────────────────────────

@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GT Cockpit</title>
+  <link rel="stylesheet" href="theme.css" />
+</head>
+<body>
+  <div class="app" id="app" data-status="idle">
+
+    <!-- ========== 顶部：横占一行，只有左右两块信息条，中间留空 ========== -->
+    <div class="topbar">
+      <!-- 左上角：天气 / 气温 / 路温 / 抓地 —— 和右上角同一套写法（一个整框，标题在数值下面） -->
+      <section class="strip tl">
+        <!-- 天气：图标 + 单词。图标由 theme.js 按雨量档位写进 #wxIco，
+             颜色跟着 #wx[data-w] 走（和单词同一套语义色）。 -->
+        <div class="cell">
+          <b id="wx" data-empty><span class="wx-ico" id="wxIco" aria-hidden="true"></span><span id="wxText">—</span></b>
+          <i>WX</i>
+        </div>
+        <!-- 温度只写数字，度数符号由 theme.css 的 .temp::after 画成几何正圆挂在数字右上，
+             不占布局宽度 —— 这样严格压中轴的是数字本身，那个小圆圈不参与对齐。 -->
+        <div class="cell">
+          <b id="airTemp" class="mono temp" data-empty>—</b>
+          <i>AIR</i>
+        </div>
+        <div class="cell">
+          <b id="roadTemp" class="mono temp" data-empty>—</b>
+          <i>ROAD</i>
+        </div>
+        <div class="cell">
+          <b id="grip" data-empty>—</b>
+          <i>GRIP</i>
+        </div>
+      </section>
+      <!-- 右上角：旗语 / 赛道 / 位置 / 圈数（原来挤在中列迈速上方，中列太窄）
+           顺序按重要性从外到内：LAP 是最常看的，放最右（离视线中心最近的一侧）。
+           第一格只有一个旗色块（数据来自 flags 段的五个 0/1 旗标，红 > 格子 > 黄 > 白 > 绿），
+           连标题都不写 —— 旗是余光里看的东西，颜色比单词快，再挂一行 FLAG 只是噪音。 -->
+      <section class="strip">
+        <div class="cell cell-flag">
+          <span id="flag"></span>
+        </div>
+        <div class="cell">
+          <b id="track" data-empty>—</b>
+          <i>TRACK</i>
+        </div>
+        <!-- 名次拆三段：当前排名是主读数放大，参赛车总数（或 P 前缀）缩小做参照。
+             三个 span 常驻，theme.js 逐帧只改 textContent，不重建节点。 -->
+        <div class="cell">
+          <b id="pos" class="mono" data-empty><span id="posPre" class="u"></span><span id="posRank" class="rank">—</span><span id="posTotal" class="u"></span></b>
+          <i>POS</i>
+        </div>
+        <div class="cell">
+          <b id="lapNum" class="mono" data-empty>—</b>
+          <i>LAP</i>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========== 左：2×2 四轮 ========== -->
+    <section class="zone left">
+      <div class="tyres">
+        <div class="tyre" data-corner="FL">
+          <div class="dial">
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <circle class="arc-bg" cx="50" cy="50" r="37" pathLength="100"></circle>
+              <circle class="arc-fg t-na" data-role="arc" cx="50" cy="50" r="37" pathLength="100"></circle>
+              <circle class="brake-bg" cx="50" cy="50" r="27" pathLength="100"></circle>
+              <circle class="brake-fg b-na" data-role="brake" cx="50" cy="50" r="27" pathLength="100"></circle>
+            </svg>
+            <span class="tag">FL</span>
+            <div class="read">
+              <span class="p" data-role="p">–</span>
+              <b class="t" data-role="t">–</b>
+              <span class="b" data-role="b">B –</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tyre" data-corner="FR">
+          <div class="dial">
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <circle class="arc-bg" cx="50" cy="50" r="37" pathLength="100"></circle>
+              <circle class="arc-fg t-na" data-role="arc" cx="50" cy="50" r="37" pathLength="100"></circle>
+              <circle class="brake-bg" cx="50" cy="50" r="27" pathLength="100"></circle>
+              <circle class="brake-fg b-na" data-role="brake" cx="50" cy="50" r="27" pathLength="100"></circle>
+            </svg>
+            <span class="tag">FR</span>
+            <div class="read">
+              <span class="p" data-role="p">–</span>
+              <b class="t" data-role="t">–</b>
+              <span class="b" data-role="b">B –</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tyre" data-corner="RL">
+          <div class="dial">
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <circle class="arc-bg" cx="50" cy="50" r="37" pathLength="100"></circle>
+              <circle class="arc-fg t-na" data-role="arc" cx="50" cy="50" r="37" pathLength="100"></circle>
+              <circle class="brake-bg" cx="50" cy="50" r="27" pathLength="100"></circle>
+              <circle class="brake-fg b-na" data-role="brake" cx="50" cy="50" r="27" pathLength="100"></circle>
+            </svg>
+            <span class="tag">RL</span>
+            <div class="read">
+              <span class="p" data-role="p">–</span>
+              <b class="t" data-role="t">–</b>
+              <span class="b" data-role="b">B –</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tyre" data-corner="RR">
+          <div class="dial">
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <circle class="arc-bg" cx="50" cy="50" r="37" pathLength="100"></circle>
+              <circle class="arc-fg t-na" data-role="arc" cx="50" cy="50" r="37" pathLength="100"></circle>
+              <circle class="brake-bg" cx="50" cy="50" r="27" pathLength="100"></circle>
+              <circle class="brake-fg b-na" data-role="brake" cx="50" cy="50" r="27" pathLength="100"></circle>
+            </svg>
+            <span class="tag">RR</span>
+            <div class="read">
+              <span class="p" data-role="p">–</span>
+              <b class="t" data-role="t">–</b>
+              <span class="b" data-role="b">B –</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 中：差值 / 灰底盘（换挡灯 + 档位 + 转速） / 迈速 ========== -->
+    <section class="zone mid">
+      <div class="core">
+        <!-- 差值条：无数据显示灰底，比 PB 快转绿底、慢转红底（状态类由 theme.js 挂） -->
+        <div class="delta-pill" id="deltaPill">
+          <span class="delta" id="delta">--.---</span>
+        </div>
+
+        <!-- 灰底盘：换挡灯 / 档位 / 转速 共用一块底板，等于中列的主视觉 -->
+        <div class="gear-panel">
+          <!-- 十颗圆点：既是转速进度，也是换挡灯 -->
+          <div class="shift" id="shift">
+            <s></s><s></s><s></s><s></s><s></s>
+            <s></s><s></s><s></s><s></s><s></s>
+          </div>
+
+          <div class="gear-box">
+            <b id="gear">N</b>
+          </div>
+
+          <div class="rpm-meta">
+            <b id="rpmText" class="mono">—</b>
+          </div>
+        </div>
+
+        <!-- 迈速自己一块：和上面底盘同宽的灰底，独立成一个组件 -->
+        <!-- 赛道 / 赛道长度 / 位置 / 圈数已移到顶部右上角 -->
+        <div class="speed-box">
+          <b id="speed" class="mono">—</b>
+        </div>
+
+        <!-- 指示灯：左转向 / 大灯 / 雨刷 / 右转向。
+             撤掉灰底方块，只留图标本身 —— 三件套已经够重，下面再摆四个色块会抢戏。
+             灭 = 暗灰，亮 = 功能色（转向闪黄、大灯黄、雨刷蓝），语义和 car 段一致。
+             图标来自 icon_rvbetezrnzf.zip 的 iconfont SVG（原 1024 画板）；
+             内联而不是 <img>：img 里的 fill 认不到 CSS 的 color，亮灯时图标不会变色。
+             原文件写死 fill="#000000"，这里统一删掉、改由 currentColor 继承。 -->
+        <div class="lamp-row">
+          <div class="lamp-box" id="lpTurnL" data-on="0" title="Turn left">
+            <svg viewBox="83.5 224.2 858 538.1" fill="currentColor" aria-hidden="true">
+              <path d="M209.368 493l218.925 164.206V608.42c0-14.912 12.088-27 27-27h377.182V404.578H455.299c-14.911 0-27-12.088-27-27l-0.003-23.523v-25.262L209.367 493.001z m269.45 138.946v75.789c0 13.952-11.31 25.263-25.262 25.263a25.263 25.263 0 0 1-15.159-5.053L152.106 513.21c-11.162-8.372-13.423-24.207-5.051-35.369a25.263 25.263 0 0 1 5.051-5.051l286.291-214.734c11.162-8.372 26.997-6.11 35.369 5.051a25.263 25.263 0 0 1 5.053 15.159l0.004 75.785h353.652c27.904 0 50.526 22.622 50.526 50.526V581.42c0 27.905-22.622 50.526-50.526 50.526H478.819z"></path>
+            </svg>
+          </div>
+
+          <div class="lamp-box" id="lpLights" data-on="0" title="Headlights">
+            <svg viewBox="-61.4 -48.9 1146.8 1121.8" fill="currentColor" stroke="currentColor"
+                 stroke-width="33" stroke-linejoin="round" aria-hidden="true">
+              <path d="M651.28219 11.18c-25.57 0-51.21 3.22-76.24 9.57-9.21 2.33-18.28 5.12-27.26 8.32-22.71 8.07-40.03 27.93-45.19 51.83-3.14 14.57-6.12 29.42-8.89 44.5-19.82 107.57-29.87 222.53-29.87 341.65 0 119.08 10.04 234.03 29.86 341.66 2.79 15.08 5.76 29.89 8.89 44.42 5.14 23.89 22.44 43.78 45.18 51.89 8.94 3.19 18.01 5.94 27.31 8.33 25.01 6.33 50.65 9.56 76.22 9.56 205.51 0 372.72-204.5 372.72-455.86C1024.00219 215.68 856.79219 11.18 651.28219 11.18z m0 826.39c-18.5 0-37.08-2.33-55.17-6.92-3.96-1.03-7.89-2.14-11.79-3.36-2.35-11.19-4.6-22.56-6.72-34.06-18.87-102.53-28.44-212.28-28.44-326.19 0-113.96 9.57-223.69 28.47-326.21 2.11-11.53 4.35-22.87 6.69-34.04 3.88-1.24 7.78-2.35 11.71-3.35 18.17-4.61 36.75-6.94 55.25-6.94 158.47 0 287.39 166.22 287.39 370.54 0 204.31-128.92 370.53-287.39 370.53z m-288.93-2.63c9.18 21.69-0.97 46.72-22.67 55.92L59.30219 1009.46a42.835 42.835 0 0 1-16.61 3.36c-16.62 0-32.43-9.78-39.31-26.06-9.18-21.69 0.97-46.72 22.67-55.92l280.39-118.61c21.72-9.1 46.73 0.98 55.91 22.71z m0-198.7c9.18 21.69-0.97 46.72-22.67 55.92L59.30219 810.77a42.835 42.835 0 0 1-16.61 3.36c-16.62 0-32.43-9.78-39.31-26.06-9.18-21.69 0.97-46.72 22.67-55.92l280.39-118.61c21.72-9.13 46.73 1.01 55.91 22.7z m0-198.7c9.18 21.71-0.97 46.74-22.67 55.92L59.30219 612.08a42.835 42.835 0 0 1-16.61 3.36c-16.62 0-32.43-9.78-39.31-26.06-9.18-21.69 0.97-46.72 22.67-55.9l280.39-118.61c21.72-9.24 46.73 0.97 55.91 22.67z m0-198.7c9.18 21.71-0.97 46.74-22.67 55.92L59.30219 413.38c-5.43 2.29-11.07 3.39-16.61 3.39-16.62 0-32.42-9.78-39.31-26.06-9.18-21.71 0.97-46.74 22.67-55.92l280.39-118.62c21.72-9.15 46.73 0.96 55.91 22.67z m0-198.69c9.18 21.71-0.97 46.74-22.67 55.92L59.30219 214.69c-5.43 2.29-11.07 3.39-16.61 3.39-16.62 0-32.42-9.78-39.31-26.06-9.18-21.71 0.97-46.74 22.67-55.92L306.44219 17.48c21.72-9.18 46.73 0.97 55.91 22.67z"></path>
+            </svg>
+          </div>
+
+          <div class="lamp-box" id="lpWiper" data-on="0" title="Wiper">
+            <svg viewBox="-61.4 128.4 1146.8 786.9" fill="currentColor" stroke="currentColor"
+                 stroke-width="31" stroke-linejoin="round" aria-hidden="true">
+              <path d="M1004.373333 329.045333a854.698667 854.698667 0 0 0-414.72-155.008C321.493333 149.76 117.845333 260.522667 20.224 328.704L0 343.381333 295.765333 812.8l22.656-20.266667a303.701333 303.701333 0 0 1 401.536 0.042667l23.722667 20.608 280.362667-469.418667-19.669334-14.72z m-50.261333 29.525334l-224.085333 375.552a355.328 355.328 0 0 0-422.314667 0.128l-236.757333-376.32a813.141333 813.141333 0 0 1 513.92-130.986667 799.829333 799.829333 0 0 1 369.237333 131.626667z"></path>
+              <path d="M484.522667 767.232L282.624 366.805333l-45.269333 22.784 202.026666 400.896a53.034667 53.034667 0 0 0 43.776 82.602667 52.906667 52.906667 0 1 0 1.322667-105.856z"></path>
+            </svg>
+          </div>
+
+          <div class="lamp-box" id="lpTurnR" data-on="0" title="Turn right">
+            <svg viewBox="83.5 224.2 858 538.1" fill="currentColor" aria-hidden="true">
+              <path d="M815.633 493L596.708 657.207V608.42c0-14.912-12.088-27-27-27H192.526V404.578h377.176c14.91 0 26.999-12.088 27-27l0.002-23.523 0.002-25.262 218.927 164.208zM546.182 631.947v75.789c0 13.952 11.31 25.263 25.263 25.263a25.263 25.263 0 0 0 15.159-5.053l286.29-214.734c11.162-8.372 13.424-24.207 5.052-35.369a25.263 25.263 0 0 0-5.051-5.051L586.604 258.057c-11.162-8.372-26.997-6.11-35.369 5.051a25.263 25.263 0 0 0-5.053 15.159l-0.004 75.785H192.526c-27.905 0-50.526 22.622-50.526 50.526V581.42c0 27.905 22.621 50.526 50.526 50.526h353.656z"></path>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 右：时间四行（CUR / EST / BEST / LAST） ==========
+         CUR 提到第一行：本圈是这一列唯一每帧都在跳的读数，抬头第一眼就得看见它，
+         也和下面三行「已经定下来的成绩」分开成主次两层。
+         EST 紧跟在 CUR 下面：这两行是唯一一对「实时联动」的读数 ——
+         CUR 是这圈已经跑掉的时间，EST 是按当前配速推算的收车成绩，
+         中间不隔着 BEST/LAST（上一圈和历史上限）才读得成一句话。
+         前三行靠底部分隔线切开，最后一行（LAST）不画线 —— 它是这一列的收口。 -->
+    <section class="zone right">
+      <div class="trow hero">
+        <i>CUR</i>
+        <b id="lapCur" class="mono">--:--.---</b>
+      </div>
+
+      <div class="trow">
+        <i>EST</i>
+        <b id="lapEst" class="mono">--:--.---</b>
+      </div>
+
+      <div class="trow">
+        <i>BEST</i>
+        <b id="lapBest" class="mono">--:--.---</b>
+      </div>
+
+      <div class="trow">
+        <i>LAST</i>
+        <b id="lapLast" class="mono">--:--.---</b>
+      </div>
+    </section>
+
+    <!-- ========== 下：数据方块 ==========
+         标题压在上边框中段（那段线留空），按功能各自一个颜色 -->
+    <section class="bottom" id="chips">
+      <div class="chip" data-fn="tc">
+        <i class="tag">TC</i>
+        <b><span class="v" id="vTc">—</span></b>
+      </div>
+      <div class="chip" data-fn="tc2">
+        <i class="tag">TC2</i>
+        <b><span class="v" id="vTc2">—</span></b>
+      </div>
+      <div class="chip" data-fn="abs">
+        <i class="tag">ABS</i>
+        <b><span class="v" id="vAbs">—</span></b>
+      </div>
+      <div class="chip" data-fn="map">
+        <i class="tag">MAP</i>
+        <b><span class="v" id="vMap">—</span></b>
+      </div>
+
+      <!-- 油量三项：外面套一条框，组标题「油量」压在上边中点。
+           组内三列不再各画框 —— 两层白线隔着 1px 会糊成一条，两个标题也会撞在一起。 -->
+      <div class="chip-group">
+        <i class="tag">FUEL</i>
+
+        <div class="chip bare" data-fn="fuel">
+          <i class="tag">REMAIN</i>
+          <b><span class="v" id="vFuel">—</span><i class="u">L</i></b>
+        </div>
+
+        <div class="chip bare" data-fn="cons">
+          <i class="tag">AVG</i>
+          <b><span class="v" id="vCons">—</span><i class="u">L/LAP</i></b>
+        </div>
+
+        <div class="chip bare" data-fn="laps">
+          <i class="tag">LAPS</i>
+          <b><span class="v" id="vLaps">—</span></b>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="theme.js"></script>
+</body>
+</html>

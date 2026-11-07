@@ -1,0 +1,10 @@
+{
+  "id": "tyre-wear",
+  "name": "tyre-wear",
+  "version": "0.1.0",
+  "author": "acc-telemetry",
+  "desc": "四轮轮胎磨损估算：百分比 / 每圈损耗 / 剩余圈数（透明背景，2×2 紧凑布局）",
+  "design": { "w": 304, "h": 196 },
+  "fit": "contain",
+  "modes": ["overlay"]
+}

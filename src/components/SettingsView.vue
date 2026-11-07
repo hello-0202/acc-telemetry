@@ -35,7 +35,6 @@ const SW = [100, 50, 20];
 const PUSH = [60, 50, 30];
 const SAMPLE_LABEL = { 100: '100 Hz 高精', 50: '50 Hz 标准', 20: '20 Hz 省电' };
 
-const swAuto = ref(true);
 const clearText = ref('清空历史数据');
 const confirmOpen = ref(false);
 const clearing = ref(false);
@@ -91,7 +90,6 @@ async function refresh() {
     health.value = h;
     config.value = c;
     applyPrefs(c);
-    swAuto.value = !!c.autoStart;
     sessionCount.value = sessions.length;
     lapCount.value = sessions.reduce((sum, s) => sum + (s.laps || 0), 0);
     serverText.value = getBaseUrl().replace(/^https?:\/\//, '');
@@ -109,7 +107,6 @@ async function patch(values) {
     const c = await saveConfig(values);
     config.value = c;
     applyPrefs(c);
-    swAuto.value = !!c.autoStart;
     errorText.value = '';
   } catch (e) {
     errorText.value = '保存失败：' + e.message;
@@ -135,10 +132,6 @@ function toggleResident() {
 /* 悬浮窗槽位开关：localStorage + Rust 窗口一起更新（Rust 负责建 / 销毁窗口） */
 function toggleOverlaySlot(n) {
   setOverlaySlotEnabled(n, !isOverlaySlotEnabled(n));
-}
-
-function toggleAuto() {
-  patch({ autoStart: !swAuto.value });
 }
 
 /* 自动更新走弹窗里的下载/安装流程，这里只保留一个手动下载的兜底入口 */
@@ -360,9 +353,6 @@ watch(() => telemetry.historyRevision, refresh);
       <div class="set-row"><span>后端状态</span><span class="v">{{ statusText }}</span></div>
       <div class="set-row"><span>当前推流</span><span class="v">{{ pushText }}</span></div>
       <div class="set-row"><span>服务地址</span><span class="v">{{ serverText }}</span></div>
-      <div class="set-row"><span title="打开应用后自动开始监测；监测中重新进入赛道会自动接入记录">打开应用后自动开始监测</span>
-        <button class="switch" :class="{ on: swAuto }" @click="toggleAuto" aria-label="打开应用后自动开始监测"></button>
-      </div>
     </div>
 
     <div class="set-group">

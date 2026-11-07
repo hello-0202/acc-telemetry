@@ -335,7 +335,7 @@ function lapLineMarkup(points, cls) {
 /**
  * 地图卡片底部的海拔剖面：横轴是整圈里程，纵轴是海拔。
  * 数据来自 fastlane 的 y（等距重采样后每个 spacing 米一个点）。
- * 画法参考 资料/MAP_RENDERING_NOTES.md 第 9 节：单色细线 + 极浅填充，
+ * 画法：单色细线 + 极浅填充，
  * 起终点画一条竖线，不抢地图的视觉重心。
  */
 export function drawElevation(svg, M, opts = {}) {
@@ -540,13 +540,13 @@ function apexOverlayMarkup(M, opts = {}) {
     ? M.toScreen
     : (x, z) => ({ x, y: z });
   const ink = mapInk();
-  // 弯心标注文字与选中高亮统一为深绿 #3F7D0F，深浅主题一致
-  // （原本深色主题用亮柠 --apex、浅色主题用深绿 --apex，两主题颜色不同）。
-  const APEX_FILL = '#3F7D0F';
-  // 弯心标记的描边光晕与圆点底色固定为白色，不再随主题取 --panel：
-  // 深浅主题的路面都是白色，统一成白色描边后两种主题下都清晰且一致
-  // （原本深色主题用深色 --panel 当描边，和浅色主题的白色描边不一致）。
-  const bg = '#FFFFFF';
+  // 弯心标注文字随主题取 --apex：浅色主题深绿 #3F7D0F（压在白路上最跳），
+  // 深色主题亮柠 #C8F53E（压在新的暗色路面上才看得见）。
+  // 描边与圆点底色取路面色 --map-road-fill，而不是写死白色：
+  // 浅色主题路面是白的，描边就等于白色（与原先写死的白一致，观感不变）；
+  // 深色主题路面是暗灰蓝，描边随之变暗，标注不会在暗地图上炸出一圈白边。
+  const APEX_FILL = c('--apex') || '#3F7D0F';
+  const bg = c('--map-road-fill') || '#FFFFFF';
 
   const items = [];
   for (const a of apexes) {
@@ -568,7 +568,8 @@ function apexOverlayMarkup(M, opts = {}) {
     const sel = it.selected;
     const fill = APEX_FILL;
     const label = it.name;
-    // 文字用白色描边（paint-order=stroke），压在路面 / 热力上都看得清，深浅主题一致
+    // 文字描边取路面色（paint-order=stroke）：压在路面 / 热力上都看得清，
+    // 又不会像白边那样在暗色地图上抢视线
     h += '<g class="apex-tag" data-x="' + it.x.toFixed(2) + '" data-y="' + it.y.toFixed(2) + '">' +
       (sel ? '<circle r="9" fill="' + APEX_FILL + '" opacity=".18"/>' : '') +
       '<circle r="3.4" fill="' + bg + '" fill-opacity=".6" stroke="' + ink + '" stroke-width="' + (sel ? 1.9 : 1.3) + '"/>' +

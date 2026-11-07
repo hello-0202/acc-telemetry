@@ -63,6 +63,8 @@ class TelemetryService:
         self._track_id: str | None = None
         self._session_id: str | None = None
         self._session_type: str | None = None
+        # 当前车名：PB 参考圈必须按车过滤，不能拿另一台车的圈当 delta 基准
+        self._car_name: str = ""
         # 当前 session 已记录的圈数；出场圈不计入编号
         self._lap_seq = 0
 
@@ -117,6 +119,7 @@ class TelemetryService:
         self._track_id = None
         self._session_id = None
         self._session_type = None
+        self._car_name = ""
 
     async def shutdown(self) -> None:
         await self.stop()
@@ -155,6 +158,7 @@ class TelemetryService:
             self._state = "IDLE"
             self._track_id = None
             self._session_id = None
+            self._car_name = ""
 
     async def _read_static(self, provider: TelemetryProvider) -> StaticInfo | None:
         last: StaticInfo | None = None
@@ -203,14 +207,18 @@ class TelemetryService:
             await asyncio.to_thread(persist)
             if session_type and session_type != "unknown":
                 pb_ms = await asyncio.to_thread(
-                    self.history.pb_ms_for_type, track.id, session_type
+                    self.history.pb_ms_for_type, track.id, session_type, car_name
                 )
                 pb_ref = await asyncio.to_thread(
-                    self.history.pb_reference_for_type, track.id, session_type
+                    self.history.pb_reference_for_type, track.id, session_type, car_name
                 )
             else:
-                pb_ms = await asyncio.to_thread(self.history.pb_ms, track.id)
-                pb_ref = await asyncio.to_thread(self.history.pb_reference, track.id)
+                pb_ms = await asyncio.to_thread(
+                    self.history.pb_ms, track.id, car_name
+                )
+                pb_ref = await asyncio.to_thread(
+                    self.history.pb_reference, track.id, car_name
+                )
         except Exception as exc:  # noqa: BLE001
             db_ok = False
             logger.warning("session persistence failed: %s", exc)
@@ -232,6 +240,7 @@ class TelemetryService:
         self._track_id = track.id
         self._session_id = session_id
         self._session_type = session_type
+        self._car_name = car_name
         self._lap_seq = 0
         max_rpm = static.max_rpm or 0
         payload = {
@@ -390,14 +399,18 @@ class TelemetryService:
         try:
             if self._track_id and stype and stype != "unknown":
                 pb_ms = await asyncio.to_thread(
-                    self.history.pb_ms_for_type, self._track_id, stype
+                    self.history.pb_ms_for_type, self._track_id, stype, self._car_name
                 )
                 pb_ref = await asyncio.to_thread(
-                    self.history.pb_reference_for_type, self._track_id, stype
+                    self.history.pb_reference_for_type, self._track_id, stype, self._car_name
                 )
             elif self._track_id:
-                pb_ms = await asyncio.to_thread(self.history.pb_ms, self._track_id)
-                pb_ref = await asyncio.to_thread(self.history.pb_reference, self._track_id)
+                pb_ms = await asyncio.to_thread(
+                    self.history.pb_ms, self._track_id, self._car_name
+                )
+                pb_ref = await asyncio.to_thread(
+                    self.history.pb_reference, self._track_id, self._car_name
+                )
         except Exception:
             pb_ms = None
             pb_ref = None
@@ -431,10 +444,16 @@ class TelemetryService:
             return
         try:
             pb_ms = await asyncio.to_thread(
-                self.history.pb_ms_for_type, self._track_id, self._session_type
+                self.history.pb_ms_for_type,
+                self._track_id,
+                self._session_type,
+                self._car_name,
             )
             pb_ref = await asyncio.to_thread(
-                self.history.pb_reference_for_type, self._track_id, self._session_type
+                self.history.pb_reference_for_type,
+                self._track_id,
+                self._session_type,
+                self._car_name,
             )
         except Exception:
             return

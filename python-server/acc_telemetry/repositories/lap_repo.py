@@ -152,7 +152,12 @@ class LapRepository:
             ).fetchone()
         return int(row["pb"]) if row and row["pb"] is not None else None
 
-    def pb_lap(self, track_id: str) -> dict | None:
+    # PB 口径：赛道 + 车 + 会话类型。车必须参与过滤 —— 同一赛道换车后，
+    # 拿另一台车的圈当参考会让 delta 从第一米就偏出几秒（GT3 和 GT4 更夸张）。
+    # car_name=None 表示不限车（历史列表的「赛道最快」仍按整条赛道统计）。
+    # 另外要求采样覆盖到近终点（MAX(p) >= 0.9）：旧版本重复判边界落过一批
+    # 「圈速正常、采样只有起跑线一小段」的残圈，拿它当 PB 会让 delta 整圈失真。
+    def pb_lap(self, track_id: str, car_name: str | None = None) -> dict | None:
         with self.db.connection() as conn:
             row = conn.execute(
                 """
@@ -161,13 +166,15 @@ class LapRepository:
                   FROM laps l
                   JOIN sessions s ON s.id = l.session_id
                  WHERE s.track_id = ? AND l.kind = 'ok' AND l.valid = 1
+                   AND (? IS NULL OR s.car_name = ?)
+                   AND COALESCE((SELECT MAX(x.p) FROM samples x WHERE x.lap_id = l.id), 0) >= 0.9
                  ORDER BY l.ms ASC, s.date DESC LIMIT 1
                 """,
-                (track_id,),
+                (track_id, car_name or None, car_name or None),
             ).fetchone()
         return self._decode(row) if row else None
 
-    def pb_ms(self, track_id: str) -> int | None:
+    def pb_ms(self, track_id: str, car_name: str | None = None) -> int | None:
         with self.db.connection() as conn:
             row = conn.execute(
                 """
@@ -175,12 +182,16 @@ class LapRepository:
                   FROM laps l
                   JOIN sessions s ON s.id = l.session_id
                  WHERE s.track_id = ? AND l.kind = 'ok' AND l.valid = 1
+                   AND (? IS NULL OR s.car_name = ?)
+                   AND COALESCE((SELECT MAX(x.p) FROM samples x WHERE x.lap_id = l.id), 0) >= 0.9
                 """,
-                (track_id,),
+                (track_id, car_name or None, car_name or None),
             ).fetchone()
         return int(row["pb"]) if row and row["pb"] is not None else None
 
-    def pb_lap_for_type(self, track_id: str, session_type: str) -> dict | None:
+    def pb_lap_for_type(
+        self, track_id: str, session_type: str, car_name: str | None = None
+    ) -> dict | None:
         """该赛道、该会话类型（排位 / 正赛…）的最快圈，用于按类型各自算 PB。"""
         with self.db.connection() as conn:
             row = conn.execute(
@@ -191,13 +202,17 @@ class LapRepository:
                   JOIN sessions s ON s.id = l.session_id
                  WHERE s.track_id = ? AND l.session_type = ?
                    AND l.kind = 'ok' AND l.valid = 1
+                   AND (? IS NULL OR s.car_name = ?)
+                   AND COALESCE((SELECT MAX(x.p) FROM samples x WHERE x.lap_id = l.id), 0) >= 0.9
                  ORDER BY l.ms ASC, s.date DESC LIMIT 1
                 """,
-                (track_id, session_type),
+                (track_id, session_type, car_name or None, car_name or None),
             ).fetchone()
         return self._decode(row) if row else None
 
-    def pb_ms_for_type(self, track_id: str, session_type: str) -> int | None:
+    def pb_ms_for_type(
+        self, track_id: str, session_type: str, car_name: str | None = None
+    ) -> int | None:
         """该赛道、该会话类型的最快圈速（毫秒）。"""
         with self.db.connection() as conn:
             row = conn.execute(
@@ -207,8 +222,10 @@ class LapRepository:
                   JOIN sessions s ON s.id = l.session_id
                  WHERE s.track_id = ? AND l.session_type = ?
                    AND l.kind = 'ok' AND l.valid = 1
+                   AND (? IS NULL OR s.car_name = ?)
+                   AND COALESCE((SELECT MAX(x.p) FROM samples x WHERE x.lap_id = l.id), 0) >= 0.9
                 """,
-                (track_id, session_type),
+                (track_id, session_type, car_name or None, car_name or None),
             ).fetchone()
         return int(row["pb"]) if row and row["pb"] is not None else None
 

@@ -9,16 +9,17 @@ WebSocket 推帧 → Vue 前端画实时面板 / 圈速分析。当前主线是*
 
 ## 0. 文档地图
 
+完整文档索引与状态标注见 [`docs/README.md`](./README.md)。
+
 | 文件 | 内容 |
 | --- | --- |
-| `docs/HANDOFF.md`（本文） | 进度、待验项、下一步任务、开工检查 |
+| `docs/HANDOFF.md`（本文） | 进度、待验项、下一步任务、开工检查（**部分状态停留在 2026-10-28**） |
 | `docs/ENGINEERING-NOTES.md` | 工程踩坑大全（打包 / 圈次 / 连接层 / 悬浮窗 / ACL / 调试手段） |
-| `docs/HANDOFF-P3-theme-packages.md` | P3 那一轮的详细交接，任务 0~7 的**实现决策与原因**（本文的上游） |
-| `docs/theme-state-contract.md` | 状态契约可读版（93 字段）+ 第十节主题包格式与宿主协议 |
+| `docs/theme-state-contract.md` | 状态契约可读版（97 字段）+ 第十节主题包格式与宿主协议 |
 | `docs/theme-authoring.md` | 写主题的教程 + 症状对照表 |
+| `docs/tyre-wear-model.md` | 轮胎磨损估算模型（公式 / 标定 / 局限 / 评审问题） |
 | `docs/theme-template/` | 可直接拷用的最小主题模板（**别放进 `public/themes/`**） |
 | `python-server/contracts/telemetry-state.json` | 状态字段**单一真源** |
-| `资料/MAP_RENDERING_NOTES.md` | 赛道图渲染设计笔记 |
 
 ## 1. 路线图与进度
 
@@ -48,7 +49,7 @@ P3 用户主题包（任务 0~6）✅ → P4 主面板壳化 ✅ → P5 副屏�
 - [ ] 热重载：改用户主题 CSS → 1 秒内生效；改 `theme.json` 的 `design` 连带改窗口尺寸。
 - [ ] `themes-changed` 事件链路（浏览器里没有 Tauri 事件，此前测不到）。
 - [ ] `theme.localhost/<id>/../../config.json` 之类穿越请求被拒；主题里 `document.cookie` / `localStorage` 读不到宿主数据。
-- [ ] `overlay-min/theme.js` 里 `window.__TAURI_INTERNALS__` 的实测值（若为 `object` = IPC 确实进了子 frame，ACL 是唯一防线）。
+- [ ] `speed-gear/theme.js` 里 `window.__TAURI_INTERNALS__` 的实测值（若为 `object` = IPC 确实进了子 frame，ACL 是唯一防线）。
 
 ## 3. 遗留问题 / 已完成项
 

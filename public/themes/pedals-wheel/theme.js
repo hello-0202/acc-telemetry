@@ -7,6 +7,8 @@
  * 踏板条：填充高度 = 开度百分比（从底部往上长）。
  * 转向弧：pathLength="100" 归一化，270° 整圈 = 75 单位，
  *   ±450° 映射到 ±135°，即 37.5 个 dasharray 单位。
+ * 转向只用颜色表达：左转蓝弧 / 右转橙弧从正上方生长、弧长就是幅度，
+ *   角度数字跟着染成同色；不再画箭头 / 指针之类的位置标记。
  */
 (function () {
   'use strict';
@@ -63,6 +65,13 @@
     }
   }
 
+  /* 转向色：方向写进 hud 的 data-steer，CSS 据此给角度数字上色。
+   * 用 data 属性而不是 inline style —— 回中时不用记得把颜色擦掉。
+   * 阈值和 setSteerArcs 保持一致，避免「弧已经灭了、数字还带色」。 */
+  function setSteerTone(s) {
+    hud.dataset.steer = s > 0.004 ? 'right' : s < -0.004 ? 'left' : 'none';
+  }
+
   function render(st) {
     try {
       hud.dataset.status = st.status || 'idle';
@@ -87,6 +96,7 @@
 
       if (steer == null) {
         setSteerArcs(0);
+        setSteerTone(0);
         degEl.textContent = '--°';
         return;
       }
@@ -96,7 +106,8 @@
       var deg = s * 450;
 
       setSteerArcs(s);
-      // 只显角度，不显方向文字（方向看进度弧的颜色：蓝=左、橙=右）
+      setSteerTone(s);
+      // 只显角度，不显方向文字：方向由进度弧和数字的颜色表达（蓝=左、橙=右）
       degEl.textContent = Math.round(Math.abs(deg)) + '°';
     } catch (e) {
       console.warn('[pedals-wheel] render failed', e);
