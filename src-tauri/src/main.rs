@@ -1,8 +1,9 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock, RwLock};
 
 use acc_telemetry_lib::setup_tray;
 use tauri::{Emitter, Manager, RunEvent};
@@ -11,6 +12,635 @@ use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandChild;
 
 struct Sidecar(Mutex<Option<CommandChild>>);
+
+// ───────────────────────── 存储路径（单一真源） ─────────────────────────
+//
+// 三类持久化位置统一由这里决定，Rust / Python sidecar / 前端都从这里取值：
+//   configDir  → config.json、window-state.json
+//   dataDir    → telemetry.db（+ WAL / SHM）
+//   themesDir  → 用户主题根目录
+//
+// 全新安装的默认布局：配置文件放 <安装目录>\，数据库放 <安装目录>\data\，
+// 主题放 <安装目录>\data\themes\。安装目录不可写（比如装进 Program Files）时
+// 自动回退到 %LOCALAPPDATA%\acc-telemetry 这套旧布局，保证软件能起来。
+//
+// 「路径配置」本身不能放进可改的目录（改完就找不到自己了），所以固定写在一个引导文件：
+// %LOCALAPPDATA%\acc-telemetry\paths.json（开发模式 paths-dev.json，互不干扰）。
+// 改路径只写 pending；重启时（sidecar 还没启动、数据库没被占用）才复制数据并生效。
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct PathConfig {
+    config_dir: PathBuf,
+    data_dir: PathBuf,
+    themes_dir: PathBuf,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+struct PathsFile {
+    /// 当前进程实际生效的路径
+    effective: Option<PathConfig>,
+    /// 设置页改过、等重启才生效的路径。
+    /// 有了 pending 就一定会「迁移」：旧位置的文件搬走后不再保留，
+    /// 失败则整体回滚（见 migrate_paths_data），不存在「只切不搬」的中间态。
+    pending: Option<PathConfig>,
+    /// 给设置页看的提示（回退 / 旧数据继承 / 复制结果）
+    note: Option<String>,
+}
+
+struct PathsState {
+    effective: PathConfig,
+    default_layout: PathConfig,
+    file: PathsFile,
+}
+
+/// 全局静态而不是 app.manage：`theme://` 协议回调是同步闭包、拿不到 AppHandle 的 state，
+/// 用 OnceLock + RwLock 才能在协议里同步读到当前生效的路径。
+static PATHS: OnceLock<RwLock<PathsState>> = OnceLock::new();
+
+fn legacy_base() -> PathBuf {
+    std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("acc-telemetry")
+}
+
+fn install_dir() -> Option<PathBuf> {
+    std::env::current_exe().ok()?.parent().map(|p| p.to_path_buf())
+}
+
+fn fallback_layout() -> PathConfig {
+    let base = legacy_base();
+    PathConfig {
+        config_dir: base.clone(),
+        data_dir: base.clone(),
+        themes_dir: base.join("themes"),
+    }
+}
+
+fn install_layout() -> PathConfig {
+    let root = install_dir().unwrap_or_else(legacy_base);
+    let data = root.join("data");
+    PathConfig {
+        config_dir: root,
+        data_dir: data.clone(),
+        themes_dir: data.join("themes"),
+    }
+}
+
+/// 目录能不能写：真建一次目录 + 写一个探针文件（Program Files 上会失败）。
+fn writable_dir(dir: &Path) -> bool {
+    if std::fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+    let probe = dir.join(format!(".acc-write-probe-{}", std::process::id()));
+    match std::fs::write(&probe, b"ok") {
+        Ok(()) => {
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+fn layout_writable(p: &PathConfig) -> bool {
+    writable_dir(&p.config_dir) && writable_dir(&p.data_dir) && writable_dir(&p.themes_dir)
+}
+
+/// 「恢复默认」的目标：安装目录布局；不可写才退回旧布局。不做旧数据探测，
+/// 否则老用户点「恢复默认」会原地不动、搬不到安装目录。
+fn reset_layout() -> PathConfig {
+    // 开发模式默认就是 LOCALAPPDATA（见 default_layout），「恢复默认」必须指向同一处，
+    // 否则会把数据搬进 target/debug —— 下次 cargo build 就可能被清掉。
+    if cfg!(debug_assertions) {
+        return fallback_layout();
+    }
+    let p = install_layout();
+    if layout_writable(&p) {
+        p
+    } else {
+        fallback_layout()
+    }
+}
+
+fn legacy_has_data() -> bool {
+    let base = legacy_base();
+    ["telemetry.db", "config.json", "window-state.json"]
+        .iter()
+        .any(|n| base.join(n).is_file())
+        || base.join("themes").is_dir()
+}
+
+/// 首次启动（引导文件里还没有 effective）该用哪套布局。
+fn default_layout() -> (PathConfig, Option<String>) {
+    if cfg!(debug_assertions) {
+        return (
+            fallback_layout(),
+            Some("开发模式：数据仍放在 %LOCALAPPDATA%\\acc-telemetry，避免写进构建目录。".into()),
+        );
+    }
+    let install = install_layout();
+    if !layout_writable(&install) {
+        return (
+            fallback_layout(),
+            Some(
+                "安装目录不可写（常见于装到 C:\\Program Files），已自动回退到用户数据目录；可在下面改到别处。"
+                    .into(),
+            ),
+        );
+    }
+    // 老用户升级：旧目录里已经有圈速 / 配置 / 主题，默认沿用，绝不静默换位置。
+    if legacy_has_data() {
+        return (
+            fallback_layout(),
+            Some("检测到旧版数据，仍沿用原来的位置；点「恢复默认」可把默认位置改成安装目录。".into()),
+        );
+    }
+    (install, None)
+}
+
+fn bootstrap_file() -> PathBuf {
+    let dir = std::env::var_os("ACC_TELEMETRY_BOOTSTRAP_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(legacy_base);
+    let name = if cfg!(debug_assertions) {
+        "paths-dev.json"
+    } else {
+        "paths.json"
+    };
+    dir.join(name)
+}
+
+fn load_paths_file() -> PathsFile {
+    std::fs::read_to_string(bootstrap_file())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_paths_file(file: &PathsFile) -> Result<(), String> {
+    let path = bootstrap_file();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建引导目录失败: {e}"))?;
+    }
+    let text = serde_json::to_string_pretty(file).map_err(|e| e.to_string())?;
+    std::fs::write(&path, text).map_err(|e| format!("写入路径配置失败: {e}"))
+}
+
+// ───────────────────── 存储位置迁移：先全拷完、再删旧、失败整体回滚 ─────────────────────
+
+/// 迁移结果：真正搬走（旧位置已删）的文件数 / 目标已有同名文件而放弃搬的文件数 /
+/// 复制成功但旧文件删不掉的文件数。
+struct MigrateReport {
+    moved: u32,
+    kept: u32,
+    leftover: u32,
+}
+
+/// 建目录，并把「这次新建的每一层」记下来，供回滚时反向删除（深层优先）。
+fn ensure_dir_tracked(dir: &Path, created_dirs: &mut Vec<PathBuf>) -> Result<(), String> {
+    if dir.is_dir() {
+        return Ok(());
+    }
+    let mut missing: Vec<PathBuf> = Vec::new();
+    let mut cur = Some(dir);
+    while let Some(p) = cur {
+        if p.is_dir() {
+            break;
+        }
+        missing.push(p.to_path_buf());
+        cur = p.parent();
+    }
+    std::fs::create_dir_all(dir).map_err(|e| format!("创建 {} 失败: {e}", dir.display()))?;
+    // missing 是「深 → 浅」，正好符合回滚时的删除顺序
+    created_dirs.extend(missing);
+    Ok(())
+}
+
+/// 展开主题目录里的所有文件。跳过导入临时目录和回收站 —— 它们不是用户数据。
+fn collect_tree_files(
+    src: &Path,
+    dst: &Path,
+    depth: u8,
+    out: &mut Vec<(PathBuf, PathBuf)>,
+) -> Result<(), String> {
+    if !src.is_dir() || depth > 16 {
+        return Ok(());
+    }
+    let entries =
+        std::fs::read_dir(src).map_err(|e| format!("读取 {} 失败: {e}", src.display()))?;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let label = name.to_string_lossy();
+        if label == ".trash" || label.starts_with(".import-") {
+            continue;
+        }
+        let from = entry.path();
+        let to = dst.join(&name);
+        if from.is_dir() {
+            collect_tree_files(&from, &to, depth + 1, out)?;
+        } else if from.is_file() {
+            out.push((from, to));
+        }
+    }
+    Ok(())
+}
+
+fn collect_migration_pairs(
+    from: &PathConfig,
+    to: &PathConfig,
+    out: &mut Vec<(PathBuf, PathBuf)>,
+) -> Result<(), String> {
+    for name in ["config.json", "window-state.json"] {
+        let src = from.config_dir.join(name);
+        if src.is_file() {
+            out.push((src, to.config_dir.join(name)));
+        }
+    }
+    for name in ["telemetry.db", "telemetry.db-wal", "telemetry.db-shm"] {
+        let src = from.data_dir.join(name);
+        if src.is_file() {
+            out.push((src, to.data_dir.join(name)));
+        }
+    }
+    collect_tree_files(&from.themes_dir, &to.themes_dir, 0, out)
+}
+
+/// 递归清理空目录（只删空的，非空 remove_dir 会失败，天然安全）。
+fn prune_empty_dirs(dir: &Path, depth: u8) {
+    if !dir.is_dir() || depth > 16 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            prune_empty_dirs(&p, depth + 1);
+        }
+    }
+    let _ = std::fs::remove_dir(dir);
+}
+
+/// 旧位置能不能顺手删目录：配置目录可能就是安装目录本身，删了等于把程序卸了。
+fn removable_old_dir(dir: &Path, from: &PathConfig) -> bool {
+    dir.is_dir()
+        && dir != from.config_dir
+        && install_dir().map(|i| i != dir).unwrap_or(true)
+}
+
+fn rollback_migration(created_files: &[PathBuf], created_dirs: &[PathBuf]) {
+    // 只删「本次新建」的文件，绝不碰目标目录里原有内容
+    for f in created_files.iter().rev() {
+        let _ = std::fs::remove_file(f);
+    }
+    // 目录按层级由深到浅删，父目录才可能空出来（非递归 remove_dir，非空自然失败）
+    let mut dirs: Vec<&PathBuf> = created_dirs.iter().collect();
+    dirs.sort_by_key(|d| std::cmp::Reverse(d.components().count()));
+    dirs.dedup();
+    for d in dirs {
+        let _ = std::fs::remove_dir(d);
+    }
+}
+
+/// 真正的迁移流程，按「全部复制并校验 → 才删旧文件」的顺序走，
+/// 因此任何一步失败都能靠 rollback_migration 回到动手前的状态，旧位置数据一个不少。
+fn do_migrate(
+    from: &PathConfig,
+    to: &PathConfig,
+    created_files: &mut Vec<PathBuf>,
+    created_dirs: &mut Vec<PathBuf>,
+) -> Result<MigrateReport, String> {
+    for dir in [&to.config_dir, &to.data_dir, &to.themes_dir] {
+        ensure_dir_tracked(dir, created_dirs)?;
+    }
+
+    let mut pairs: Vec<(PathBuf, PathBuf)> = Vec::new();
+    collect_migration_pairs(from, to, &mut pairs)?;
+
+    // 第一阶段：只复制，不动旧文件
+    let mut kept = 0u32;
+    let mut planned: Vec<(PathBuf, PathBuf)> = Vec::new();
+    for (src, dst) in pairs {
+        if src == dst {
+            // 这一项没动（用户只改了另外一个目录），不复制也不统计，更绝不能删
+            continue;
+        }
+        if dst.exists() {
+            // 目标已有同名文件：不覆盖；旧文件也不删（数据一定还在，事后在提示里说明）
+            kept += 1;
+            continue;
+        }
+        if let Some(parent) = dst.parent() {
+            ensure_dir_tracked(parent, created_dirs)?;
+        }
+        std::fs::copy(&src, &dst).map_err(|e| format!("复制 {} 失败: {e}", src.display()))?;
+        created_files.push(dst.clone());
+
+        // 校验大小，避免留下半个数据库却把旧文件删了
+        let src_len = std::fs::metadata(&src)
+            .map_err(|e| format!("读取 {} 信息失败: {e}", src.display()))?
+            .len();
+        let dst_len = std::fs::metadata(&dst)
+            .map_err(|e| format!("读取 {} 信息失败: {e}", dst.display()))?
+            .len();
+        if src_len != dst_len {
+            return Err(format!(
+                "{} 复制后大小不一致（{src_len} → {dst_len} 字节）",
+                src.display()
+            ));
+        }
+        planned.push((src, dst));
+    }
+
+    // 第二阶段：全部复制成功，才删旧文件
+    let mut moved = 0u32;
+    let mut leftover = 0u32;
+    for (src, _) in &planned {
+        match std::fs::remove_file(src) {
+            Ok(()) => moved += 1,
+            Err(_) => leftover += 1,
+        }
+    }
+    // 旧位置留下的空目录顺手清掉（含主题下的空子目录）；只删空目录，绝不递归删数据，
+    // 配置目录 / 安装目录也一律不碰。
+    if removable_old_dir(&from.themes_dir, from) {
+        prune_empty_dirs(&from.themes_dir, 0);
+    }
+    if removable_old_dir(&from.data_dir, from) {
+        let _ = std::fs::remove_dir(&from.data_dir); // 非递归：还有别的东西就自然失败
+    }
+    Ok(MigrateReport {
+        moved,
+        kept,
+        leftover,
+    })
+}
+
+/// 在 sidecar 启动之前调用：数据库此刻没被占用，WAL / SHM 一起搬走才不丢最近圈次。
+fn migrate_paths_data(from: &PathConfig, to: &PathConfig) -> Result<MigrateReport, String> {
+    let mut created_files: Vec<PathBuf> = Vec::new();
+    let mut created_dirs: Vec<PathBuf> = Vec::new();
+    match do_migrate(from, to, &mut created_files, &mut created_dirs) {
+        Ok(report) => Ok(report),
+        Err(e) => {
+            rollback_migration(&created_files, &created_dirs);
+            Err(e)
+        }
+    }
+}
+
+fn migrate_note(r: &MigrateReport) -> String {
+    let mut s = if r.moved > 0 {
+        format!("已迁移存储位置：搬走 {} 个文件。", r.moved)
+    } else {
+        "已切换存储位置。".to_string()
+    };
+    if r.kept > 0 {
+        s.push_str(&format!(
+            "新位置已有 {} 个同名文件，保留了新位置的版本，对应的旧文件未删除。",
+            r.kept
+        ));
+    } else if r.leftover == 0 {
+        s.push_str("旧位置的文件已清理。");
+    }
+    if r.leftover > 0 {
+        s.push_str(&format!(
+            "有 {} 个旧文件没能删除（可能被占用），不影响使用，可手动清理。",
+            r.leftover
+        ));
+    }
+    s
+}
+
+fn init_paths() {
+    let mut file = load_paths_file();
+    let is_first = file.effective.is_none();
+    let (first_default, first_note) = default_layout();
+    let mut effective = file.effective.take().unwrap_or(first_default);
+    if is_first {
+        file.note = first_note;
+    } else if !layout_writable(&effective) {
+        // 比如上次把数据放到了移动盘、这次没插：不能让软件起不来。
+        effective = fallback_layout();
+        file.note = Some("原存储位置不可写（盘符可能已拔出），本次已临时回退到用户数据目录。".into());
+    }
+
+    if let Some(pending) = file.pending.take() {
+        if pending != effective {
+            if !layout_writable(&pending) {
+                file.note = Some("新存储位置不可写，已保留原位置；请在设置里换一个目录。".into());
+            } else {
+                match migrate_paths_data(&effective, &pending) {
+                    Ok(report) => {
+                        effective = pending;
+                        file.note = Some(migrate_note(&report));
+                    }
+                    Err(e) => {
+                        // 回滚完成：旧位置原封不动，新位置里这次拷进去的文件已清掉
+                        file.note = Some(format!(
+                            "迁移失败，已回滚到原位置（旧数据完好，新位置已清理）：{e}"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    file.effective = Some(effective.clone());
+    file.pending = None;
+    if let Err(e) = save_paths_file(&file) {
+        eprintln!("[paths] {e}");
+    }
+    let default_layout = reset_layout();
+    let _ = PATHS.set(RwLock::new(PathsState {
+        effective,
+        default_layout,
+        file,
+    }));
+}
+
+fn paths() -> PathConfig {
+    PATHS
+        .get()
+        .map(|s| s.read().unwrap().effective.clone())
+        .unwrap_or_else(fallback_layout)
+}
+
+fn config_root() -> PathBuf {
+    paths().config_dir
+}
+
+fn themes_root() -> PathBuf {
+    paths().themes_dir
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PathsInfo {
+    effective: PathConfig,
+    pending: Option<PathConfig>,
+    default_layout: PathConfig,
+    config_file: String,
+    db_file: String,
+    window_state_file: String,
+    install_dir: String,
+    bootstrap_file: String,
+    note: Option<String>,
+}
+
+fn build_paths_info(
+    effective: &PathConfig,
+    pending: Option<PathConfig>,
+    default_layout: &PathConfig,
+    note: Option<String>,
+) -> PathsInfo {
+    PathsInfo {
+        effective: effective.clone(),
+        pending,
+        default_layout: default_layout.clone(),
+        config_file: effective.config_dir.join("config.json").to_string_lossy().into_owned(),
+        db_file: effective.data_dir.join("telemetry.db").to_string_lossy().into_owned(),
+        window_state_file: effective
+            .config_dir
+            .join("window-state.json")
+            .to_string_lossy()
+            .into_owned(),
+        install_dir: install_dir()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        bootstrap_file: bootstrap_file().to_string_lossy().into_owned(),
+        note,
+    }
+}
+
+fn paths_info() -> PathsInfo {
+    if let Some(state) = PATHS.get() {
+        let st = state.read().unwrap();
+        return build_paths_info(
+            &st.effective,
+            st.file.pending.clone(),
+            &st.default_layout,
+            st.file.note.clone(),
+        );
+    }
+    let fallback = fallback_layout();
+    build_paths_info(&fallback, None, &fallback, None)
+}
+
+fn validate_layout(p: &PathConfig) -> Result<(), String> {
+    for (label, dir) in [
+        ("配置文件目录", &p.config_dir),
+        ("数据目录", &p.data_dir),
+        ("主题目录", &p.themes_dir),
+    ] {
+        if !dir.is_absolute() {
+            return Err(format!("{label} 必须是绝对路径：{}", dir.display()));
+        }
+        if dir.is_file() {
+            return Err(format!("{label} 指向的是文件而不是文件夹：{}", dir.display()));
+        }
+        if !writable_dir(dir) {
+            return Err(format!("{label} 不可写：{}", dir.display()));
+        }
+    }
+    Ok(())
+}
+
+/// 只写 pending，不动当前生效路径：运行中的 sidecar 还持有旧数据库。
+/// 重启时 init_paths() 会把旧位置的数据整体迁移过去（失败自动回滚），
+/// 前端只提示「重启后生效」。
+fn set_pending_layout(layout: PathConfig) -> Result<PathsInfo, String> {
+    validate_layout(&layout)?;
+    let Some(state) = PATHS.get() else {
+        return Err("路径模块还没初始化".into());
+    };
+    let mut st = state.write().unwrap();
+    // 选回当前生效的路径 = 撤销 pending，别留一条「pending 等于 effective」的空记录
+    st.file.pending = if layout == st.effective {
+        None
+    } else {
+        Some(layout)
+    };
+    st.file.note = None;
+    save_paths_file(&st.file)?;
+    Ok(build_paths_info(
+        &st.effective,
+        st.file.pending.clone(),
+        &st.default_layout,
+        None,
+    ))
+}
+
+#[tauri::command]
+fn get_data_paths() -> PathsInfo {
+    paths_info()
+}
+
+#[tauri::command]
+fn set_data_paths(
+    window: tauri::WebviewWindow,
+    layout: PathConfig,
+) -> Result<PathsInfo, String> {
+    if window.label() != "main" {
+        return Err("not allowed from this window".into());
+    }
+    set_pending_layout(layout)
+}
+
+#[tauri::command]
+fn reset_data_paths(window: tauri::WebviewWindow) -> Result<PathsInfo, String> {
+    if window.label() != "main" {
+        return Err("not allowed from this window".into());
+    }
+    set_pending_layout(reset_layout())
+}
+
+/// 重启应用，让 pending 的存储位置在 sidecar 启动前完成迁移。
+/// 必须先杀掉 sidecar：AppHandle::restart() 在主线程分支里直接 exit，
+/// 不会走 RunEvent::Exit，我们那条兜底 kill 就轮不到，端口会被孤儿进程占着。
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Result<(), String> {
+    if window.label() != "main" {
+        return Err("not allowed from this window".into());
+    }
+    if let Some(state) = app.try_state::<Sidecar>() {
+        if let Some(child) = state.0.lock().unwrap().take() {
+            let _ = child.kill();
+        }
+    }
+    // 给 Windows 一点时间真正回收进程句柄：新实例一起来就要迁移数据库，
+    // 旧 sidecar 还握着 telemetry.db 会让复制读到半截文件。
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    app.restart()
+}
+
+#[tauri::command]
+fn open_data_path(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    kind: String,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    if window.label() != "main" {
+        return Err("not allowed from this window".into());
+    }
+    let p = paths();
+    let dir = match kind.as_str() {
+        // 设置页只有一个「存储位置」入口，root = 三个目录的根（= config_dir）
+        "root" | "config" => p.config_dir,
+        "data" => p.data_dir,
+        "themes" => p.themes_dir,
+        "install" => install_dir().ok_or("找不到安装目录")?,
+        _ => return Err("未知的位置类型".into()),
+    };
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建目录失败: {e}"))?;
+    app.opener()
+        .open_path(dir.to_string_lossy().to_string(), None::<String>)
+        .map_err(|e| format!("打开目录失败: {e}"))
+}
 
 // ───────────────────────── 悬浮窗（最多 3 个槽位） ─────────────────────────
 
@@ -120,7 +750,7 @@ fn ensure_overlay_window<R: tauri::Runtime>(
 
 // ── 悬浮窗位置 / 尺寸持久化 ──
 // 用户拖动 / 拉边缩放后记住几何，下次启动直接恢复（不再每次都贴右上角）。
-// 存到 %LOCALAPPDATA%\acc-telemetry\window-state.json，和主题 / 配置同目录。
+// 存到当前「配置文件目录」下的 window-state.json（默认 = 安装目录，可在设置里改）。
 #[derive(serde::Serialize, serde::Deserialize, Clone, Copy)]
 struct OverlayRect {
     x: f64,
@@ -138,23 +768,15 @@ struct WindowStateFile {
     overlays: std::collections::BTreeMap<String, OverlayRect>,
 }
 
-fn app_data_dir() -> Option<std::path::PathBuf> {
-    let base = std::env::var_os("LOCALAPPDATA")?;
-    Some(std::path::PathBuf::from(base).join("acc-telemetry"))
-}
-
 fn load_window_state() -> WindowStateFile {
-    let Some(dir) = app_data_dir() else {
-        return WindowStateFile::default();
-    };
-    match std::fs::read_to_string(dir.join("window-state.json")) {
+    match std::fs::read_to_string(config_root().join("window-state.json")) {
         Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
         Err(_) => WindowStateFile::default(),
     }
 }
 
 fn persist_window_state(st: &WindowStateFile) {
-    let Some(dir) = app_data_dir() else { return; };
+    let dir = config_root();
     let _ = std::fs::create_dir_all(&dir);
     if let Ok(s) = serde_json::to_string_pretty(st) {
         let _ = std::fs::write(dir.join("window-state.json"), s);
@@ -468,17 +1090,8 @@ const THEME_ASSET_TYPES: &[(&str, &str)] = &[
     ("txt", "text/plain; charset=utf-8"),
 ];
 
-/// 用户主题根目录：`%LOCALAPPDATA%\acc-telemetry\themes`。
-/// 必须和 Python 侧 `config.py::APP_DIR`（config.json / telemetry.db 所在处）同一个目录，
-/// 否则用户在设置页里看到的主题和这里能加载的主题对不上。
-fn user_themes_root() -> Option<std::path::PathBuf> {
-    let base = std::env::var_os("LOCALAPPDATA")?;
-    Some(
-        std::path::PathBuf::from(base)
-            .join("acc-telemetry")
-            .join("themes"),
-    )
-}
+/// 用户主题根目录来自顶部的 `themes_root()`（`PathConfig::themes_dir`）。
+/// 不再单独拼 `%LOCALAPPDATA%`：设置页改完路径后，协议 / 列表 / 导入 / 监听必须读同一份值。
 
 fn theme_not_found() -> tauri::http::Response<Vec<u8>> {
     // 不区分「不存在」和「越权」：不泄露任何路径信息
@@ -494,9 +1107,7 @@ fn theme_not_found() -> tauri::http::Response<Vec<u8>> {
 /// 把 `theme://localhost/<id>/<file>`（Windows 下是 `http://theme.localhost/<id>/<file>`）
 /// 映射到用户主题目录。内置主题不在这里 —— 它们编译进二进制，走 http://tauri.localhost 的资源协议。
 fn serve_user_theme(request: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
-    let Some(root) = user_themes_root() else {
-        return theme_not_found();
-    };
+    let root = themes_root();
     let raw = request.uri().path().trim_start_matches('/');
     let Some((id, rel)) = raw.split_once('/') else {
         return theme_not_found();
@@ -575,9 +1186,7 @@ struct UserThemeEntry {
 
 #[tauri::command]
 fn list_user_themes() -> Vec<UserThemeEntry> {
-    let Some(root) = user_themes_root() else {
-        return Vec::new();
-    };
+    let root = themes_root();
     let Ok(entries) = std::fs::read_dir(&root) else {
         return Vec::new();
     };
@@ -605,7 +1214,7 @@ fn list_user_themes() -> Vec<UserThemeEntry> {
 #[tauri::command]
 fn open_themes_dir(app: tauri::AppHandle) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
-    let root = user_themes_root().ok_or("找不到 LOCALAPPDATA")?;
+    let root = themes_root();
     std::fs::create_dir_all(&root).map_err(|e| format!("创建目录失败: {e}"))?;
     app.opener()
         .open_path(root.to_string_lossy().to_string(), None::<String>)
@@ -628,7 +1237,7 @@ async fn delete_user_theme(id: String) -> Result<(), String> {
     if !valid_theme_id(&id) {
         return Err("主题 id 不合法".into());
     }
-    let root = user_themes_root().ok_or("找不到 LOCALAPPDATA")?;
+    let root = themes_root();
     let root = root.canonicalize().map_err(|e| format!("主题目录不可用: {e}"))?;
     let dir = root
         .join(&id)
@@ -847,7 +1456,7 @@ fn import_theme_zip(path: String, mode: Option<String>) -> Result<String, String
         ));
     }
 
-    let root = user_themes_root().ok_or("找不到 LOCALAPPDATA")?;
+    let root = themes_root();
     std::fs::create_dir_all(&root).map_err(|e| format!("创建主题目录失败: {e}"))?;
     let target = root.join(&id);
     if target.exists() {
@@ -982,9 +1591,7 @@ fn spawn_theme_watcher(app: tauri::AppHandle) {
     use notify::{RecursiveMode, Watcher};
     use std::sync::mpsc::RecvTimeoutError;
 
-    let Some(root) = user_themes_root() else {
-        return;
-    };
+    let root = themes_root();
     std::thread::spawn(move || {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut watcher = match notify::recommended_watcher(tx) {
@@ -1069,16 +1676,24 @@ fn main() {
         delete_user_theme,
         import_theme_zip,
         export_theme_template,
+        get_data_paths,
+        set_data_paths,
+        reset_data_paths,
+        restart_app,
+        open_data_path,
     ])
         .setup(|app| {
+            // 必须在任何路径读取之前：解析默认布局 / 旧数据迁移 / 应用上次改的路径，
+            // 而且此时 sidecar 还没启动，数据库没被占用，复制 WAL 才安全。
+            init_paths();
+
             // 系统托盘（关闭窗口后用于恢复 / 退出）
             setup_tray(app)?;
 
             // 用户主题目录提前建好，否则用户根本找不到该往哪儿放主题
-            if let Some(dir) = user_themes_root() {
-                if let Err(e) = std::fs::create_dir_all(&dir) {
-                    eprintln!("[theme] 无法创建用户主题目录 {}: {e}", dir.display());
-                }
+            let dir = themes_root();
+            if let Err(e) = std::fs::create_dir_all(&dir) {
+                eprintln!("[theme] 无法创建用户主题目录 {}: {e}", dir.display());
             }
 
             // 用户主题热重载：改 CSS / theme.json 不用重启应用，也不用点「重试」
@@ -1122,10 +1737,33 @@ fn main() {
             // set_process_group(true) 让 Windows 把 sidecar 放进 Job Object，
             // PyInstaller onefile 会再派生一个 Python 子进程，只有终止整个 Job 才能全部清理掉。
             if std::env::var("MANUAL_PYTHON").is_err() {
-                let sidecar_command = app
+                let effective = paths();
+                let mut sidecar_command = app
                     .shell()
                     .sidecar("telemetry_core")?
                     .set_process_group(true);
+                // Python 侧 DB_PATH / CONFIG_PATH 在模块导入时求值，只能用环境变量透传。
+                // 开发者自己显式设了同名变量时不覆盖（造测试数据用的隔离库要能生效）。
+                if std::env::var_os("ACC_TELEMETRY_DB").is_none() {
+                    sidecar_command = sidecar_command.env(
+                        "ACC_TELEMETRY_DB",
+                        effective
+                            .data_dir
+                            .join("telemetry.db")
+                            .to_string_lossy()
+                            .into_owned(),
+                    );
+                }
+                if std::env::var_os("ACC_TELEMETRY_CONFIG").is_none() {
+                    sidecar_command = sidecar_command.env(
+                        "ACC_TELEMETRY_CONFIG",
+                        effective
+                            .config_dir
+                            .join("config.json")
+                            .to_string_lossy()
+                            .into_owned(),
+                    );
+                }
                 let (mut rx, child) = sidecar_command.spawn()?;
                 // 把 sidecar 的 stdout / stderr 转回主进程控制台。
                 // 以前这里直接丢掉 Receiver，后端的「存储队列已满」「记录帧失败」
@@ -1173,4 +1811,205 @@ fn main() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    fn tmp(name: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "acc-paths-test-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    fn layout(root: &Path, prefix: &str) -> PathConfig {
+        let base = root.join(prefix);
+        PathConfig {
+            config_dir: base.join("cfg"),
+            data_dir: base.join("data"),
+            themes_dir: base.join("data").join("themes"),
+        }
+    }
+
+    /// 迁移 = 搬到新位置 + 删掉旧文件；配置目录本身不能删（可能就是安装目录）。
+    #[test]
+    fn migrate_moves_files_and_clears_old_location() {
+        let root = tmp("move");
+        let from = layout(&root, "old");
+        let to = layout(&root, "new");
+        for d in [&from.config_dir, &from.data_dir, &from.themes_dir.join("my-hud")] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        std::fs::write(from.config_dir.join("config.json"), "CFG").unwrap();
+        std::fs::write(from.config_dir.join("window-state.json"), "WIN").unwrap();
+        std::fs::write(from.data_dir.join("telemetry.db"), "DB").unwrap();
+        std::fs::write(from.data_dir.join("telemetry.db-wal"), "WAL").unwrap();
+        std::fs::write(from.themes_dir.join("my-hud").join("theme.json"), "THEME").unwrap();
+
+        let r = migrate_paths_data(&from, &to).unwrap();
+        assert_eq!(r.moved, 5, "config / window-state / db / wal / theme.json");
+        assert_eq!(r.kept, 0);
+        assert_eq!(r.leftover, 0);
+
+        // 新位置齐了
+        assert_eq!(std::fs::read_to_string(to.config_dir.join("config.json")).unwrap(), "CFG");
+        assert_eq!(std::fs::read_to_string(to.data_dir.join("telemetry.db")).unwrap(), "DB");
+        assert_eq!(std::fs::read_to_string(to.data_dir.join("telemetry.db-wal")).unwrap(), "WAL");
+        assert_eq!(
+            std::fs::read_to_string(to.themes_dir.join("my-hud").join("theme.json")).unwrap(),
+            "THEME"
+        );
+        // 旧位置的文件不能留（这才是「迁移」而不是「复制」）
+        assert!(!from.config_dir.join("config.json").exists());
+        assert!(!from.data_dir.join("telemetry.db").exists());
+        assert!(!from.themes_dir.join("my-hud").join("theme.json").exists());
+        // 空的 data / themes 子目录顺手清掉，但配置目录必须留着
+        assert!(!from.data_dir.exists(), "搬空的 data 目录应被清掉");
+        assert!(from.config_dir.is_dir(), "配置目录可能就是安装目录，绝不能删");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// 目标已有同名文件：不覆盖新位置、也不删旧文件 —— 两边数据都还在，不构成丢数据。
+    #[test]
+    fn migrate_keeps_conflicting_target_file_and_leaves_source() {
+        let root = tmp("conflict");
+        let from = layout(&root, "old");
+        let to = layout(&root, "new");
+        for d in [&from.config_dir, &from.data_dir, &to.config_dir, &to.data_dir] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        std::fs::write(from.config_dir.join("config.json"), "OLD_CONFIG").unwrap();
+        std::fs::write(from.data_dir.join("telemetry.db"), "OLD_DB").unwrap();
+        std::fs::write(to.config_dir.join("config.json"), "NEW_CONFIG").unwrap();
+        // 主题回收站不是用户数据，迁移时不该跟着走
+        std::fs::create_dir_all(from.themes_dir.join(".trash").join("junk")).unwrap();
+        std::fs::write(from.themes_dir.join(".trash").join("junk").join("x.txt"), "JUNK").unwrap();
+
+        let r = migrate_paths_data(&from, &to).unwrap();
+        assert_eq!(r.moved, 1, "只有数据库搬走");
+        assert_eq!(r.kept, 1, "config.json 目标已存在，跳过");
+        assert!(!to.themes_dir.join(".trash").exists(), "回收目录不搬");
+        assert_eq!(
+            std::fs::read_to_string(to.config_dir.join("config.json")).unwrap(),
+            "NEW_CONFIG"
+        );
+        assert!(
+            from.config_dir.join("config.json").is_file(),
+            "跳过的文件必须留在原处，不能删"
+        );
+        assert!(!from.data_dir.join("telemetry.db").exists());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// 中途失败必须回滚：旧数据处理完好，新位置里已拷过去的文件要清干净。
+    #[test]
+    fn migrate_rolls_back_when_copy_fails() {
+        let root = tmp("rollback");
+        let from = layout(&root, "old");
+        let to = layout(&root, "new");
+        for d in [&from.config_dir, &from.data_dir, &from.themes_dir.join("my-hud")] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        std::fs::write(from.config_dir.join("config.json"), "CFG").unwrap();
+        std::fs::write(from.data_dir.join("telemetry.db"), "DB").unwrap();
+        std::fs::write(from.themes_dir.join("my-hud").join("theme.json"), "THEME").unwrap();
+
+        // 目标主题目录里先放一个同名「文件」，让建目录失败，卡在拷贝中途
+        std::fs::create_dir_all(&to.themes_dir).unwrap();
+        std::fs::write(to.themes_dir.join("my-hud"), "blocker").unwrap();
+
+        let err = migrate_paths_data(&from, &to).err().expect("必须报错");
+        assert!(!err.is_empty());
+        // 旧位置一个文件都不能少
+        assert!(from.config_dir.join("config.json").is_file());
+        assert!(from.data_dir.join("telemetry.db").is_file());
+        assert!(from.themes_dir.join("my-hud").join("theme.json").is_file());
+        // 新位置里这次拷过去的必须清掉，不能留半截
+        assert!(!to.config_dir.join("config.json").exists());
+        assert!(!to.data_dir.join("telemetry.db").exists());
+        assert_eq!(
+            std::fs::read_to_string(to.themes_dir.join("my-hud")).unwrap(),
+            "blocker",
+            "回滚不能碰目标原本就有的东西"
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// 只改其中一个目录（比如只换主题目录）时，另外两个目录里的文件必须原地不动、也不算「跳过」。
+    #[test]
+    fn migrate_only_touched_role_leaves_other_dirs_alone() {
+        let root = tmp("partial");
+        let from = layout(&root, "old");
+        std::fs::create_dir_all(&from.config_dir).unwrap();
+        std::fs::create_dir_all(from.themes_dir.join("my-hud")).unwrap();
+        std::fs::write(from.config_dir.join("config.json"), "CFG").unwrap();
+        std::fs::write(from.data_dir.join("telemetry.db"), "DB").unwrap();
+        std::fs::write(from.themes_dir.join("my-hud").join("theme.json"), "THEME").unwrap();
+
+        let to = PathConfig {
+            config_dir: from.config_dir.clone(),
+            data_dir: from.data_dir.clone(),
+            themes_dir: root.join("new-themes"),
+        };
+        let r = migrate_paths_data(&from, &to).unwrap();
+        assert_eq!(r.moved, 1, "只搬主题文件");
+        assert_eq!(r.kept, 0, "没动的目录不该被算成「目标已存在」");
+        assert!(from.config_dir.join("config.json").is_file());
+        assert!(from.data_dir.join("telemetry.db").is_file());
+        assert!(to.themes_dir.join("my-hud").join("theme.json").is_file());
+        assert!(!from.themes_dir.exists(), "搬空的旧主题目录应被清掉");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_layout_rejects_relative_paths_and_files() {
+        let root = tmp("validate");
+        let mut p = layout(&root, "ok");
+        p.config_dir = PathBuf::from("relative/dir");
+        assert!(validate_layout(&p).unwrap_err().contains("绝对路径"));
+
+        let file = root.join("not-a-dir.txt");
+        std::fs::write(&file, "x").unwrap();
+        let mut p = layout(&root, "ok");
+        p.data_dir = file;
+        assert!(validate_layout(&p).unwrap_err().contains("文件而不是文件夹"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// 前端按 camelCase 传 layout，引导文件也按 camelCase 落盘；字段名漂移会静默丢配置。
+    #[test]
+    fn path_config_serializes_to_camel_case() {
+        let root = tmp("serde");
+        let value = serde_json::to_value(layout(&root, "ok")).unwrap();
+        for key in ["configDir", "dataDir", "themesDir"] {
+            assert!(value.get(key).is_some(), "缺少字段 {key}");
+        }
+        let file = PathsFile {
+            effective: None,
+            pending: Some(layout(&root, "next")),
+            note: None,
+        };
+        let value = serde_json::to_value(&file).unwrap();
+        assert!(value.get("pending").unwrap().get("configDir").is_some());
+        assert!(value.get("copyOnApply").is_none(), "旧字段已移除，不能再落盘");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// 开发模式不能把数据塞进 target/debug（cargo build 会清掉），默认与恢复默认必须一致。
+    #[test]
+    fn dev_default_and_reset_are_the_same_layout() {
+        if cfg!(debug_assertions) {
+            assert_eq!(default_layout().0, fallback_layout());
+            assert_eq!(reset_layout(), fallback_layout());
+        }
+    }
 }

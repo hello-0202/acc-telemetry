@@ -357,7 +357,11 @@ iframe 直接 `width:100%; height:100%`、不做 transform，**主题的视口�
 | 来源 | 磁盘位置 | 加载地址 | 说明 |
 |---|---|---|---|
 | 内置 `builtin` | `public/themes/<id>/`（打包后编译进二进制） | `/themes/<id>/index.html` | 走 WebView 自己的资源协议，dev 与打包后同一路径 |
-| 用户 `user` | `%LOCALAPPDATA%\acc-telemetry\themes\<id>\` | `http://theme.localhost/<id>/index.html`（Windows）<br>`theme://localhost/<id>/index.html`（macOS/Linux） | Rust 注册的 `theme` 自定义协议，启动时自动创建该目录 |
+| 用户 `user` | 默认 `<安装目录>\data\themes\<id>\`（可在设置里改主题目录） | `http://theme.localhost/<id>/index.html`（Windows）<br>`theme://localhost/<id>/index.html`（macOS/Linux） | Rust 注册的 `theme` 自定义协议，启动时自动创建该目录 |
+
+> 主题根目录不再是固定的 `%LOCALAPPDATA%\acc-telemetry\themes`：三类存储位置都由桌面壳的
+> `PathConfig` 统一决定，设置页「数据与存储」可分别修改，改完重启生效。
+> 详见 `docs/ENGINEERING-NOTES.md` 第 12 节。
 
 前端用 `src/telemetry/theme-url.js::themeBaseUrl(id, source)` 拼地址，**不要在业务代码里手拼前缀**：
 WebView2 只认 http(s)，Windows 上写 `theme://...` 必定加载失败。
@@ -401,7 +405,7 @@ WebView2 只认 http(s)，Windows 上写 `theme://...` 必定加载失败。
 ### 主题清单与选择（设置页）
 
 - 清单来源：内置主题在 `src/telemetry/themes.js::BUILTIN_THEME_IDS` 里显式登记（`public/` 下的文件没法自动枚举）；
-  用户主题由 Rust 命令 `list_user_themes` 扫 `%LOCALAPPDATA%\acc-telemetry\themes\` 得到。
+  用户主题由 Rust 命令 `list_user_themes` 扫当前「主题目录」得到（默认 `<安装目录>\data\themes\`，见第 12 节说明）。
 - 校验规则**只有一份**：`themes.js::checkMeta()`（`theme.json` 可解析、`id` 与目录名一致、`design` 为 80~8192 的整数、
   `fit ∈ {contain, fluid}`、`modes ⊆ {overlay, monitor}` 且非空、目录里必须有 `index.html`）。
   坏主题只在列表里标红，不影响应用启动，也不会 500。
@@ -438,7 +442,8 @@ WebView2 只认 http(s)，Windows 上写 `theme://...` 必定加载失败。
 改用户主题目录里的任何文件（`theme.css` / `theme.json` / `html` / `js`），悬浮窗与设置页预览会在一秒内重建 iframe。
 
 - Rust 侧 `notify`（`recommended_watcher`，Windows 上是 `ReadDirectoryChangesW`）递归监听
-  `%LOCALAPPDATA%\acc-telemetry\themes\`，**攒到静默 500ms 再抛一次** —— 编辑器保存常连发
+  当前生效的用户主题目录（默认 `<安装目录>\data\themes\`，可在设置里改，老版为 `%LOCALAPPDATA%\acc-telemetry\themes\`），
+  **攒到静默 500ms 再抛一次** —— 编辑器保存常连发
   临时文件 / 改名 / 属性变化多条事件，不合并会让主题重建三四轮。
 - 事件载荷是受影响的**主题 id 数组**（`emit('themes-changed', ["my-hud"])`），不是原始路径：
   前端不知道也不该知道磁盘布局。根目录里的零散文件（不属于任何主题）不触发。

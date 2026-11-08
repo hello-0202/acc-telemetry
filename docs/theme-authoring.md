@@ -4,7 +4,12 @@
 放进用户主题文件夹，在设置页点「使用」即可。
 
 想先看效果？把 [`docs/theme-template/`](./theme-template/) 整个目录拷到
-`%LOCALAPPDATA%\acc-telemetry\themes\my-hud\`，改 `theme.json` 的 `id`，然后在设置页刷新。
+用户主题目录的 `my-hud\` 下，改 `theme.json` 的 `id`，然后在设置页刷新。
+
+> 用户主题目录默认是 `<安装目录>\data\themes\`（装到只读目录或老版本升级时可能仍是
+> `%LOCALAPPDATA%\acc-telemetry\themes\`）。**别去猜路径**：设置页「数据与存储 → 主题目录」
+> 会显示当前实际位置，点「打开」直接跳过去；后面文档里的 `%LOCALAPPDATA%\acc-telemetry\themes`
+> 一律理解为「设置页显示的那个目录」。
 目录里的四个文件就是最小可运行主题。
 
 也可以把主题目录打包成 **.zip**（theme.json / index.html 放在压缩包根目录，或套一层文件夹都行），
@@ -20,7 +25,7 @@
 ## 一、目录结构
 
 ```
-%LOCALAPPDATA%\acc-telemetry\themes\
+<主题目录>\            ← 默认是 <安装目录>\data\themes，以设置页显示为准
 └── my-hud\                 ← 目录名必须等于 theme.json 里的 id
     ├── theme.json          元数据（必需）
     ├── index.html          入口（必需）

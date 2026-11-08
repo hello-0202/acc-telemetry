@@ -80,3 +80,28 @@ commands.allow = ["import_theme_zip"]
 identifier = "allow-export-theme-template"
 description = """把内置的主题模板安装包另存到用户选择的位置。只给主窗口。"""
 commands.allow = ["export_theme_template"]
+
+[[permission]]
+identifier = "allow-get-data-paths"
+description = """读取当前生效 / 待生效的三类存储路径（只读）。只给主窗口。"""
+commands.allow = ["get_data_paths"]
+
+[[permission]]
+identifier = "allow-set-data-paths"
+description = """修改配置 / 数据 / 主题的存储目录。会写引导配置并在重启后搬迁数据，只给主窗口。"""
+commands.allow = ["set_data_paths"]
+
+[[permission]]
+identifier = "allow-reset-data-paths"
+description = """把存储目录恢复成默认布局（安装目录 / 安装目录\\data）。只给主窗口。"""
+commands.allow = ["reset_data_paths"]
+
+[[permission]]
+identifier = "allow-open-data-path"
+description = """在资源管理器里打开配置 / 数据 / 主题目录，路径由 Rust 按 kind 自己算。只给主窗口。"""
+commands.allow = ["open_data_path"]
+
+[[permission]]
+identifier = "allow-restart-app"
+description = """重启应用，让待生效的存储位置在 sidecar 启动前完成迁移。只给主窗口。"""
+commands.allow = ["restart_app"]

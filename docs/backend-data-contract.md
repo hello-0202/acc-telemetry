@@ -207,7 +207,10 @@ samples(
 以下为实现时新增的字段/接口，均不改变上述必选字段的语义。
 
 ### 6.1 数据库位置与表
-- 路径：`%LOCALAPPDATA%\acc-telemetry\telemetry.db`（环境变量 `ACC_TELEMETRY_DB` 可覆盖，仅用于测试）。
+- 路径：由桌面壳在启动时决定（默认 `<安装目录>\data\telemetry.db`，旧版 / 回退时 `%LOCALAPPDATA%\acc-telemetry\telemetry.db`），
+  通过环境变量 `ACC_TELEMETRY_DB` 传给 sidecar；直接跑源码 / 测试时也可用它指到临时库。
+  配置文件另由 `ACC_TELEMETRY_CONFIG` 指定（默认 `<安装目录>\config.json`）。
+  两者都是**进程启动时**求值，运行中改要重启；完整规则见 `docs/ENGINEERING-NOTES.md` 第 12 节。
 - 新增 `config(key TEXT PRIMARY KEY, value TEXT)` 表保存前端配置。
 - `samples` 新增可空列：`t_ms`（本圈已用时间 ms）、`g_long`/`g_lat`（车体坐标 G 值）。
 

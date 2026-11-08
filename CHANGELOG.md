@@ -18,7 +18,29 @@
 
 ## [Unreleased]
 
-暂无。
+**新增 / 改动：存储位置可自定义（2026-11-08）**
+
+- 配置 / 数据 / 主题的落盘位置统一由 Rust 侧 `PathConfig`（`configDir` / `dataDir` / `themesDir`）决定，不再各处自行拼 `%LOCALAPPDATA%`。全新安装默认放在安装目录：
+  - 配置：`<安装目录>\config.json`、`window-state.json`
+  - 数据：`<安装目录>\data\telemetry.db`（含 WAL / SHM）
+  - 主题：`<安装目录>\data\themes\`
+- 安装目录不可写（如装到 `C:\Program Files`）时自动回退到 `%LOCALAPPDATA%\acc-telemetry`，并在设置页提示原因；移动盘拔掉导致原位置不可写也会临时回退，软件仍能启动。
+- 设置页「高级」新增**存储位置**（默认收起）：只暴露一个根目录入口，选定后自动派生 `<根>` / `<根>\data` / `<根>\data\themes`；下面只读列出三个实际目录，可在资源管理器里一键打开。
+- 改路径只写 `pending`，重启才生效；确认弹窗主按钮为「移动数据并重启」，会先杀掉 sidecar 再重启，避免 SQLite 被占用。
+- 迁移是**搬走**而不是复制：在 sidecar 启动前把 config / window-state / 数据库（含 WAL / SHM）/ 主题树整体搬到新位置。先全部复制并逐个校验文件大小，全部成功后才删除旧文件；任何一步失败自动回滚（只清理本次新建的文件和目录，旧位置原样保留）。目标已有同名文件时保留新位置版本、旧文件不删，宁可留两份。
+- 老用户升级不会静默迁移：旧目录里已有数据时沿用原位置，想换位置点「恢复默认」。
+- 路径配置本身固定写在 `%LOCALAPPDATA%\acc-telemetry\paths.json`（开发模式 `paths-dev.json`），不会因为改了数据目录而找不到自己；可用 `ACC_TELEMETRY_BOOTSTRAP_DIR` 重定向做测试。
+- sidecar 通过 `ACC_TELEMETRY_DB` / `ACC_TELEMETRY_CONFIG` 接收实际路径；源码 / 测试没设这些变量时回退旧布局。`config.json` 跟随传入的数据库路径解析，临时库测试不会写脏用户配置；崩溃日志也改写到数据目录。
+
+**新增 / 改动：更新源**
+
+- 更新检查增加 Gitee 兜底源：默认先走 GitHub Releases，失败后尝试 Gitee 发行版仓库的 `latest.json`；两个地址都在 `tauri.conf.json` 的 `plugins.updater.endpoints` 中配置。
+
+> 本次改动涉及 Python sidecar，需重打包并同步三处 `telemetry_core.exe`。
+
+**修复**
+
+- 检查更新：单次超时从 5s 提到 7s，失败后自动重试一次（最长约 15s）；失败原因按 DNS / 连接 / TLS / 服务端异常归类成一句面向用户的提示（原始异常只写 console）；启动时的静默检查失败不再打扰用户，只有手动检查才弹提示。
 
 ## [1.1.0] - 2026-11-07
 

@@ -32,6 +32,9 @@
 - `hiddenimports` 是空的，全靠 Analysis 静态分析 → 新模块必须在 `server.py` 的 import 链上，
   否则源码运行正常、打包后 404。
 - `npm run tauri dev` 之前别留正在运行的 sidecar（拷 exe 被占用 → `panic, os error 5`）。
+  debug 那份拷不进去时不用杀用户进程：`binaries/` 换了之后 dev 构建会自己刷新 `target/debug/`，用 SHA256 核对即可。
+- 改了路径相关代码，可用 venv 里的 `PyInstaller.archive.readers.CArchiveReader(exe).open_embedded_archive('PYZ.pyz')`
+  抽出模块 code object 检查 `co_consts` / `co_names`，不必真的再起一个后端进程验证。
 
 ## 3. 版本管理
 
@@ -117,7 +120,8 @@
 - 尺寸读数：`innerSize()` 是**物理像素**，显示 design 前必须除以 `scaleFactor`；`set_overlay_size` 用 `LogicalSize`。
   工具条显示 `design = 窗口逻辑尺寸 - 14`（6×2 内边距 + 1×2 边框）。失焦回锁要延迟复核（拖动结束那一下也会掉焦点）。
 - 前提：ACC 必须窗口化/无边框（用户已确认「全屏已禁用」）。独占全屏下普通置顶窗口盖不住，需 D3D Present hook。
-- **位置 / 尺寸持久化（2026-10-28）**：`place_overlay()` 首次显示先读 `%LOCALAPPDATA%\acc-telemetry\window-state.json` 的 `overlay` 几何恢复；`OverlayView` 在 `onMoved`/`onResized` 后 400ms 调 `save_overlay_rect` 落盘（物理像素，避开 DPI 换算坑）。注意：主题若声明 `design`，加载时会按 design 重设尺寸、覆盖保存值；无 design 的主题（可拖拽缩放）保存值长期有效。
+- **位置 / 尺寸持久化（2026-10-28）**：`place_overlay()` 首次显示先读「配置文件目录」下的
+  `window-state.json`（默认安装目录；可在设置里改，见第 12 节）恢复上次几何，没有才贴右上角；`OverlayView` 在 `onMoved`/`onResized` 后 400ms 调 `save_overlay_rect` 落盘（物理像素，避开 DPI 换算坑）。注意：主题若声明 `design`，加载时会按 design 重设尺寸、覆盖保存值；无 design 的主题（可拖拽缩放）保存值长期有效。
 
 ## 10. 主题宿主与安全边界
 
@@ -148,7 +152,7 @@
 - `serve_user_theme()`：id 只允许 `[A-Za-z0-9_-]`；拒绝 `..` / `.` / `\` / NUL；`canonicalize()` 后比前缀；
   14 种扩展名白名单；统一 404（不泄漏存在性）；`no-store` + `ACAO:*`。
 - 清单校验只在 `themes.js::checkMeta()` 一份；内置主题靠 `BUILTIN_THEME_IDS` 显式登记（`public/` 不能枚举）。
-- 热重载：Rust `notify` 递归监听用户主题目录，debounce = **攒到静默 500ms**（`recv` + `recv_timeout(500)` drain），
+- 热重载：Rust `notify` 递归监听「主题目录」（默认 `<安装目录>\data\themes`，见第 12 节），debounce = **攒到静默 500ms**（`recv` + `recv_timeout(500)` drain），
   emit `themes-changed`（受影响 id 数组）→ `theme-watch.js::onThemesChanged(fn) → 退订` 单例。
 - 握手三个坑：①主题脚本常比宿主 `message` 监听先跑完 → 宿主必须在 **setup 阶段**（不是 `onMounted`）挂监听，
   并在 iframe `load` 后每 400ms 重发 `init`；②主题对每个 `init` 都要回 `ready`（别用一次性 flag）；
@@ -188,3 +192,57 @@
   → 脚本要按 `url.startsWith(BASE)` 挑 target，否则 `setDeviceMetricsOverride` 报 "Target does not support metrics override"。
 - **杀进程只按 `CommandLine -like '*<临时目录名>*'` 筛**；`taskkill /F /IM chrome.exe` 会连用户浏览器一起杀（真事故）。
 - 垫片行为：只拦「非沙箱」删除（Bash 报 `Sandbox bypassed` 时 `rm` 全失败）；默认沙箱内 `rm` 是真删除。
+
+## 12. 存储位置（数据 / 配置 / 主题，2026-11-08）
+
+- **单一真源 = `src-tauri/src/main.rs` 的 `PathConfig { configDir, dataDir, themesDir }`**，全局静态
+  `PATHS: OnceLock<RwLock<PathsState>>`。用 OnceLock 而不是 `app.manage` 是因为 `theme://` 自定义协议的同步闭包
+  拿不到 `AppHandle`。Rust 的窗口几何、主题协议、主题列表 / 导入 / 删除 / 热重载监听、sidecar env、前端设置页
+  全部读这一份值，**不要再自己拼 `%LOCALAPPDATA%`**。
+- 默认布局（release 首次启动）：`<安装目录>\` 放 `config.json` + `window-state.json`，
+  `<安装目录>\data\` 放 `telemetry.db`（含 WAL/SHM），`<安装目录>\data\themes\` 放用户主题。
+  安装目录 = `current_exe().parent()`，跟随安装页选的地址。
+- 三种回退：①开发模式固定 `%LOCALAPPDATA%\acc-telemetry`（避免写进 `target/debug`，`reset_layout()` 也走同一套）；
+  ②`writable_dir()` 真建目录 + 写探针文件，装到 `C:\Program Files` 这类只读位置时回退旧布局并在设置页提示；
+  ③老用户旧目录里已有 db / config / themes 时默认沿用，**绝不静默换位置**，想搬要点「恢复默认」。
+  上次生效的位置不可写（移动盘拔了）也临时回退，但引导文件里的 effective 不动。
+- **引导文件是唯一例外，不能放进可改目录**（改完就找不到自己）：固定
+  `%LOCALAPPDATA%\acc-telemetry\paths.json`，dev 用 `paths-dev.json` 互不干扰；测试可用
+  `ACC_TELEMETRY_BOOTSTRAP_DIR` 指到临时目录。字段 `effective` / `pending` / `note`
+  （旧的 `copyOnApply` 已删除，旧文件里多出来的字段会被 serde 忽略）。
+- 改路径只写 `pending`，**重启软件才生效**。原因：sidecar 进程持有 SQLite，运行中切库必炸。
+  `init_paths()` 在 `.setup()` 最开头、sidecar spawn 之前执行，此刻数据库没被占用，才安全搬
+  `telemetry.db` + `-wal` + `-shm`。
+- **迁移语义（不是复制）**：`migrate_paths_data()` 分两阶段 ——
+  ①先只复制：`config.json` / `window-state.json` / db 三件 / 主题树（跳过 `.trash`、`.import-*`），
+  每个文件复制后校验大小一致；②全部复制成功后才 `remove_file` 删旧文件。任何一步失败走
+  `rollback_migration()`：删掉**本次新建**的目标文件与目录（预存在的一律不碰），旧位置一个文件不少。
+  所以「迁移失败」= 回到动手前，不会留半截数据库。
+- 目标已有同名文件时：不覆盖新位置、**也不删旧文件**（`kept` 计数写进 note）。宁可留两份，不丢数据。
+- 迁移后清理旧位置只删**空**目录（`prune_empty_dirs` 递归删空、`remove_dir` 非递归），
+  且 `removable_old_dir()` 排除配置目录与安装目录 —— 配置目录可能就是安装目录，递归删等于卸载程序。
+- 用户可选不留的中间态没有了：pending 一旦存在就只有「迁移」一条路，不再有「仅切换」。
+- `restart_app` 命令用于让 pending 立即生效：**必须先 kill sidecar 再 `app.restart()`**。
+  `AppHandle::restart()` 在主线程分支里直接 `cleanup_before_exit()` + `exit(0)`，**不会触发
+  `RunEvent::Exit`**，我们那条兜底 kill 轮不到，会留下占着 8008 的孤儿后端。
+- **透传给 sidecar 的两个 env**（`tauri_plugin_shell::Command::env`，仅当进程环境里没显式设置时才注入，
+  保留造测试数据时 `ACC_TELEMETRY_DB=<临时库>` 的隔离能力）：
+  `ACC_TELEMETRY_DB=<dataDir>\telemetry.db`、`ACC_TELEMETRY_CONFIG=<configDir>\config.json`。
+  Python 侧 `DB_PATH` / `CONFIG_PATH` 都是**模块导入时求值**的常量，运行中改路径无效，必须重启后端。
+- Python 侧 `ConfigRepository(db)` 用 `config.config_path_for(db.path)`，不是全局常量：
+  有 `ACC_TELEMETRY_CONFIG` 就用它（桌面壳），否则**跟随传进来的 db 路径**。
+  别改回全局常量 —— 测试传临时 db 时配置会写进用户真实 config.json（同 2026-10-27 假圈事故一个性质）。
+  `server.py::_crash_log_path()` 也跟着 `ACC_TELEMETRY_DB` 走，Program Files 下不会静默丢日志。
+- 新增命令（只给 `main`）：`get_data_paths` / `set_data_paths` / `reset_data_paths` / `open_data_path` /
+  `restart_app`，`permissions/app.toml` 五条逐一登记，`capabilities/default.json` 授权；
+  `overlay` / `preview` capability 不含这些。
+  ⚠️ 老问题仍在：**主窗口里的主题 iframe 也能调 Tauri IPC**（`window.label()=="main"` 挡不住子 frame），
+  做主题市场前要把预览挪进独立 `WebviewWindow`（只留 `core:event:allow-listen`）。
+- 卸载 / 更新安全：Tauri NSIS 卸载段只删登记文件 + 非递归 `RMDir "$INSTDIR"`，
+  自动更新走 `/UPDATE` 不卸载旧版，所以 `<安装目录>\data\` 不会被清掉。但仍建议提示用户卸载前自行备份 data。
+- 设置页 `SettingsView.vue` 的存储位置全部收进「高级」折叠区，默认收起：只暴露**一个**「存储位置」入口
+  （根目录 + 打开 / 更改），下面只读列出三个派生目录（配置文件 / 数据库 / 主题）—— 内部仍是三个独立
+  `PathConfig` 字段，界面上只有一处「更改」，点一次三个一起迁移。改根目录时前端按
+  `layoutFromRoot()` 派生 `<根>` / `<根>\data` / `<根>\data\themes`，和 Rust `install_layout()` 同一形状，
+  **两边形状要一起改**。弹窗主按钮文案「移动数据并重启」，点了就 `set_data_paths` + 立即 `restart_app`；
+  重启失败时 pending 已落盘，界面上留「立即重启」按钮兜底。浏览器预览（无 IPC）退回只读展示。

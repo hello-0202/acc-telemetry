@@ -35,6 +35,11 @@
     "allow-open-theme-preview",
     "allow-import-theme-zip",
     "allow-export-theme-template",
+    "allow-get-data-paths",
+    "allow-set-data-paths",
+    "allow-reset-data-paths",
+    "allow-open-data-path",
+    "allow-restart-app",
     "dialog:default",
     "core:event:allow-emit"
   ]

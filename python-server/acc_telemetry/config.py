@@ -1,8 +1,12 @@
 """全局配置。
 
-数据库固定放在用户本地应用数据目录，避免打包到 Program Files 后无写权限：
-    %LOCALAPPDATA%\\acc-telemetry\\telemetry.db
-测试时可用环境变量 ACC_TELEMETRY_DB 覆盖。
+存储位置由桌面壳（Tauri）在启动时通过环境变量指定：
+    ACC_TELEMETRY_DB      完整数据库文件路径
+    ACC_TELEMETRY_CONFIG  完整 config.json 文件路径
+两者默认都在 <安装目录>\\data\\ 与 <安装目录>\\（见 src-tauri/src/main.rs 的 PathConfig）。
+直接跑源码 / 测试时没有这些变量，回退到 %LOCALAPPDATA%\\acc-telemetry\\ 这套旧布局。
+
+注意：DB_PATH / CONFIG_PATH 都是模块导入时求值的常量，运行中改路径必须重启后端。
 """
 
 from __future__ import annotations
@@ -24,6 +28,22 @@ def _local_app_data() -> Path:
 
 APP_DIR = _local_app_data() / "acc-telemetry"
 DB_PATH = Path(os.getenv("ACC_TELEMETRY_DB") or (APP_DIR / "telemetry.db"))
+# CONFIG_PATH 是「没有显式指定」时的默认值；真正落盘的位置由 config_path_for() 决定，
+# 见 config_repo.py：不能用这个全局常量覆盖仓储传入的临时数据库路径。
+CONFIG_PATH = Path(os.getenv("ACC_TELEMETRY_CONFIG") or (DB_PATH.parent / "config.json"))
+
+
+def config_path_for(db_path: str | Path) -> Path:
+    """按实际使用的数据库路径解析 config.json 的位置。
+
+    桌面壳会显式设置 ACC_TELEMETRY_CONFIG（配置文件可以单独放安装目录根）；
+    没有显式设置时跟随**传进来的** db 路径，保证测试里用临时库时配置也落在临时目录，
+    不会误写用户真实配置（造测试数据前只设 ACC_TELEMETRY_DB 的老约定依然成立）。
+    """
+    explicit = os.getenv("ACC_TELEMETRY_CONFIG")
+    if explicit:
+        return Path(explicit)
+    return Path(db_path).parent / "config.json"
 
 # 采样 100Hz（ACC 物理频率），推送 50Hz（契约建议 30-60Hz）
 SAMPLE_HZ = 100

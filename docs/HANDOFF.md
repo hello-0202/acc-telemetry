@@ -7,6 +7,15 @@ ACC（Assetto Corsa Competizione）遥测工具：Rust/Tauri 桌面壳 + Python 
 WebSocket 推帧 → Vue 前端画实时面板 / 圈速分析。当前主线是**把 UI 改造成可主题化**
 （用户写一个 HTML 主题包就能替换悬浮窗 / 主面板外观，数据由宿主灌进去）。
 
+> **2026-11-08 未提交改动：存储位置可自定义。** 数据目录 / 配置文件目录 / 用户主题目录
+> 由 `src-tauri/src/main.rs::PathConfig` 单一真源决定，默认跟随安装目录；设置页「高级」折叠区里
+> 只有一个「存储位置」入口（三个目录内部仍各自独立，一次更改三个一起迁移），改完点「移动数据并重启」即可。
+> 迁移是**搬走**语义（旧文件不保留），复制阶段任何失败都整体回滚。涉及 Rust、Python sidecar（已重打包并同步三处 exe）、
+> 前端设置页与 ACL。**验收前请重点测**：①装到只读路径的回退；②老用户升级不搬数据；
+> ③改路径 → 立即重启 → 圈速历史 / 主题都在、旧目录已清空；④迁移中途失败能回滚（旧数据完好）；
+> ⑤新位置已有同名文件时不覆盖、旧文件保留。
+> 完整设计与坑位见 `docs/ENGINEERING-NOTES.md` 第 12 节。本文其余进度描述仍停留在 2026-10-28。
+
 ## 0. 文档地图
 
 完整文档索引与状态标注见 [`docs/README.md`](./README.md)。
@@ -54,7 +63,7 @@ P3 用户主题包（任务 0~6）✅ → P4 主面板壳化 ✅ → P5 副屏�
 ## 3. 遗留问题 / 已完成项
 
 1. ✅ **悬浮窗位置 / 尺寸持久化**（2026-10-28）：`main.rs::place_overlay()` 现在先读
-   `%LOCALAPPDATA%\acc-telemetry\window-state.json` 恢复上次几何，没有才贴右上角；
+   「配置文件目录」下的 `window-state.json`（默认安装目录，可在设置里改）恢复上次几何，没有才贴右上角；
    悬浮窗拖动 / 拉边缩放结束后由 `OverlayView` 经 `save_overlay_rect` 落盘（物理像素，无 DPI 坑）。
    注意交互：主题若声明 `design`，加载时会按 design 重设尺寸、覆盖保存值；无 design 的主题（可拖拽缩放）保存值长期有效。
 2. **主题拿不到赛道几何**：内置面板的实时赛道图来自 `getTrackGeometry()`，不在 `state` 里。
@@ -95,7 +104,9 @@ cd src-tauri && cargo check --target-dir ../.workbuddy/target-check
 - **`npm run tauri dev` 前别留运行中的 sidecar**（拷 exe 被占用 → `panic, os error 5`）。
 - **别和 `tauri dev` 抢构建**，并发写 `target/debug` 会写坏 `incremental/`。
 - **造测试共享内存前必须 `ACC_TELEMETRY_DB=<临时库>`**，否则假圈写进用户真实历史（真事故）。
-- 真实库位置：`%LOCALAPPDATA%\acc-telemetry\telemetry.db`。
+- 真实库位置**不再固定**：默认 `<安装目录>\data\telemetry.db`（旧版 / 回退时才在
+  `%LOCALAPPDATA%\acc-telemetry\telemetry.db`），以设置页「数据与存储 → 数据目录」为准；
+  路径规则见 `ENGINEERING-NOTES.md` 第 12 节。
 
 ## 6. 不要做的事
 

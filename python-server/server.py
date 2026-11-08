@@ -17,6 +17,7 @@ ACC 遥测后端入口（PyInstaller sidecar）。
 from __future__ import annotations
 
 import multiprocessing
+import os
 import socket
 import sys
 import traceback
@@ -36,7 +37,10 @@ def _port_in_use(host: str, port: int) -> bool:
 
 
 def _crash_log_path() -> Path:
-    """打包后写到 exe 旁边，源码运行时写到脚本旁边。"""
+    """写到数据目录：安装目录可能是只读的 Program Files，写 exe 旁边会静默丢日志。"""
+    db = os.getenv("ACC_TELEMETRY_DB")
+    if db:
+        return Path(db).parent / "crash_log.txt"
     base = Path(sys.executable).parent if getattr(sys, "frozen", False) else LIB_DIR
     return base / "crash_log.txt"
 

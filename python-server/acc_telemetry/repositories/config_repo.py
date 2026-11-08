@@ -1,8 +1,8 @@
 """配置仓储（JSON 文件）。
 
-设置项不再落 SQLite，而是直接持久化到用户目录下的 config.json：
-    %LOCALAPPDATA%\\acc-telemetry\\config.json
-默认与数据库同目录，可用环境变量 ACC_TELEMETRY_DB 改变目录时一起跟随。
+设置项不落 SQLite，而是直接持久化到 config.json。路径由
+`acc_telemetry.config.config_path_for(db.path)` 决定：桌面壳启动 sidecar 时用
+ACC_TELEMETRY_CONFIG 指定（默认在安装目录根），源码运行 / 测试时跟随传入的数据库目录。
 
 - 文件不存在时读取旧版 SQLite `config` 表做一次性迁移；
 - 写入走「临时文件 + os.replace」，避免中途崩溃留下半个 JSON；
@@ -18,6 +18,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
+from ..config import config_path_for
 from ..db import Database
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ DEFAULTS = {
 class ConfigRepository:
     def __init__(self, db: Database, path: str | Path | None = None) -> None:
         self.db = db
-        self.path = Path(path) if path is not None else Path(db.path).parent / "config.json"
+        self.path = Path(path) if path is not None else config_path_for(db.path)
         self._lock = threading.Lock()
 
     def get_all(self) -> dict:

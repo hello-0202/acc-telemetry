@@ -190,6 +190,41 @@ function closeUpdate() {
   }
 }
 
+// 国内直连 GitHub 冷启动握手常见 3~10s，5s 很容易卡在第一次连接上。
+// 7s + 失败后重试一次：最长约 15s，第二次通常已经走热连接，能在超时前拿到结果。
+// 如果真机仍频繁超时，再把这里提到 10~15s（单次超时比堆重试更可控）。
+const UPDATE_CHECK_TIMEOUT_MS = 7_000;
+const UPDATE_CHECK_RETRIES = 1;
+const UPDATE_CHECK_RETRY_DELAY_MS = 1_000;
+
+// 内部用：把插件抛出的错误压成一行，只写日志，不给用户看原始堆栈。
+function describeUpdateError(e) {
+  const raw = e && (e.message || e.error) !== undefined ? (e.message || e.error) : e;
+  const text = typeof raw === 'string' ? raw : (raw ? JSON.stringify(raw) : '');
+  return (text || '未知错误').replace(/\s+/g, ' ').trim().slice(0, 300);
+}
+
+// 给用户看的失败原因：按常见故障归类，不暴露 URL / 堆栈 / 英文原文。
+function friendlyUpdateError(e) {
+  const raw = describeUpdateError(e).toLowerCase();
+  if (/timed? ?out|timeout/.test(raw)) {
+    return '连接更新服务器超时，可能是网络较慢或被拦截，请稍后重试。';
+  }
+  if (/dns|resolve|lookup|name not known/.test(raw)) {
+    return '无法解析更新服务器地址，请检查网络或 DNS 设置。';
+  }
+  if (/certificate|tls|ssl|handshake/.test(raw)) {
+    return '与更新服务器的安全连接失败，请检查系统时间或代理设置。';
+  }
+  if (/404|not found|release json|valid release|parse/.test(raw)) {
+    return '更新服务器暂时没有可用的版本信息，请稍后再试。';
+  }
+  if (/connect|network|request|socket|refused|unreachable|offline/.test(raw)) {
+    return '无法连接更新服务器，请检查网络或代理设置。';
+  }
+  return '检查更新失败，请稍后重试。';
+}
+
 async function handleCheckUpdate(manual = false) {
   if (isCheckingUpdate.value) return;
   // 浏览器（vite dev）里没有 Tauri 运行时，插件调用必然失败，直接拦掉
@@ -207,19 +242,36 @@ async function handleCheckUpdate(manual = false) {
   }
   isCheckingUpdate.value = true;
   updateErrorMsg.value = '';
+
+  let lastError = null;
   try {
-    const update = await check({ timeout: 5000 });
-    updateChecked.value = true;
-    closeUpdate();
-    if (update) {
-      updateInfo.value = update;
-      // 启动时的静默检查也走右下角弹窗，取代原来状态栏里的一行提示
-      updateDialogOpen.value = true;
+    for (let attempt = 0; attempt <= UPDATE_CHECK_RETRIES; attempt += 1) {
+      try {
+        const update = await check({ timeout: UPDATE_CHECK_TIMEOUT_MS });
+        updateChecked.value = true;
+        closeUpdate();
+        if (update) {
+          updateInfo.value = update;
+          // 启动时的静默检查也走右下角弹窗，取代原来状态栏里的一行提示
+          updateDialogOpen.value = true;
+        }
+        return;
+      } catch (e) {
+        lastError = e;
+        console.error(
+          `update check failed (attempt ${attempt + 1}/${UPDATE_CHECK_RETRIES + 1}):`,
+          e,
+        );
+        if (attempt < UPDATE_CHECK_RETRIES) {
+          await new Promise((resolve) => setTimeout(resolve, UPDATE_CHECK_RETRY_DELAY_MS));
+        }
+      }
     }
-  } catch (e) {
-    // GitHub 在国内访问不稳，静默检查失败只记日志，不打扰用户
-    console.error('update check failed:', e);
-    updateErrorMsg.value = '无法连接更新服务器，请检查网络后重试。';
+    // 启动时的静默检查失败只记日志，不打扰用户；手动检查才弹提示。
+    // 错误按常见故障归类成一句人话，原始异常留在 console 里给排查用。
+    if (manual) {
+      updateErrorMsg.value = friendlyUpdateError(lastError);
+    }
   } finally {
     isCheckingUpdate.value = false;
   }
