@@ -78,6 +78,8 @@ jobs:
           latest_id=$(awk -F'\t' '$2=="latest.json"{print $1}' assets.tsv)
           exe_id=$(awk -F'\t' '$2 ~ /-setup\.exe$/{print $1; exit}' assets.tsv)
           exe_name=$(awk -F'\t' '$2 ~ /-setup\.exe$/{print $2; exit}' assets.tsv)
+          msi_id=$(awk -F'\t' '$2 ~ /\.msi$/{print $1; exit}' assets.tsv)
+          msi_name=$(awk -F'\t' '$2 ~ /\.msi$/{print $2; exit}' assets.tsv)
           test -n "$latest_id"
           test -n "$exe_id"
           gh api -H "Accept: application/octet-stream" \
@@ -85,6 +87,13 @@ jobs:
           gh api -H "Accept: application/octet-stream" \
             "repos/${{ github.repository }}/releases/assets/${exe_id}" > "out/${exe_name}"
           echo "EXE_NAME=${exe_name}" >> "$GITHUB_ENV"
+          # MSI 平台的签名对应 .msi 文件，URL 必须分开指向，不能统一改成 setup.exe
+          if [ -n "$msi_id" ]; then
+            gh api -H "Accept: application/octet-stream" \
+              "repos/${{ github.repository }}/releases/assets/${msi_id}" > "out/${msi_name}"
+            echo "MSI_NAME=${msi_name}" >> "$GITHUB_ENV"
+            test -s "out/${msi_name}"
+          fi
           test -s out/latest.json
           test -s "out/${exe_name}"
 
@@ -92,13 +101,22 @@ jobs:
         run: |
           set -euo pipefail
           EXE_URL="https://gitee.com/${GITEE_REPO}/releases/download/${TAG}/${EXE_NAME}"
-          python3 - "$EXE_URL" <<'PY'
+          MSI_URL=""
+          if [ -n "${MSI_NAME:-}" ]; then
+            MSI_URL="https://gitee.com/${GITEE_REPO}/releases/download/${TAG}/${MSI_NAME}"
+          fi
+          python3 - "$EXE_URL" "$MSI_URL" <<'PY'
           import json, sys
-          url = sys.argv[1]
+          exe_url, msi_url = sys.argv[1], sys.argv[2]
           with open('out/latest.json', encoding='utf-8') as f:
               d = json.load(f)
-          for plat in d.get('platforms', {}).values():
-              plat['url'] = url
+          for key, plat in d.get('platforms', {}).items():
+              if key.endswith('-msi'):
+                  if not msi_url:
+                      sys.exit(f'{key} 需要 MSI 安装包，但 GitHub Release 里没有 .msi 资产')
+                  plat['url'] = msi_url
+              else:
+                  plat['url'] = exe_url
           with open('out/latest.json', 'w', encoding='utf-8') as f:
               json.dump(d, f, ensure_ascii=False, indent=2)
           PY
@@ -111,6 +129,9 @@ jobs:
           cd gitee-repo
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
+          # 清单固定放 main（v1.2.0 起 updater 读的就是 raw/main）。
+          # Gitee 仓库默认分支是 master，clone 下来要先切到 main，否则 push 会分叉失败。
+          git checkout main 2>/dev/null || git checkout -b main
           mkdir -p update
           cp ../out/latest.json update/latest.json
           git add update/latest.json
@@ -129,9 +150,14 @@ jobs:
           echo "$RESP"
           echo "GITEE_RELEASE_ID=$(echo "$RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])')" >> "$GITHUB_ENV"
 
-      - name: Upload installer to Gitee
+      - name: Upload installers to Gitee
         run: |
           set -euo pipefail
           curl -sS -X POST "https://gitee.com/api/v5/repos/${GITEE_REPO}/releases/${GITEE_RELEASE_ID}/attach_files" \
             -H "Authorization: token ${GITEE_TOKEN}" \
             -F "file=@out/${EXE_NAME}"
+          if [ -n "${MSI_NAME:-}" ]; then
+            curl -sS -X POST "https://gitee.com/api/v5/repos/${GITEE_REPO}/releases/${GITEE_RELEASE_ID}/attach_files" \
+              -H "Authorization: token ${GITEE_TOKEN}" \
+              -F "file=@out/${MSI_NAME}"
+          fi
