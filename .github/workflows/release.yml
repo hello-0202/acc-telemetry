@@ -11,6 +11,8 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
+    outputs:
+      release_id: ${{ steps.tauri.outputs.releaseId }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,6 +43,7 @@ jobs:
           cp dist_new/telemetry_core.exe ../src-tauri/binaries/telemetry_core-x86_64-pc-windows-msvc.exe
 
       - name: Build and publish (draft)
+        id: tauri
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -53,3 +56,82 @@ jobs:
           releaseDraft: true
           prerelease: false
           updaterJsonPreferNsis: true
+
+  publish-gitee:
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_name }}
+      GITEE_REPO: helloets/acc-telemetry-releases
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+      GIT_TERMINAL_PROMPT: "0"
+    steps:
+      - name: Download assets from GitHub draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.release.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          gh api "repos/${{ github.repository }}/releases/${RELEASE_ID}/assets" \
+            --jq '.[] | [.id,.name] | @tsv' > assets.tsv
+          latest_id=$(awk -F'\t' '$2=="latest.json"{print $1}' assets.tsv)
+          exe_id=$(awk -F'\t' '$2 ~ /-setup\.exe$/{print $1; exit}' assets.tsv)
+          exe_name=$(awk -F'\t' '$2 ~ /-setup\.exe$/{print $2; exit}' assets.tsv)
+          test -n "$latest_id"
+          test -n "$exe_id"
+          gh api -H "Accept: application/octet-stream" \
+            "repos/${{ github.repository }}/releases/assets/${latest_id}" > out/latest.json
+          gh api -H "Accept: application/octet-stream" \
+            "repos/${{ github.repository }}/releases/assets/${exe_id}" > "out/${exe_name}"
+          echo "EXE_NAME=${exe_name}" >> "$GITHUB_ENV"
+          test -s out/latest.json
+          test -s "out/${exe_name}"
+
+      - name: Rewrite latest.json for Gitee
+        run: |
+          set -euo pipefail
+          EXE_URL="https://gitee.com/${GITEE_REPO}/releases/download/${TAG}/${EXE_NAME}"
+          python3 - "$EXE_URL" <<'PY'
+          import json, sys
+          url = sys.argv[1]
+          with open('out/latest.json', encoding='utf-8') as f:
+              d = json.load(f)
+          for plat in d.get('platforms', {}).values():
+              plat['url'] = url
+          with open('out/latest.json', 'w', encoding='utf-8') as f:
+              json.dump(d, f, ensure_ascii=False, indent=2)
+          PY
+          cat out/latest.json
+
+      - name: Push manifest and tag to Gitee
+        run: |
+          set -euo pipefail
+          git clone "https://helloets:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git" gitee-repo
+          cd gitee-repo
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          mkdir -p update
+          cp ../out/latest.json update/latest.json
+          git add update/latest.json
+          git commit -m "chore: update latest.json for ${TAG}" || true
+          git push origin main
+          git tag -f "$TAG"
+          git push -f origin "$TAG"
+
+      - name: Create Gitee release
+        run: |
+          set -euo pipefail
+          BODY=$(printf '{"tag_name":"%s","name":"%s","body":"See CHANGELOG.md","prerelease":false}' "$TAG" "$TAG")
+          RESP=$(curl -sS -X POST "https://gitee.com/api/v5/repos/${GITEE_REPO}/releases" \
+            -H "Authorization: token ${GITEE_TOKEN}" \
+            -H "Content-Type: application/json" -d "$BODY")
+          echo "$RESP"
+          echo "GITEE_RELEASE_ID=$(echo "$RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])')" >> "$GITHUB_ENV"
+
+      - name: Upload installer to Gitee
+        run: |
+          set -euo pipefail
+          curl -sS -X POST "https://gitee.com/api/v5/repos/${GITEE_REPO}/releases/${GITEE_RELEASE_ID}/attach_files" \
+            -H "Authorization: token ${GITEE_TOKEN}" \
+            -F "file=@out/${EXE_NAME}"
