@@ -40,7 +40,7 @@
 
 - 5 处必须一致：`package.json`、`package-lock.json`（root 与 `packages.""` 各一处，常漏）、`src-tauri/Cargo.toml`、
   `src-tauri/tauri.conf.json`（**单一真源**）、`python-server/acc_telemetry/__init__.py::__version__`。`Cargo.lock` 自动跟随。
-  当前 `1.1.0`。改版本后 sidecar 必须重打包（exe 里烤的是 `__version__`）。
+  当前 `1.2.0`。改版本后 sidecar 必须重打包（exe 里烤的是 `__version__`）。
 - 发版：改齐五处 → 更新 `CHANGELOG.md` → `git tag vX.Y.Z && git push origin vX.Y.Z`
   → `.github/workflows/release.yml`（tauri-action, windows-latest）自动构建 sidecar、出安装包、建 draft release。
 

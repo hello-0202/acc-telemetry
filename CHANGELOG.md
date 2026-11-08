@@ -2,7 +2,7 @@
 
 本项目版本号遵循 [语义化版本 2.0.0](https://semver.org/lang/zh-CN/)（SemVer）。
 
-> 当前版本：`1.1.0`（主题化与体验增强，对应 tag `v1.1.0`，发布流程见下文）。
+> 当前版本：`1.2.0`（存储位置可自定义，对应 tag `v1.2.0`，发布流程见下文）。
 
 ## 版本号命名规则 / Versioning rules
 
@@ -18,7 +18,11 @@
 
 ## [Unreleased]
 
-**新增 / 改动：存储位置可自定义（2026-11-08）**
+暂无。
+
+## [1.2.0] - 2026-11-08
+
+**新增 / 改动：存储位置可自定义**
 
 - 配置 / 数据 / 主题的落盘位置统一由 Rust 侧 `PathConfig`（`configDir` / `dataDir` / `themesDir`）决定，不再各处自行拼 `%LOCALAPPDATA%`。全新安装默认放在安装目录：
   - 配置：`<安装目录>\config.json`、`window-state.json`
