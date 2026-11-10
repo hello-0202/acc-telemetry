@@ -60,6 +60,8 @@ jobs:
   publish-gitee:
     needs: release
     runs-on: ubuntu-latest
+    # 跨海上传到 Gitee 偶发卡死；有总超时就不会挂半小时
+    timeout-minutes: 20
     env:
       TAG: ${{ github.ref_name }}
       GITEE_REPO: helloets/acc-telemetry-releases
@@ -122,7 +124,7 @@ jobs:
           PY
           cat out/latest.json
 
-      - name: Push manifest and tag to Gitee
+      - name: Push tag to Gitee
         run: |
           set -euo pipefail
           git clone "https://helloets:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git" gitee-repo
@@ -130,34 +132,72 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
           # 清单固定放 main（v1.2.0 起 updater 读的就是 raw/main）。
-          # Gitee 仓库默认分支是 master，clone 下来要先切到 main，否则 push 会分叉失败。
+          # 仓库默认分支是 master，clone 下来要先切到 main，否则 push 会分叉失败。
           git checkout main 2>/dev/null || git checkout -b main
+          git tag -f "$TAG"
+          git push -f origin "$TAG"
+
+      - name: Create Gitee release (reuse if it already exists)
+        run: |
+          set -euo pipefail
+          # 先查同 tag 的发行版；重跑 workflow 时直接复用，避免 409
+          LIST=$(curl -sS --connect-timeout 20 --max-time 60 \
+            "https://gitee.com/api/v5/repos/${GITEE_REPO}/releases?per_page=100" \
+            -H "Authorization: token ${GITEE_TOKEN}")
+          RELEASE_ID=$(printf '%s' "$LIST" | TAG="$TAG" python3 -c '
+          import json, os, sys
+          tag = os.environ["TAG"]
+          try:
+              for r in json.load(sys.stdin):
+                  if r.get("tag_name") == tag:
+                      print(r.get("id"))
+                      break
+          except Exception:
+              pass
+          ')
+          if [ -z "$RELEASE_ID" ]; then
+            BODY=$(printf '{"tag_name":"%s","name":"%s","body":"See CHANGELOG.md","prerelease":false}' "$TAG" "$TAG")
+            CODE=$(curl -sS --connect-timeout 20 --max-time 60 \
+              -o /tmp/release.json -w "%{http_code}" \
+              -X POST "https://gitee.com/api/v5/repos/${GITEE_REPO}/releases" \
+              -H "Authorization: token ${GITEE_TOKEN}" \
+              -H "Content-Type: application/json" -d "$BODY")
+            echo "create release: HTTP ${CODE}"
+            cat /tmp/release.json
+            echo
+            [ "$CODE" = "200" ] || [ "$CODE" = "201" ] || exit 1
+            RELEASE_ID=$(python3 -c 'import json;print(json.load(open("/tmp/release.json"))["id"])')
+          fi
+          echo "GITEE_RELEASE_ID=${RELEASE_ID}" >> "$GITHUB_ENV"
+          echo "using Gitee release id ${RELEASE_ID} for ${TAG}"
+
+      - name: Upload installers to Gitee
+        run: |
+          set -euo pipefail
+          upload() {
+            local file="$1" code
+            code=$(curl -sS --connect-timeout 20 --max-time 600 \
+              --retry 2 --retry-delay 5 --retry-all-errors \
+              -o /tmp/upload.json -w "%{http_code}" \
+              -X POST "https://gitee.com/api/v5/repos/${GITEE_REPO}/releases/${GITEE_RELEASE_ID}/attach_files" \
+              -H "Authorization: token ${GITEE_TOKEN}" \
+              -F "file=@${file}")
+            echo "upload ${file}: HTTP ${code}"
+            cat /tmp/upload.json || true
+            echo
+            [ "$code" = "200" ] || [ "$code" = "201" ] || return 1
+          }
+          upload "out/${EXE_NAME}"
+          if [ -n "${MSI_NAME:-}" ]; then upload "out/${MSI_NAME}"; fi
+
+      # 清单最后推：安装包全部上传成功之前，Gitee 继续停在上一版清单，
+      # 不会出现“清单指向不存在的附件”。
+      - name: Publish latest.json to Gitee
+        run: |
+          set -euo pipefail
+          cd gitee-repo
           mkdir -p update
           cp ../out/latest.json update/latest.json
           git add update/latest.json
           git commit -m "chore: update latest.json for ${TAG}" || true
           git push origin main
-          git tag -f "$TAG"
-          git push -f origin "$TAG"
-
-      - name: Create Gitee release
-        run: |
-          set -euo pipefail
-          BODY=$(printf '{"tag_name":"%s","name":"%s","body":"See CHANGELOG.md","prerelease":false}' "$TAG" "$TAG")
-          RESP=$(curl -sS -X POST "https://gitee.com/api/v5/repos/${GITEE_REPO}/releases" \
-            -H "Authorization: token ${GITEE_TOKEN}" \
-            -H "Content-Type: application/json" -d "$BODY")
-          echo "$RESP"
-          echo "GITEE_RELEASE_ID=$(echo "$RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])')" >> "$GITHUB_ENV"
-
-      - name: Upload installers to Gitee
-        run: |
-          set -euo pipefail
-          curl -sS -X POST "https://gitee.com/api/v5/repos/${GITEE_REPO}/releases/${GITEE_RELEASE_ID}/attach_files" \
-            -H "Authorization: token ${GITEE_TOKEN}" \
-            -F "file=@out/${EXE_NAME}"
-          if [ -n "${MSI_NAME:-}" ]; then
-            curl -sS -X POST "https://gitee.com/api/v5/repos/${GITEE_REPO}/releases/${GITEE_RELEASE_ID}/attach_files" \
-              -H "Authorization: token ${GITEE_TOKEN}" \
-              -F "file=@out/${MSI_NAME}"
-          fi
