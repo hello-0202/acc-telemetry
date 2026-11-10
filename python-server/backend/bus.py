@@ -73,6 +73,12 @@ runtime: dict[str, Any] = {
     # 轮胎磨损估算结果（acc_telemetry.services.tyre_wear.TyreWearEstimator.snapshot）。
     # state.py 把它合并进 wheels[]，主题按 wearSource 区分实测 / 估算。
     "tyre_wear": None,
+    # 采集层判定的「已离开赛道」信号：边沿触发，Recorder 消费后置 False。
+    # 见 backend/collector/reader.py::TrackPresence
+    "session_end_requested": False,
+    "session_end_reason": None,
+    # 直读 graphics 实时页拿到的 status（0=OFF / 1=REPLAY / 2=LIVE / 3=PAUSE）
+    "acc_status": None,
 }
 
 # 运行统计
@@ -103,5 +109,8 @@ def reset() -> None:
         state_meta=None,
         state_error=None,
         tyre_wear=None,
+        session_end_requested=False,
+        session_end_reason=None,
+        acc_status=None,
     )
     stats.update(produced=0, dropped=0, written=0, laps=0)

@@ -2,19 +2,20 @@
 import { computed, ref, shallowRef, watch, onMounted, onBeforeUnmount } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
-import { check } from '@tauri-apps/plugin-updater';
+import { check, Update } from '@tauri-apps/plugin-updater';
+import { invoke } from '@tauri-apps/api/core';
 import { exit } from '@tauri-apps/plugin-process';
 import MonitorView from './components/MonitorView.vue';
 import HistoryView from './components/HistoryView.vue';
 import SettingsView from './components/SettingsView.vue';
 import UpdateDialog from './components/UpdateDialog.vue';
-import { themeName, toggleTheme } from './telemetry/theme.js';
 import { ui } from './telemetry/store.js';
 import { immersive, exitImmersive, toggleImmersive } from './telemetry/immersive.js';
 import { initOverlayWatcher, overlayVisible, toggleOverlay, setOverlayLocked } from './telemetry/overlay-window.js';
 import { pushOverlaySlots } from './telemetry/overlay-slots.js';
 import { getHealth } from './telemetry/api.js';
 import { loadPrefs, prefs } from './telemetry/prefs.js';
+import { updateRoute } from './telemetry/update-route.js';
 import { telemetry, clearConnectError } from './telemetry/useTelemetry.js';
 
 const VIEWS = ['monitor', 'history', 'settings'];
@@ -225,6 +226,17 @@ function friendlyUpdateError(e) {
   return '检查更新失败，请稍后重试。';
 }
 
+// 按设置里的「更新线路」检查：auto = 插件默认双 endpoint；github / gitee = 强制单线路。
+async function checkForUpdate() {
+  const timeout = UPDATE_CHECK_TIMEOUT_MS;
+  if (updateRoute.value === 'auto') return check({ timeout });
+  const metadata = await invoke('check_update_route', {
+    route: updateRoute.value,
+    timeout,
+  });
+  return metadata ? new Update(metadata) : null;
+}
+
 async function handleCheckUpdate(manual = false) {
   if (isCheckingUpdate.value) return;
   // 浏览器（vite dev）里没有 Tauri 运行时，插件调用必然失败，直接拦掉
@@ -247,7 +259,7 @@ async function handleCheckUpdate(manual = false) {
   try {
     for (let attempt = 0; attempt <= UPDATE_CHECK_RETRIES; attempt += 1) {
       try {
-        const update = await check({ timeout: UPDATE_CHECK_TIMEOUT_MS });
+        const update = await checkForUpdate();
         updateChecked.value = true;
         closeUpdate();
         if (update) {
@@ -300,7 +312,6 @@ function onKey(e) {
   }
   const k = e.key.toLowerCase();
   if (k >= '1' && k <= '3') switchView(VIEWS[+k - 1]);
-  else if (k === 't') toggleTheme();
 }
 
 // 离开监测页就退出沉浸，否则外壳（含导航）被藏起来了没法切回去
@@ -445,9 +456,6 @@ onBeforeUnmount(() => {
               title="调整悬浮窗位置与大小（Ctrl+Shift+L）"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" /></svg>
-            </button>
-            <button class="sq-btn" :class="{ on: themeName === 'light' }" @click="toggleTheme()" aria-label="切换黑白主题" title="切换主题 (T)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" /></svg>
             </button>
           </div>
         </header>

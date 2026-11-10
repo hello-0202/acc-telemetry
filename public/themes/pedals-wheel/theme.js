@@ -7,8 +7,8 @@
  * 踏板条：填充高度 = 开度百分比（从底部往上长）。
  * 转向弧：pathLength="100" 归一化，270° 整圈 = 75 单位，
  *   ±450° 映射到 ±135°，即 37.5 个 dasharray 单位。
- * 转向只用颜色表达：左转蓝弧 / 右转橙弧从正上方生长、弧长就是幅度，
- *   角度数字跟着染成同色；不再画箭头 / 指针之类的位置标记。
+ * 盘面：同一角度旋转环心的 F1 方向盘，盘顶小矩形指针就落在彩色弧末端。
+ *   不按真车 ±450° 转 —— 转过 135° 后指针会跑出环外，指不到颜色。
  */
 (function () {
   'use strict';
@@ -21,8 +21,13 @@
   var hud = $('hud');
   var stLeft = $('st-left');
   var stRight = $('st-right');
+  var stWheel = $('st-wheel');
   var brakeFill = $('brake-fill');
   var thrFill = $('thr-fill');
+
+  // 满舵（steer ±1）对应的弧长与盘转角。两个数必须同源：37.5 单位 × 3.6°/单位 = 135°。
+  var ARC_UNITS_FULL = 37.5;
+  var WHEEL_DEG_FULL = 135;
 
   var gotState = false;
   var demoTimer = null;
@@ -37,6 +42,10 @@
     if (msg.background === 'transparent' || msg.background === 'opaque') {
       document.documentElement.dataset.bg = msg.background;
     }
+    // 用户在设置里选的文字颜色：标签 / 数值 / 方向盘线稿通过 --text-color 跟随
+    if (typeof msg.textColor === 'string') {
+      document.documentElement.style.setProperty('--text-color', msg.textColor);
+    }
   }
 
   /* 踏板条填充高度：p 0..1 */
@@ -44,9 +53,10 @@
     el.style.height = (p * 100).toFixed(1) + '%';
   }
 
-  /* 转向弧：len 是 dasharray 单位，0..37.5（37.5 = 135°） */
-  function setSteerArcs(s) {
-    var len = Math.abs(s) * 37.5;
+  /* 转向：s -1..1。弧长 len 是 dasharray 单位，0..37.5（37.5 = 135°）；
+   * 盘面按 s × 135° 同角度旋转，指针就精确停在彩色弧的末端。 */
+  function setSteer(s) {
+    var len = Math.abs(s) * ARC_UNITS_FULL;
     if (s > 0.004) {
       // 右：从正上方顺时针长
       stRight.setAttribute('transform', 'rotate(-90 84 84)');
@@ -63,13 +73,7 @@
       stLeft.style.opacity = '0';
       stRight.style.opacity = '0';
     }
-  }
-
-  /* 转向色：方向写进 hud 的 data-steer，CSS 据此给角度数字上色。
-   * 用 data 属性而不是 inline style —— 回中时不用记得把颜色擦掉。
-   * 阈值和 setSteerArcs 保持一致，避免「弧已经灭了、数字还带色」。 */
-  function setSteerTone(s) {
-    hud.dataset.steer = s > 0.004 ? 'right' : s < -0.004 ? 'left' : 'none';
+    stWheel.setAttribute('transform', 'rotate(' + (s * WHEEL_DEG_FULL).toFixed(2) + ' 84 84)');
   }
 
   function render(st) {
@@ -92,23 +96,13 @@
       $('thr-val').textContent = thr == null ? '--' : Math.round(thrP * 100) + '%';
       $('brake-val').textContent = brk == null ? '--' : Math.round(brkP * 100) + '%';
 
-      var degEl = $('steer-deg');
-
       if (steer == null) {
-        setSteerArcs(0);
-        setSteerTone(0);
-        degEl.textContent = '--°';
+        setSteer(0);
         return;
       }
 
-      // 约定：steer -1..1，乘 450 得度数（本项目约定满舵 ±450°）
-      var s = steer < -1 ? -1 : steer > 1 ? 1 : steer;
-      var deg = s * 450;
-
-      setSteerArcs(s);
-      setSteerTone(s);
-      // 只显角度，不显方向文字：方向由进度弧和数字的颜色表达（蓝=左、橙=右）
-      degEl.textContent = Math.round(Math.abs(deg)) + '°';
+      // 约定：steer -1..1，±1 是满舵
+      setSteer(steer < -1 ? -1 : steer > 1 ? 1 : steer);
     } catch (e) {
       console.warn('[pedals-wheel] render failed', e);
     }

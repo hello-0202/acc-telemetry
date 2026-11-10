@@ -27,6 +27,108 @@ logger = logging.getLogger(__name__)
 
 FrameBuilder = Callable[[Any], dict[str, Any]]
 
+# ACC graphics.status（pyACCSharedMemory/acc_enum.py::ACCStatus）
+ACC_OFF, ACC_REPLAY, ACC_LIVE, ACC_PAUSE = 0, 1, 2, 3
+
+# 明确读到「不在赛道」后持续这么久才收尾，躲开加载 / 切屏 / 回放切换的瞬时抖动
+LEAVE_TRACK_GRACE_S = 2.0
+# graphics.packetId 冻结这么久就认为游戏已不再写这页（LIVE 时它约 100Hz 递增）。
+# 只在 status 不是 PAUSE 时生效，避免长时间暂停被误判成退出赛道。
+PACKETS_FROZEN_GRACE_S = 8.0
+
+
+class TrackPresence:
+    """判定「本次上赛道是否已经结束」，并请求 Recorder 收尾当前 session。
+
+    ACC 的 status 枚举本身能区分「游戏内暂停(3)」和「主菜单/无赛事(0)」，但底层
+    MMapControl 是 copy 模式，packetId 不刷新时 status 会冻在旧值，所以这里改读
+    provider 的实时页，并额外用 packetId 新鲜度兜底。
+
+    判定规则（宽松到严格）：
+      1. status == LIVE 且 packetId 在动           → 在赛道
+      2. status == PAUSE                          → **永不结束**，用户随时会继续
+      3. status 为 OFF / REPLAY 持续 LEAVE_TRACK_GRACE_S → 回主菜单，结束
+      4. packetId 冻结 PACKETS_FROZEN_GRACE_S 且非 PAUSE → 数据源已死，兜底结束
+      5. 共享内存段消失                            → 立即结束
+
+    只做**边沿触发**：从「在赛道」变「离开」时请求一次，恢复 LIVE 才重新武装。
+    否则前端监督循环每 3s 重发一次 start，会被同一个请求反复 stop。
+    """
+
+    def __init__(self) -> None:
+        self._off_since: float | None = None
+        self._last_packet_id: int | None = None
+        self._last_packet_change = time.monotonic()
+        self._left_track = False
+        self._last_logged_status: int | None = None
+
+    def reset_on_open(self) -> None:
+        """重新打开共享内存后重置新鲜度基准，避免一 open 就被判成冻结。"""
+        self._last_packet_id = None
+        self._last_packet_change = time.monotonic()
+
+    def update(self, *, status: int | None, packet_id: int | None, now: float) -> None:
+        if status != self._last_logged_status:
+            # 真机排查「暂停 vs 主菜单能否区分」时看这一行就够了
+            logger.info("ACC graphics.status → %s", status)
+            self._last_logged_status = status
+        bus.runtime["acc_status"] = status
+
+        if packet_id is not None and packet_id != self._last_packet_id:
+            self._last_packet_id = packet_id
+            self._last_packet_change = now
+
+        if status == ACC_LIVE:
+            if now - self._last_packet_change >= PACKETS_FROZEN_GRACE_S:
+                # status 冻在 2（copy 页没刷新）但游戏其实早就不写了
+                self._request_end("packets-frozen")
+                return
+            if self._left_track:
+                logger.info("重新进入赛道（status=2），复位离开判定")
+            self._left_track = False
+            self._off_since = None
+            bus.runtime["session_end_requested"] = False
+            bus.runtime["session_end_reason"] = None
+            return
+
+        if self._left_track:
+            return
+
+        # 游戏内暂停：硬性不结束。这一场还没完，恢复后要接着记。
+        if status == ACC_PAUSE:
+            self._off_since = None
+            return
+
+        reason = None
+        if status in (ACC_OFF, ACC_REPLAY):
+            if self._off_since is None:
+                self._off_since = now
+            if now - self._off_since >= LEAVE_TRACK_GRACE_S:
+                reason = "acc-off"
+        elif now - self._last_packet_change >= PACKETS_FROZEN_GRACE_S:
+            # 含 status 读不到（实时页异常）的情况
+            reason = "packets-frozen"
+
+        if reason:
+            self._request_end(reason)
+
+    def note_game_gone(self) -> None:
+        """共享内存段消失 / provider 关闭：立即请求收尾，同样只触发一次。"""
+        if self._left_track:
+            return
+        self._off_since = None
+        self._last_packet_change = time.monotonic()
+        self._request_end("game-exited")
+
+    def _request_end(self, reason: str) -> None:
+        self._left_track = True
+        bus.runtime["session_end_requested"] = True
+        bus.runtime["session_end_reason"] = reason
+        # 面板 / 悬浮窗立刻失去实时数据源：别让最后一帧冻在屏幕上
+        bus.latest_snapshot = None
+        bus.latest_buffer.clear()
+        logger.info("判定已离开赛道（%s），请求结束本次记录", reason)
+
 
 def gear_text(raw_gear: int) -> str:
     if raw_gear == 0:
@@ -126,6 +228,7 @@ async def collect_loop(
     last_liveness = 0.0
     prev_live = False
     non_live_since = None
+    presence = TrackPresence()
 
     try:
         while not stop_event.is_set():
@@ -135,6 +238,8 @@ async def collect_loop(
             if not opened:
                 if not provider.available():
                     bus.runtime["game_running"] = False
+                    # 游戏进程 / 共享内存段没了：本次上赛道结束，收尾记录
+                    presence.note_game_gone()
                     # 之前在直播，现在游戏进程没了：通知前端退出「活跃」态
                     if prev_live:
                         bus.event_queue.put_nowait({"type": "stopped"})
@@ -146,6 +251,7 @@ async def collect_loop(
                 try:
                     provider.open()
                     opened = True
+                    presence.reset_on_open()
                     bus.runtime["game_running"] = True
                     bus.latest_static = await _read_static(provider)
                     logger.info("共享内存已打开")
@@ -170,6 +276,7 @@ async def collect_loop(
                 if not provider.available():
                     logger.info("ACC 已退出，关闭共享内存")
                     bus.runtime["game_running"] = False
+                    presence.note_game_gone()
                     bus.latest_static = None
                     bus.latest_snapshot = None
                     # 之前在直播，现在游戏进程没了：通知前端退出「活跃」态
@@ -203,12 +310,25 @@ async def collect_loop(
                 next_tick = time.monotonic()
                 continue
 
-            # 暂停 / 回放：不采样、不推送
-            is_live = True
-            if isinstance(raw, dict):
-                is_live = raw.get("status", 2) == 2
-            else:
-                is_live = getattr(raw, "status", 2) == 2
+            # 直读 graphics 实时页判定「本次上赛道是否结束」。
+            # read() 里的 status 来自 copy 缓冲，数据冻结时会停在旧值；
+            # 这里拿到的是游戏当下真正写下的 status / packetId。
+            peek = getattr(provider, "peek_realtime_status", None)
+            peeked = None
+            if peek is not None:
+                try:
+                    peeked = peek()
+                except Exception:  # noqa: BLE001 - 实时页异常时退回 copy 缓冲
+                    logger.debug("读取实时 graphics 状态失败", exc_info=True)
+            rt_status, rt_packet = peeked if peeked is not None else (None, None)
+            presence.update(status=rt_status, packet_id=rt_packet, now=tick_start)
+
+            # 暂停 / 回放 / 主菜单：不采样、不推送。
+            # 优先用实时 status，避免 copy 缓冲滞后 / 冻结时把旧帧继续写进库。
+            raw_status = (
+                raw.get("status", 2) if isinstance(raw, dict) else getattr(raw, "status", 2)
+            )
+            is_live = (rt_status if rt_status is not None else raw_status) == ACC_LIVE
             if not is_live:
                 # 暂停 / 回放 / 退到主菜单：游戏还在跑但本帧不是直播态。
                 # 持续非直播超过宽限期（避免瞬时抖动）后通知前端退出「活跃」态，

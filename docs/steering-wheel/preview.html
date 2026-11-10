@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>方向盘矢量图 · 转向预览</title>
+<!--
+  预览页。真源是同目录下的 f1-wheel.svg / gt-wheel.svg，
+  这里的两份内联副本只是为了免开服务器就能转起来看效果。
+  改了 svg 记得同步这里的 <defs>（id 与路径完全一致）。
+  可以带参数定格一帧：preview.html?steer=0.4&mode=soft&size=120&bg=light
+  背景取值：game / light / checker。
+-->
+<style>
+  :root{
+    --page:#14171b;
+    --card:#1b1f24;
+    --line:rgba(255,255,255,.10);
+    --ink:#eef2f6;
+    --ink-2:#8d99a6;
+    --accent:#1a94ff;
+  }
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--page);color:var(--ink);
+    font-family:'Chakra Petch','Bahnschrift','DIN Alternate','Sarasa Gothic SC','Microsoft YaHei',sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1040px;margin:0 auto;padding:28px 24px 48px}
+  h1{font-size:15px;letter-spacing:.10em;text-transform:uppercase;color:var(--ink-2);margin:0 0 4px;font-weight:700}
+  .sub{font-size:12.5px;color:var(--ink-2);margin:0 0 22px;line-height:1.7}
+  .sub code{color:#cfe3ff;font-family:'JetBrains Mono',Consolas,monospace}
+
+  /* ---- 舞台：模拟游戏画面，可切亮/暗底色，用来验「两段式线稿」读不读得出来 ---- */
+  .stage{
+    position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;
+    background:linear-gradient(150deg,#2b3138,#171b1f 60%,#242a30);
+    transition:background .18s ease;
+    padding:26px 20px 20px;
+  }
+  .stage[data-bg="light"]{background:linear-gradient(150deg,#dfe4e9,#c7ced6 60%,#eef1f4)}
+  .stage[data-bg="checker"]{
+    background-color:#20242a;
+    background-image:
+      linear-gradient(45deg,#2c3138 25%,transparent 25%,transparent 75%,#2c3138 75%),
+      linear-gradient(45deg,#2c3138 25%,transparent 25%,transparent 75%,#2c3138 75%);
+    background-size:18px 18px;background-position:0 0,9px 9px;
+  }
+
+  .row{display:flex;gap:20px;justify-content:center;align-items:flex-end;flex-wrap:wrap}
+  .wheel-card{display:flex;flex-direction:column;align-items:center;gap:10px}
+  /* 三张图 viewBox 比例不同（160 高 / 200 方）。高度一律交给宽高比算，
+     不要写死 height 属性 —— 卡片一收缩，写死的 height 会把画面裁掉。 */
+  .frame svg{display:block;max-width:100%;height:auto}
+
+  .wheel-name{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);
+              font-weight:700;text-shadow:0 1px 0 rgba(0,0,0,.5)}
+  .stage[data-bg="light"] .wheel-name{color:#5b6773;text-shadow:none}
+
+  /* 固定基准：12 点方向的小三角，画在盘外，不跟着转。
+     有了它 + 盘上的白色 12 点标记，一眼就能读出「转了多少」 */
+  .frame{position:relative;display:grid;place-items:center}
+  .frame::before{
+    content:'';position:absolute;top:-9px;left:50%;transform:translateX(-50%);
+    width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;
+    border-top:8px solid rgba(255,255,255,.55);
+  }
+  .stage[data-bg="light"] .frame::before{border-top-color:rgba(20,26,32,.45)}
+
+  .deg{
+    font-family:'JetBrains Mono',Consolas,'Sarasa Mono SC',monospace;
+    font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;
+    color:#fff;text-shadow:0 1px 0 rgba(0,0,0,.85);
+  }
+  .stage[data-bg="light"] .deg{color:#141a20;text-shadow:none}
+  .deg[data-dir="left"]{color:var(--accent)}
+  .deg[data-dir="right"]{color:#ff9500}
+  .stage[data-bg="light"] .deg[data-dir="left"]{color:#0b6ecb}
+  .stage[data-bg="light"] .deg[data-dir="right"]{color:#c96b00}
+
+  /* ---- 控件 ---- */
+  .panel{margin-top:22px;display:flex;flex-direction:column;gap:14px}
+  .ctl{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .ctl > label{font-size:12px;color:var(--ink-2);min-width:64px;letter-spacing:.04em}
+  input[type=range]{flex:1;min-width:220px;accent-color:var(--accent)}
+  .btn{
+    appearance:none;border:1px solid var(--line);background:#22272d;color:var(--ink);
+    font:inherit;font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;letter-spacing:.02em;
+  }
+  .btn:hover{background:#2a3037}
+  .btn[aria-pressed="true"]{background:#1a94ff;border-color:#1a94ff;color:#fff}
+  .sep{width:1px;height:20px;background:var(--line)}
+  .hint{font-size:11.5px;color:var(--ink-2);line-height:1.8}
+  .hint b{color:#cfe3ff;font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>方向盘矢量图 · 转向预览</h1>
+  <p class="sub">
+    三版都是纯矢量线稿，圆心就是几何中心，整块绕中心旋转就是转向角。
+    盘上那条白色 12 点竖条是跟着转的，盘外上方那个小三角是固定基准。<br>
+    <b>F1 圆滑</b>＝按你手绘那张重画的（斜切角保留、8 个折点全部改成圆角）；
+    <b>F1</b>＝带中央面板的另一种 F1 处理；<b>GT</b>＝圆盘平底三辐条。
+  </p>
+
+  <div class="stage" id="stage" data-bg="game">
+    <div class="row">
+      <div class="wheel-card">
+        <div class="frame" id="frame-yoke">
+          <!-- ===== F1 方向盘（按手绘稿重画 · 圆滑版） ===== -->
+          <svg id="wheel-yoke" viewBox="0 0 200 200" width="190" height="190" aria-label="F1 方向盘">
+            <style>
+              .swy{ --sw-ink:#fff; --sw-bed:rgba(10,14,19,.78); --sw-w:4; }
+              .swy .bed{ fill:none; stroke:var(--sw-bed); stroke-width:calc(var(--sw-w) + 5); stroke-linejoin:round; stroke-linecap:round; }
+              .swy .ink{ fill:none; stroke:var(--sw-ink); stroke-width:var(--sw-w); stroke-linejoin:round; stroke-linecap:round; }
+              .swy .bed-dot{ fill:var(--sw-bed); stroke:var(--sw-bed); stroke-width:7; stroke-linejoin:miter; }
+              .swy .ink-dot{ fill:var(--sw-ink); stroke:none; }
+            </style>
+            <defs>
+              <g id="yoke-lines">
+                <path d="M 134.1,34 Q 144,34 152.9,38.4 L 179.2,51.6 Q 188,56 188,65.9 L 188,134.1 Q 188,144 179.2,148.4 L 152.9,161.6 Q 144,166 134.1,166
+                         L 65.9,166 Q 56,166 47.1,161.6 L 20.8,148.4 Q 12,144 12,134.1 L 12,65.9 Q 12,56 20.8,51.6 L 47.1,38.4 Q 56,34 65.9,34 Z" />
+                <path d="M 12,100 H 81.3" />
+                <path d="M 118.7,100 H 188" />
+                <circle cx="100" cy="100" r="18.7" />
+              </g>
+              <g id="yoke-dots">
+                <rect x="97.6" y="27" width="4.8" height="13" rx="1.4" />
+              </g>
+            </defs>
+            <g class="swy" id="g-yoke">
+              <use href="#yoke-lines" class="bed" />
+              <use href="#yoke-lines" class="ink" />
+              <use href="#yoke-dots"  class="bed-dot" />
+              <use href="#yoke-dots"  class="ink-dot" />
+            </g>
+          </svg>
+        </div>
+        <div class="wheel-name">F1 圆滑</div>
+        <div class="deg" id="deg-yoke">0°</div>
+      </div>
+
+      <div class="wheel-card">
+        <div class="frame" id="frame-f1">
+          <!-- ===== F1 方向盘 ===== -->
+          <svg id="wheel-f1" viewBox="0 0 200 200" width="190" height="190" aria-label="F1 方向盘">
+            <style>
+              .swf{ --sw-ink:#fff; --sw-bed:rgba(10,14,19,.78); --sw-w:4; }
+              .swf .bed{ fill:none; stroke:var(--sw-bed); stroke-width:calc(var(--sw-w) + 5); stroke-linejoin:round; }
+              .swf .ink{ fill:none; stroke:var(--sw-ink); stroke-width:var(--sw-w); stroke-linejoin:round; }
+              .swf .bed-dot{ fill:var(--sw-bed); stroke:var(--sw-bed); stroke-width:7; }
+              .swf .ink-dot{ fill:var(--sw-ink); stroke:none; }
+            </style>
+            <defs>
+              <g id="f1-lines">
+                <path d="M 44,38 H 156 A 14,14 0 0 1 170,52 V 144 A 14,14 0 0 1 156,158 H 44 A 14,14 0 0 1 30,144 V 52 A 14,14 0 0 1 44,38 Z
+                         M 56,54 H 144 A 10,10 0 0 1 154,64 V 132 A 10,10 0 0 1 144,142 H 56 A 10,10 0 0 1 46,132 V 64 A 10,10 0 0 1 56,54 Z" />
+                <rect x="12" y="56" width="28" height="84" rx="14" />
+                <rect x="160" y="56" width="28" height="84" rx="14" />
+                <rect x="72" y="78" width="56" height="80" rx="6" />
+                <rect x="80" y="88" width="40" height="26" rx="2" />
+              </g>
+              <g id="f1-dots">
+                <circle cx="86" cy="128" r="3.5" />
+                <circle cx="100" cy="128" r="3.5" />
+                <circle cx="114" cy="128" r="3.5" />
+                <rect x="95" y="36" width="10" height="22" rx="1" />
+              </g>
+            </defs>
+            <g class="swf" id="g-f1">
+              <use href="#f1-lines" class="bed" />
+              <use href="#f1-lines" class="ink" />
+              <use href="#f1-dots"  class="bed-dot" />
+              <use href="#f1-dots"  class="ink-dot" />
+            </g>
+          </svg>
+        </div>
+        <div class="wheel-name">F1</div>
+        <div class="deg" id="deg-f1">0°</div>
+      </div>
+
+      <div class="wheel-card">
+        <div class="frame" id="frame-gt">
+          <!-- ===== GT 方向盘 ===== -->
+          <svg id="wheel-gt" viewBox="0 0 200 200" width="190" height="190" aria-label="GT 方向盘">
+            <style>
+              .swg{ --sw-ink:#fff; --sw-bed:rgba(10,14,19,.78); --sw-w:4; }
+              .swg .bed{ fill:none; stroke:var(--sw-bed); stroke-width:calc(var(--sw-w) + 5); stroke-linejoin:round; }
+              .swg .ink{ fill:none; stroke:var(--sw-ink); stroke-width:var(--sw-w); stroke-linejoin:round; }
+              .swg .bed-dot{ fill:var(--sw-bed); stroke:var(--sw-bed); stroke-width:7; }
+              .swg .ink-dot{ fill:var(--sw-ink); stroke:none; }
+            </style>
+            <defs>
+              <g id="gt-lines">
+                <path d="M 42.9,156 A 80,80 0 1,1 157.1,156 L 42.9,156 Z
+                         M 58,140 A 58,58 0 1,1 142,140 L 58,140 Z" />
+                <path d="M 42,100 H 74" />
+                <path d="M 126,100 H 158" />
+                <path d="M 100,126 V 140" />
+                <circle cx="100" cy="100" r="26" />
+                <circle cx="100" cy="100" r="10" />
+              </g>
+              <g id="gt-dots">
+                <rect x="95" y="18" width="10" height="26" rx="1" />
+              </g>
+            </defs>
+            <g class="swg" id="g-gt">
+              <use href="#gt-lines" class="bed" />
+              <use href="#gt-lines" class="ink" />
+              <use href="#gt-dots"  class="bed-dot" />
+              <use href="#gt-dots"  class="ink-dot" />
+            </g>
+          </svg>
+        </div>
+        <div class="wheel-name">GT</div>
+        <div class="deg" id="deg-gt">0°</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="ctl">
+      <label for="steer">转向</label>
+      <input id="steer" type="range" min="-1" max="1" step="0.005" value="0" />
+      <span class="deg" id="steer-val" style="text-shadow:none;color:#eef2f6;min-width:52px;text-align:right">0.00</span>
+    </div>
+
+    <div class="ctl">
+      <label>快捷</label>
+      <button class="btn" data-goto="-1">左满舵</button>
+      <button class="btn" data-goto="-0.5">左半</button>
+      <button class="btn" data-goto="0">回中</button>
+      <button class="btn" data-goto="0.5">右半</button>
+      <button class="btn" data-goto="1">右满舵</button>
+      <div class="sep"></div>
+      <button class="btn" id="auto" aria-pressed="false">自动摆动</button>
+      <div class="sep"></div>
+      <label style="min-width:auto">背景</label>
+      <button class="btn" data-bg="game" aria-pressed="true">游戏画面</button>
+      <button class="btn" data-bg="light">浅色</button>
+      <button class="btn" data-bg="checker">透明格</button>
+    </div>
+
+    <div class="ctl">
+      <label>映射</label>
+      <button class="btn" data-mode="real" aria-pressed="true">真实 ×450°</button>
+      <button class="btn" data-mode="soft">收敛 ×180°</button>
+      <div class="sep"></div>
+      <label style="min-width:auto">尺寸</label>
+      <button class="btn" data-size="96">96</button>
+      <button class="btn" data-size="120">120</button>
+      <button class="btn" data-size="190" aria-pressed="true">190</button>
+      <button class="btn" data-size="260">260</button>
+    </div>
+
+    <p class="hint">
+      <b>×450°</b>：和真车一致，`steer = 1` 时盘转一圈多（450°），12 点标记会绕回去 —— 有驾驶感，但满舵时盘面几乎是倒的。<br>
+      <b>×180°</b>：把这个软件里 -1..1 的 steer 压到半个圈，小窗口里更容易读，代价是和真车不成比例。<br>
+      两种都用同一条代码：<code>g.setAttribute('transform', 'rotate(' + deg + ' 100 100)')</code>。
+    </p>
+  </div>
+</div>
+
+<script>
+(function () {
+  var stage   = document.getElementById('stage');
+  var slider  = document.getElementById('steer');
+  var autoBtn = document.getElementById('auto');
+  var wheels  = [document.getElementById('g-yoke'), document.getElementById('g-f1'), document.getElementById('g-gt')];
+  var degEls  = [document.getElementById('deg-yoke'), document.getElementById('deg-f1'), document.getElementById('deg-gt')];
+  var sVal    = document.getElementById('steer-val');
+
+  var mode = 'real';
+  var auto = false, start = 0, raf = 0;
+
+  function angleOf(s) { return s * (mode === 'real' ? 450 : 180); }
+
+  function paint(steer) {
+    var deg = angleOf(steer);
+    var dir = steer < -0.02 ? 'left' : steer > 0.02 ? 'right' : 'none';
+    for (var i = 0; i < wheels.length; i++) {
+      wheels[i].setAttribute('transform', 'rotate(' + deg.toFixed(2) + ' 100 100)');
+      degEls[i].textContent = (deg > 0 ? '+' : '') + Math.round(deg) + '°';
+      degEls[i].dataset.dir = dir;
+    }
+    sVal.textContent = (steer > 0 ? '+' : '') + steer.toFixed(2);
+  }
+
+  function tick(ts) {
+    if (!auto) return;
+    if (!start) start = ts;
+    var s = Math.sin((ts - start) / 900);           // ±1 之间来回
+    slider.value = s;
+    paint(s);
+    raf = requestAnimationFrame(tick);
+  }
+
+  slider.addEventListener('input', function () {
+    stopAuto();
+    paint(parseFloat(slider.value));
+  });
+
+  document.querySelectorAll('[data-goto]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      stopAuto();
+      var v = parseFloat(b.dataset.goto);
+      slider.value = v;
+      paint(v);
+    });
+  });
+
+  autoBtn.addEventListener('click', function () {
+    auto ? stopAuto() : startAuto();
+  });
+
+  function startAuto() {
+    auto = true; start = 0;
+    autoBtn.setAttribute('aria-pressed', 'true');
+    raf = requestAnimationFrame(tick);
+  }
+  function stopAuto() {
+    auto = false;
+    autoBtn.setAttribute('aria-pressed', 'false');
+    cancelAnimationFrame(raf);
+  }
+
+  document.querySelectorAll('[data-bg]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      stage.dataset.bg = b.dataset.bg;
+      document.querySelectorAll('[data-bg]').forEach(function (x) {
+        x.setAttribute('aria-pressed', String(x === b));
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-mode]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      mode = b.dataset.mode;
+      document.querySelectorAll('[data-mode]').forEach(function (x) {
+        x.setAttribute('aria-pressed', String(x === b));
+      });
+      paint(parseFloat(slider.value));
+    });
+  });
+
+  document.querySelectorAll('[data-size]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var s = b.dataset.size;
+      document.querySelectorAll('[data-size]').forEach(function (x) {
+        x.setAttribute('aria-pressed', String(x === b));
+      });
+      ['wheel-yoke', 'wheel-f1', 'wheel-gt'].forEach(function (id) {
+        // 只改宽，高度由 .frame svg{height:auto} 按 viewBox 比例算，三张图比例不同也不会拉变形
+        document.getElementById(id).setAttribute('width', s);
+      });
+    });
+  });
+
+  // 支持 ?steer=0.45&mode=soft&size=120&bg=light 直接定格一帧（截图 / 对比用）
+  var q = new URLSearchParams(location.search);
+  if (q.get('mode') === 'soft') {
+    mode = 'soft';
+    document.querySelectorAll('[data-mode]').forEach(function (x) {
+      x.setAttribute('aria-pressed', String(x.dataset.mode === 'soft'));
+    });
+  }
+  if (q.get('bg')) {
+    var bgBtn = document.querySelector('[data-bg="' + q.get('bg') + '"]');
+    if (bgBtn) bgBtn.click();
+  }
+  if (q.get('size')) {
+    var szBtn = document.querySelector('[data-size="' + q.get('size') + '"]');
+    if (szBtn) szBtn.click();
+  }
+  var init = q.has('steer') ? Math.max(-1, Math.min(1, parseFloat(q.get('steer')) || 0)) : 0;
+  slider.value = init;
+  paint(init);
+})();
+</script>
+</body>
+</html>

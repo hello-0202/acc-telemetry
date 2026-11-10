@@ -313,7 +313,11 @@ class TelemetryService:
                 ):
                     return True
 
-            # 暂停 / 回放：不采样、不推送，等待回到 live
+            # 暂停 / 回放：不采样、不推送，等待回到 live。
+            # 注意：实际运行链路是 backend/（collector → bus → recorder）。
+            # 「退出赛道回主菜单要收尾 session、暂停不收尾」的判定在
+            # backend/collector/reader.py::TrackPresence + backend/storage/recorder.py
+            # 的 run_worker 消费，本同步实现不参与运行，保持旧行为即可。
             if snap.status != 2:
                 await asyncio.sleep(SAMPLE_INTERVAL)
                 continue

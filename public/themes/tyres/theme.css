@@ -6,7 +6,7 @@
  *   内圈 270° 环 = 胎温（40→110 ℃ 映射满环），颜色随热度分档
  *   环心三行  = 胎压 psi / 胎温 ℃ / 刹车盘温 ℃
  *
- * 透明背景下的可读性策略：高饱和纯色 + 1px 硬投影（不是漫反射光晕），不用任何发光/模糊。
+ * 透明背景下的可读性策略：高饱和纯色 + 800 字重，不用文字阴影 / 发光 / 模糊。
  */
 
 html,
@@ -23,17 +23,13 @@ body {
    * 逐字和 gt-cockpit 的 --font-ui 对齐（含 'Segoe UI' 这一层回退），
    * 两台悬浮窗才不会在缺 Chakra Petch 的机器上落到不同的字体。 */
   font-family: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Segoe UI', 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', sans-serif;
-  color: #ffffff;
+  color: var(--text-color, #ffffff);
   -webkit-user-select: none;
   user-select: none;
   cursor: default;
   /* 和 gt-cockpit 同一套字形渲染：不加这行，同样的 JetBrains Mono / Chakra Petch
    * 在另一个悬浮窗里会显得更细、更“虚”，两块面板并排能看出差别。 */
   -webkit-font-smoothing: antialiased;
-
-  /* 文字落影：只往正下方投 1px 硬影，不描边、不发光。
-   * 环心三行字压在环内，靠纯白 + 800 字重拉开层次，不靠给字加圈。 */
-  --ink-edge: 0 1px 0 rgba(0, 0, 0, 0.85);
 }
 
 /* 2×2 紧凑网格：两列两行，画面正中，不留中间空档 */
@@ -145,8 +141,7 @@ body {
   line-height: 1;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.055em;
-  color: #ffffff;
-  text-shadow: var(--ink-edge);
+  color: var(--text-color, #ffffff);
 }
 
 .c-temp {
@@ -154,10 +149,9 @@ body {
   font-size: 10px;
   line-height: 1;
   font-weight: 800;
-  color: #ffffff;
+  color: var(--text-color, #ffffff);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.055em;
-  text-shadow: var(--ink-edge);
 }
 
 .c-brake {
@@ -168,10 +162,9 @@ body {
   color: #ffb300;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.055em;
-  text-shadow: var(--ink-edge);
 }
 
-.c-brake[data-level='na'] { color: rgba(255, 255, 255, 0.6); }
+.c-brake[data-level='na'] { color: color-mix(in srgb, var(--text-color, #ffffff) 60%, transparent); }
 .c-brake[data-level='cold'] { color: #2b8fff; }
 .c-brake[data-level='ok'] { color: #00e676; }
 .c-brake[data-level='warm'] { color: #ffab00; }
@@ -183,8 +176,7 @@ body {
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.12em;
-  color: #ffffff;
-  text-shadow: var(--ink-edge);
+  color: var(--text-color, #ffffff);
   pointer-events: none;
 }
 

@@ -3,10 +3,10 @@
  *
  * 视觉取向：左侧【油门 + 刹车】两根竖直矩形踏板条并排（从底部往上填充，
  * 两格之间 10px、与圆环之间 22px，靠间距读成一组）+
- * 右侧【转向圆环】（内圈细环 + 外圈 270° 进度弧），背景完全透明，
+ * 右侧【转向环】（外围 270° 进度弧 + 环心 F1 方向盘线稿），背景完全透明，
  * 没有底板 / 没有卡片边框。
- * 转向不画箭头或指针：蓝弧 / 橙弧的长度与颜色就是方向 + 幅度，
- * 下方角度数字同步染同色（见 .hud[data-steer]）。
+ * 方向 + 幅度看蓝 / 橙进度弧的颜色与长度；环心的盘跟着同角度偏转，
+ * 盘顶小矩形指针因此始终停在彩色弧的末端。不显示角度数字。
  */
 
 html,
@@ -21,15 +21,10 @@ body {
 body {
   /* 与软件外壳同一套字体栈（src/style.css 的 --font-display），数字单独用 --font-mono */
   font-family: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', sans-serif;
-  color: #ffffff;
+  color: var(--text-color, #ffffff);
   -webkit-user-select: none;
   user-select: none;
   cursor: default;
-
-  /* 文字落影：只往正下方投 1px 硬影，不描边、不发光。
-   * 描边会把字圈起来，视觉上偏"贴纸"，要去掉；这层单方向硬影只是让白字
-   * 在亮背景上不至于完全飘起来，暗背景上几乎看不见。 */
-  --ink-edge: 0 1px 0 rgba(0, 0, 0, 0.85);
 }
 
 .hud {
@@ -68,8 +63,7 @@ body {
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.06em;
-  color: #ffffff;
-  text-shadow: var(--ink-edge);
+  color: var(--text-color, #ffffff);
 }
 
 /* 左 / 右标签：彩色是设计意图（红=刹车、绿=油门），但要亮到能压在任意画面上 */
@@ -130,45 +124,62 @@ body {
   font-weight: 800;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-  color: #ffffff;
-  text-shadow: var(--ink-edge);
+  color: var(--text-color, #ffffff);
 }
 
-/* ---------------- 中间：转向圆环 ---------------- */
+/* ---------------- 右侧：转向环（环心是 F1 盘面） ---------------- */
 .steer {
   position: relative;
   flex: none;
-  width: 120px;
+  width: 126px;
   height: 190px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
 }
 
-/* SVG 的 viewBox 是 168，这里显示 120（缩放系数 0.714）。
- * 所以下面的 stroke-width 都是"viewBox 单位"，要按 0.714 放大才能保持原来的视觉粗细：
- * 原来 2.6 显示 2.2px → 这里写 3；原来 7 显示 5.8px → 这里写 8。 */
+/* SVG 的 viewBox 是 168，这里显示 126（缩放 0.75），所以 stroke-width 都是"viewBox 单位"。
+ * 原来下面还挂着角度数字，去掉后环独占一行，在 190 高的槽里上下居中。 */
 .ring {
   display: block;
-  width: 120px;
-  height: 120px;
+  width: 126px;
+  height: 126px;
   overflow: visible;
 }
 
-/* 内圈：完整 360° 圆环。原来这里是方向盘图形，去掉盘面后靠这个圆做视觉锚点。
- * 深色底 + 白色细线两层叠：浅色游戏画面里白线会糊掉，靠深底兜住轮廓；
- * 深色画面里深底看不见，靠白线兜住 —— 两头都能读。 */
-.st-core-bed {
+/* 环心的 F1 盘面：白线 + 深色衬底（衬底比白线粗 5，只当包边）。
+ * 和原来的内圈同一个思路 —— 浅色画面靠深衬底兜轮廓，深色画面靠白线兜。
+ * 线宽沿用预览页的比例（4 / 9），乘 0.50 的摆放缩放（再乘环的 0.75 显示缩放）后
+ * 白线约 1.5px、衬底约 3.4px，比环线（126 显示下的 6px）细一档，不抢外围的进度弧。
+ * 盘面固定白色，不跟 `--text-color`：它和进度弧一样是图形，文字色一旦选黑 / 暗红，
+ * 盘线跟着变暗就会陷进同色的深衬底里，整块盘看不清了。 */
+.w-bed {
   fill: none;
   stroke: rgba(10, 14, 19, 0.72);
-  stroke-width: 8;
+  stroke-width: 9;
+  stroke-linejoin: round;
+  stroke-linecap: round;
 }
 
-.st-core {
+.w-ink {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.78);
-  stroke-width: 3;
+  stroke: #ffffff;
+  stroke-width: 4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+/* 12 点指针（盘顶小矩形）：实心，衬底用 7 的描边往外扩一圈 */
+.w-mark-bed {
+  fill: rgba(10, 14, 19, 0.72);
+  stroke: rgba(10, 14, 19, 0.72);
+  stroke-width: 7;
+  stroke-linejoin: miter;
+}
+
+.w-mark-ink {
+  fill: #ffffff;
+  stroke: none;
 }
 
 /* 进度槽：270°（缺口朝下），深色槽底与踏板的槽同色，彩色进度弧直接盖在它上面 */
@@ -198,27 +209,6 @@ body {
 
 .st-right {
   stroke: #ff9500;
-}
-
-/* 角度数字：默认纯白，转向时取进度弧同色，让「颜色 = 转向」也落到读数上。
- * 方向由 theme.js 写进 .hud 的 data-steer；回中 / 无数据时自动退回白色。 */
-.hud[data-steer='left'] .st-read b { color: #1a94ff; }
-.hud[data-steer='right'] .st-read b { color: #ff9500; }
-
-.st-read {
-  display: flex;
-  align-items: baseline;
-  margin-top: 4px;
-}
-
-.st-read b {
-  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', monospace;
-  font-size: 21px;
-  font-weight: 800;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  color: #ffffff;
-  text-shadow: var(--ink-edge);
 }
 
 /* 未开始 / 等待：整体压暗，别把上次的值当实时值 */

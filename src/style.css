@@ -497,37 +497,122 @@ html[data-theme="dark"] .kv.lap .v{color:#fff}
 .tc-ask{font-size:0.8077rem;color:var(--warn)}
 .tc-actions{display:flex;align-items:center;gap:0.3846rem;margin-top:0.2308rem;flex-wrap:wrap}
 .tc-actions .btn{height:1.6923rem;font-size:0.8077rem;padding:0 0.6923rem}
-.theme-tools{display:flex;align-items:center;gap:0.5385rem;flex-wrap:wrap}
+.theme-tools{display:flex;align-items:center;gap:0.5385rem;flex-wrap:wrap;margin-top:0.7692rem;padding-top:0.7692rem;border-top:0.0769rem solid var(--line)}
 .theme-tools .btn{height:1.8462rem;font-size:0.8462rem;padding:0 0.7692rem}
 .tc-hint{font-size:0.8077rem;color:var(--text-faint)}
-/* 主题缩略预览：负边距吃掉卡片内边距，让缩略图贴住卡片边框内侧（边框本身由 .theme-card 提供） */
-.tc-preview{position:relative;display:block;align-self:stretch;height:6.2rem;padding:0;margin:-0.6154rem -0.7692rem 0.2308rem;border:0;border-radius:0;background:#0D1116;overflow:hidden;cursor:pointer}
-.tc-preview:disabled{cursor:default}
-/* hover 高亮画在缩略图自己身上：按钮的 box-shadow 会被 cover 它的 .tc-thumb 盖掉 */
-.tc-preview:not(:disabled):hover .tc-thumb{box-shadow:inset 0 0 0 0.1538rem var(--signal-text)}
-.tc-preview-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--panel-2);color:var(--text-faint);font-size:0.8077rem}
-/* 「内置面板」不是主题，没有 iframe 预览：给一块静态示意，别让卡片高度塌下去 */
-.tc-panel-thumb{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-family:var(--font-mono);font-size:0.8077rem;letter-spacing:.08em;
-  background:repeating-linear-gradient(45deg,rgba(150,162,177,.05) 0 6px,transparent 6px 13px),#0D1116}
-/* 缩略占位：不在这里渲染主题（避免主窗口 ACL 被第三方主题借用），点击后由独立预览窗口承载 */
-.tc-thumb{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.1538rem;background:repeating-linear-gradient(45deg,rgba(150,162,177,.05) 0 6px,transparent 6px 13px),#0D1116}
-.tc-thumb-dim{font-family:var(--font-mono);font-size:0.8077rem;color:rgba(160,205,255,.85)}
-.tc-thumb-hint{font-size:0.6154rem;color:var(--text-faint);letter-spacing:.06em}
-/* 放大预览弹窗 */
+/* 分组标题（仅悬浮窗选择器；主面板不分组）：顺序由 THEME_CATEGORIES 决定，空分类不渲染 */
+.tc-group-title{margin:14px 0 8px;font-family:inherit;font-size:12px;font-weight:600;line-height:1.2;color:var(--ink-dim,#8a94a6);letter-spacing:.04em}
+.theme-group:first-of-type .tc-group-title{margin-top:4px}
+/* 紧凑卡片：去掉大缩略图，实时预览统一交给弹窗顶部的大框 */
+.tc-meta{font-family:var(--font-mono);font-size:0.7308rem;color:var(--text-faint)}
+.theme-card.previewing{border-color:var(--signal-text)}
+/* 右侧的预览大框：固定尺寸，不随「有没有预览」变大变小，也不随下面的列表滚动 */
+.tpk-preview-pane{flex:none;padding:0.6154rem 1.2308rem 0.7692rem;border-bottom:0.0769rem solid var(--line)}
+.tpk-stage-head{display:flex;align-items:center;gap:0.4615rem;margin-bottom:0.3846rem;flex-wrap:nowrap;min-height:1.5385rem;overflow:hidden}
+.tpk-stage-title{flex:0 1 auto;min-width:0;font-size:0.8462rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tpk-stage-meta{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-family:var(--font-mono);font-size:0.7308rem;color:var(--text-faint);white-space:nowrap}
+.tpk-stage-head .btn{flex:none;height:1.5385rem;font-size:0.7692rem;padding:0 0.5385rem;white-space:nowrap}
+.tpk-stage-head .btn:first-of-type{margin-left:auto} /* 主面板「放大预览」；悬浮窗模式已无按钮 */
+.tpk-stage{position:relative;width:100%;height:15.3846rem;border:0.0769rem solid var(--line);border-radius:0.4615rem;overflow:hidden;background:#0d1116}
+.tpk-stage-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:0.7692rem;text-align:center;font-size:0.8077rem;color:var(--text-faint);background:#0d1116}
+/* 主面板（monitor）预览：舞台按 design 宽高比、限高居中；内容由 ThemeHost contain 等比缩小，不把 fluid 主题压变形 */
+.dlg.dlg-theme.tpk-flat{height:min(80vh,44rem);max-height:min(80vh,44rem)}
+.dlg.dlg-theme.tpk-flat .tpk-stage{height:auto;width:100%;aspect-ratio:2/1;max-height:min(30vh,15rem);margin-inline:auto}
+.dlg.dlg-theme.tpk-flat .tpk-stage.zoomed{max-height:min(46vh,22rem)}
+/* 悬浮窗选择器：第一列分类 / 第二列主题 / 右侧固定预览大框 + 设置面板；主面板仍是平铺网格 */
+.tpk-content{display:flex;flex:1;min-height:0}
+.tpk-main{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column;overflow:hidden}
+.dlg.dlg-theme.tpk-split{width:min(74rem,100%);height:min(80vh,44rem);max-height:min(80vh,44rem)}
+/* 悬浮窗选择器：右侧整列（预览 + 设置 + 工具）一起滚动，而不是只滚设置区。
+   选择器要压过后面的 .dlg-theme .dlg-body（同权重且更靠后），否则 dlg-body 仍是 flex:1 自己滚。 */
+/* 右侧整列滚动条：细线、无轨道、无上下箭头，颜色跟随当前强调色。
+   注意不要设 scrollbar-width / scrollbar-color —— 那会切回系统原生滚动条，
+   又把上下两个三角按钮带回来。 */
+.dlg.dlg-theme.tpk-split .tpk-main{overflow-y:auto}
+.dlg.dlg-theme.tpk-split .tpk-main::-webkit-scrollbar{width:0.2308rem;height:0.2308rem}
+.dlg.dlg-theme.tpk-split .tpk-main::-webkit-scrollbar-track{background:transparent}
+.dlg.dlg-theme.tpk-split .tpk-main::-webkit-scrollbar-button{display:none;width:0;height:0}
+.dlg.dlg-theme.tpk-split .tpk-main::-webkit-scrollbar-thumb{background:var(--signal);border-radius:0.6154rem}
+.dlg.dlg-theme.tpk-split .tpk-main::-webkit-scrollbar-thumb:hover{background:var(--signal-text)}
+.dlg.dlg-theme.tpk-split .tpk-pane-bar{position:sticky;top:0;z-index:2;background:var(--panel)}
+.dlg.dlg-theme.tpk-split .dlg-body{flex:none;min-height:auto;overflow:visible}
+/* 分类栏：业务分类从顶部依次排列，外部主题单独钉在底部 */
+.tpk-split .tpk-side{flex:none;width:10.7692rem;border-right:0.0769rem solid var(--line);background:var(--panel-2);overflow-y:auto;padding:0.4615rem 0.6154rem 0.9231rem;display:flex;flex-direction:column}
+.tpk-side-body{flex:1 0 auto;display:flex;flex-direction:column}
+.tpk-side-body > *,.tpk-side-foot > *{flex:none}
+.tpk-side-foot{margin-top:0.4615rem;padding-top:0.4615rem;border-top:0.0769rem solid var(--line)}
+.tpk-side-head{padding:0 0.6154rem 0.4615rem;font-size:0.7308rem;font-weight:600;letter-spacing:.06em;color:var(--text-faint)}
+.tpk-side-item{display:flex;align-items:center;gap:0.3846rem;width:100%;padding:0.4615rem 0.6154rem;border:0;border-radius:0.3077rem;background:none;color:var(--text-dim);font:inherit;font-size:0.8462rem;text-align:left;cursor:pointer}
+.tpk-side-item:hover:not(:disabled){background:var(--panel);color:var(--text)}
+.tpk-side-item.active{background:var(--signal);color:var(--signal-ink);font-weight:600}
+.tpk-side-item:disabled{opacity:.42;cursor:not-allowed}
+.tpk-side-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tpk-side-count{font-family:var(--font-mono);font-size:0.7308rem;opacity:.85}
+/* 分类右侧两个数字：亮的胶囊 = 这个分类里正在用的个数，淡的数字 = 共几个主题 */
+.tpk-side-used{display:inline-flex;align-items:center;gap:0.2308rem;flex:none;font-family:var(--font-mono);font-size:0.6923rem;line-height:1;color:var(--signal-text);background:var(--signal-dim);border-radius:0.6154rem;padding:0.1538rem 0.3846rem;white-space:nowrap}
+.tpk-side-dot{width:0.3077rem;height:0.3077rem;flex:none;border-radius:50%;background:currentColor}
+.tpk-side-item.active .tpk-side-used{color:var(--signal-ink);background:rgba(0,0,0,.22)}
+/* 第二列：该分类下的主题条目（预览 / 使用·停用 / 删除） */
+.tpk-list{flex:none;width:16.1538rem;border-right:0.0769rem solid var(--line);background:var(--panel);overflow-y:auto;padding:0.4615rem 0.6154rem 0.7692rem}
+.tpk-list-head{display:flex;align-items:center;gap:0.3846rem;padding:0 0.4615rem 0.6154rem;font-size:0.8077rem;font-weight:600;color:var(--text-dim)}
+.tpk-list-count{font-family:var(--font-mono);font-size:0.7308rem;color:var(--text-faint)}
+/* 卡片左右两栏：名字 / 来源在左，操作按钮固定在右侧 */
+.tpk-item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:0.4615rem;padding:0.4615rem;border:0.0769rem solid transparent;border-radius:0.3846rem;margin-bottom:0.3846rem;background:var(--panel-2);position:relative}
+.tpk-item.active{border-color:var(--signal-text)}
+/* 启用指示：细直竖线，不跟随卡片圆角（避免两端出现弧形）。上下各缩进一个圆角距离保持笔直。 */
+.tpk-item.enabled::before{content:"";position:absolute;left:0;top:0.3846rem;bottom:0.3846rem;width:0.1538rem;background:var(--signal)}
+.tpk-item.bad{opacity:.78}
+.tpk-item-body{min-width:0;display:flex;flex-direction:column;gap:0.1538rem}
+.tpk-item-main{display:flex;flex-direction:column;gap:0.1538rem;width:100%;padding:0;border:0;background:none;text-align:left;cursor:pointer}
+.tpk-item-name{font-size:0.8846rem;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tpk-item-meta{font-family:var(--font-mono);font-size:0.6923rem;color:var(--text-faint)}
+.tpk-item-err{margin-top:0.1538rem;font-size:0.6923rem;line-height:1.4}
+.tpk-item-actions{display:flex;align-items:center;justify-content:flex-end;gap:0.3077rem;flex-wrap:wrap}
+.tpk-item-actions .btn{height:1.5385rem;font-size:0.7308rem;padding:0 0.4615rem;white-space:nowrap}
+/* 删除确认：跨两栏放在卡片底部，不和右侧按钮抢位置 */
+.tpk-item-confirm{grid-column:1 / -1;justify-content:flex-end;margin-top:0.3846rem}
+/* 右侧标题栏：选中的主题 + 启用状态（不写分类描述 / 槽位编号） */
+.tpk-pane-bar{display:flex;align-items:center;gap:0.6154rem;flex:none;flex-wrap:nowrap;height:2.9231rem;box-sizing:border-box;padding:0 1.2308rem;border-bottom:0.0769rem solid var(--line)}
+.tpk-pane-title{font-family:var(--font-display);font-size:1rem;font-weight:600;color:var(--text)}
+.tpk-slot-chip{flex:none;margin-left:auto;font-family:var(--font-mono);font-size:0.6923rem;color:var(--text-faint);box-shadow:inset 0 0 0 0.0769rem var(--line-2);border-radius:0.2308rem;padding:0.1538rem 0.3846rem;white-space:nowrap}
+.tpk-slot-chip.on{color:var(--signal-text)}
+/* 右侧设置面板：按 overlay-settings.js 的注册表渲染，加设置项不用改组件 */
+.tpk-settings{padding:0.3077rem 0 0.7692rem}
+.tpk-settings-head{display:flex;align-items:center;gap:0.6154rem;margin:0.3077rem 0 0.6154rem;font-size:1.0769rem;font-weight:600;color:var(--text)}
+.tpk-settings-empty{padding:0.7692rem 0;font-size:0.8077rem;color:var(--text-faint)}
+/* 设置分组：背景 / 文字；组标题下画一条横线区分不同分类，组内选项之间不再分隔 */
+.tpk-setting-group+.tpk-setting-group{margin-top:0.9231rem}
+.tpk-setting-group-head{margin:0.6154rem 0 0.3077rem;padding-bottom:0.3077rem;border-bottom:0.0769rem solid var(--line);font-family:var(--font-display);font-size:1rem;font-weight:700;letter-spacing:0.08em;color:var(--text)}
+/* 同一分组内的设置项之间不再画横线：分组标题已经足够区分，横线反而把行切得太碎 */
+.tpk-setting{display:flex;flex-wrap:wrap;align-items:center;gap:0.4615rem;padding:0.4615rem 0}
+.tpk-setting-label{min-width:4.6154rem;font-size:0.8462rem;color:var(--text-dim)}
+.tpk-setting-seg button{padding:0.2308rem 0.6154rem;font-size:0.7692rem}
+.tpk-setting-color{width:2.7692rem;height:1.8462rem;padding:0;border:0.0769rem solid var(--line);border-radius:0.2308rem;background:none;cursor:pointer}
+.tpk-setting-range{flex:1 1 8rem;min-width:6rem;accent-color:var(--signal);cursor:pointer}
+.tpk-setting-value{min-width:2.6rem;text-align:right;font-family:var(--font-mono);font-size:0.7692rem;color:var(--text-dim);font-variant-numeric:tabular-nums}
+.tpk-setting-presets{display:flex;align-items:center;gap:0.3846rem;flex-wrap:wrap}
+.tpk-setting-preset{height:1.5385rem;font-size:0.7308rem;padding:0 0.4615rem}
+.tpk-setting-preset.active{border-color:var(--signal-text);color:var(--signal-text)}
+.tpk-swatch{width:1.5385rem;height:1.5385rem;padding:0;border:0.0769rem solid var(--line-2);border-radius:0.2308rem;cursor:pointer;flex:none}
+.tpk-swatch:hover{transform:scale(1.08)}
+.tpk-swatch.active{outline:0.1538rem solid var(--signal-text);outline-offset:0.0769rem}
+.tpk-settings-empty code{font-family:var(--font-mono);font-size:0.7308rem;color:var(--text-dim)}
+.tpk-setting-hint{flex-basis:100%;font-size:0.7308rem;line-height:1.5;color:var(--text-faint)}
+.tpk-split .theme-tools{margin-top:0.9231rem}
+.tpk-empty{padding:1.5385rem 0;text-align:center;font-size:0.8462rem;color:var(--text-faint)}
+/* 主题选择弹窗 */
 .dlg.dlg-wide{width:min(46rem,100%)}
 /* 主题选择弹窗：网格可能很长，head / foot 固定，中间自己滚 */
 .dlg.dlg-theme{display:flex;flex-direction:column;max-height:min(84vh,48rem)}
 /* 弹窗容器只是为了接住键盘事件才拿焦点，别让它套一圈 focus 环 */
 .dlg-theme:focus,.dlg-theme:focus-visible{outline:none}
-.dlg-theme .dlg-head{padding:1.1538rem 2.4615rem 0 1.2308rem;flex:none}
+/* 标题和下方内容之间留一点间距并画一条分隔线，避免侧边栏底色直接贴住标题 */
+.dlg-theme .dlg-head{padding:1.1538rem 2.4615rem 0.7692rem 1.2308rem;flex:none;border-bottom:0.0769rem solid var(--line)}
 .dlg-theme .dlg-body{flex:1;min-height:0;overflow-y:auto;padding-bottom:0.9231rem}
 .dlg-theme .dlg-foot{flex:none;padding-top:0}
-.tpk-lead{margin:0;font-size:0.8462rem;line-height:1.55;color:var(--text-dim)}
-.tpk-lead strong{font-family:var(--font-display);font-weight:600;color:var(--text)}
 .tpk-err{margin-top:0.4615rem}
-/* 设置页里那一行：主题名（过长省略）+ 更改按钮 */
+/* 设置页里那一行：标题 + 更改按钮（两种模式都不显示当前主题名） */
 .tpk-ctl{display:flex;align-items:center;gap:0.7692rem;flex:none;min-width:0}
-.tpk-now{max-width:17rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tpk-ctl .btn{height:1.8462rem;font-size:0.8462rem;padding:0 0.7692rem}
 .pv-stage{position:relative;width:100%;aspect-ratio:380/150;min-height:6.5rem;max-height:min(46vh,26rem);margin-top:0.3077rem;border:0.0769rem solid var(--line);border-radius:0.3077rem;overflow:hidden;background:#0D1116}
 .pv-meta{display:flex;align-items:center;gap:0.4615rem;margin-top:0.6154rem;flex-wrap:wrap}

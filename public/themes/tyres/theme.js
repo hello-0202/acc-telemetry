@@ -30,6 +30,10 @@
     if (msg.background === 'transparent' || msg.background === 'opaque') {
       document.documentElement.dataset.bg = msg.background;
     }
+    // 用户在设置里选的文字颜色：环心读数 / 轮胎角标通过 --text-color 跟随
+    if (typeof msg.textColor === 'string') {
+      document.documentElement.style.setProperty('--text-color', msg.textColor);
+    }
   }
 
   /* 胎温 → 颜色档（和 gt-cockpit 一致） */

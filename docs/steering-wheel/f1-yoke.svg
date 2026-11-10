@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="F1 方向盘">
+  <title>F1 方向盘（简笔 · 圆角）</title>
+  <!--
+    按你手绘那张（80×60：两侧握把 + 中间横梁）重画，200×200，中心正好 (100,100)。
+
+    改了什么：
+      1. 你那张的 8 个折点全部保留（位置按比例放大），只在拐角处切掉一小段用曲线接上，
+         所以直边和斜切角都还在 —— 圆滑了，但不是圆角矩形，也不是一坨圆。
+      2. 上下沿补成闭合盘圈。你那张上下是开口的，闭合后才读成方向盘；
+         想要开口版，把上下两条横边（两个 Q 之间的直段）删掉即可。
+      3. 中间横梁保留，加了一个中央凸台（圆）+ 12 点方向标记（小长矩形）。
+         你那张上下左右完全对称，转 180° 分不出正反 —— 那个竖条就是干这个的。
+
+    旋转即转向：整组 #wheel 绕 (100,100) 旋转
+      wheel.setAttribute('transform', 'rotate(' + deg + ' 100 100)')
+      #wheel { transform-box: view-box; transform-origin: 50% 50%; }
+
+    画法：白线 + 深色描边衬底（衬底比白线粗 5，只当包边），浅/深游戏画面都读得出来。
+    线条只在 <defs> 里写一遍，两个 <use> 分别套两层；改形状只改 d。
+  -->
+  <style>
+    .sw {
+      --sw-ink: #ffffff;                  /* 线稿主色（浅色 HUD 上换 #0b0f14） */
+      --sw-bed: rgba(10, 14, 19, 0.78);   /* 衬底色（白线的包边） */
+      --sw-w: 4;                          /* 线稿粗细（viewBox 单位），衬底自动 +5 */
+    }
+    .sw .bed     { fill: none; stroke: var(--sw-bed); stroke-width: calc(var(--sw-w) + 5);
+                   stroke-linejoin: round; stroke-linecap: round; }
+    .sw .ink     { fill: none; stroke: var(--sw-ink); stroke-width: var(--sw-w);
+                   stroke-linejoin: round; stroke-linecap: round; }
+    .sw .bed-dot { fill: var(--sw-bed); stroke: var(--sw-bed); stroke-width: 7;
+                   stroke-linejoin: miter; }
+    .sw .ink-dot { fill: var(--sw-ink); stroke: none; }
+  </style>
+
+  <defs>
+    <!-- 盘圈：8 个折点各留圆角（Q 的控制点就是原来尖角的位置，所以斜切角还在） -->
+    <g id="yoke-lines">
+      <path d="M 134.1,34 Q 144,34 152.9,38.4
+               L 179.2,51.6 Q 188,56 188,65.9
+               L 188,134.1 Q 188,144 179.2,148.4
+               L 152.9,161.6 Q 144,166 134.1,166
+               L 65.9,166 Q 56,166 47.1,161.6
+               L 20.8,148.4 Q 12,144 12,134.1
+               L 12,65.9 Q 12,56 20.8,51.6
+               L 47.1,38.4 Q 56,34 65.9,34 Z" />
+      <!-- 中间横梁：左右两段，收在中央凸台边上，不穿过它 -->
+      <path d="M 12,100 H 81.3" />
+      <path d="M 118.7,100 H 188" />
+      <!-- 中央凸台 -->
+      <circle cx="100" cy="100" r="18.7" />
+    </g>
+
+    <!-- 实心件：12 点方向标记（顶边下方一条小长矩形，只用来分正反） -->
+    <g id="yoke-dots">
+      <rect x="97.6" y="27" width="4.8" height="13" rx="1.4" />
+    </g>
+  </defs>
+
+  <g id="wheel" class="sw">
+    <use href="#yoke-lines" class="bed" />
+    <use href="#yoke-lines" class="ink" />
+    <use href="#yoke-dots"  class="bed-dot" />
+    <use href="#yoke-dots"  class="ink-dot" />
+  </g>
+</svg>

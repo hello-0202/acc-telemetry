@@ -4,7 +4,7 @@
  * 和其他悬浮窗主题保持同一套语言：
  *   - 全透明背景、无底板、无发光 / 模糊；
  *   - 数字用等宽字体 + 800 字重，标签用 Chakra Petch；
- *   - 文字只往正下方投 1px 硬影，保证压在游戏画面上也清楚。
+ *   - 文字不加阴影 / 描边，靠纯色 + 800 字重压在游戏画面上。
  *
  * 2×2 布局：每个角一块「百分比 + 磨损条 + 每圈损耗」。
  * 磨损条按剩余磨损从左往右填充（0% = 空，100% = 满）。
@@ -21,20 +21,20 @@ body {
 
 body {
   font-family: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Segoe UI', 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', sans-serif;
-  color: #ffffff;
+  color: var(--text-color, #ffffff);
   -webkit-user-select: none;
   user-select: none;
   cursor: default;
   -webkit-font-smoothing: antialiased;
-  --ink-edge: 0 1px 0 rgba(0, 0, 0, 0.85);
-  --ink-soft: #ffffff;
-  --ink-dim: rgba(255, 255, 255, 0.85);
+  --ink-soft: var(--text-color, #ffffff);
+  --ink-dim: color-mix(in srgb, var(--text-color, #ffffff) 85%, transparent);
   --track: rgba(255, 255, 255, 0.18);
 }
 
-/* 宿主切「不透明背景」时，给一块干净的深色底板；默认透明。 */
+/* 用户把背景不透明度拉到 100% 时，给一块干净的底板并跟随所选颜色；默认透明。
+   --host-bg 由 theme.js 从 acc:init / acc:ui 的 backgroundColor 写入。 */
 html[data-bg='opaque'] body {
-  background: #0b0f14;
+  background: var(--host-bg, #0b0f14);
 }
 
 .hud {
@@ -59,8 +59,7 @@ html[data-bg='opaque'] body {
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.18em;
-  color: #ffffff;
-  text-shadow: var(--ink-edge);
+  color: var(--text-color, #ffffff);
 }
 
 .badge {
@@ -72,7 +71,6 @@ html[data-bg='opaque'] body {
   padding: 2px 5px 1px;
   border: 1px solid rgba(255, 255, 255, 0.35);
   color: var(--ink-dim);
-  text-shadow: var(--ink-edge);
 }
 
 /* 原始共享内存值可用（罕见）：绿色提示「实测」 */
@@ -89,7 +87,7 @@ html[data-bg='opaque'] body {
 
 .badge[data-source='none'] {
   border-color: rgba(255, 255, 255, 0.22);
-  color: rgba(255, 255, 255, 0.4);
+  color: color-mix(in srgb, var(--text-color, #ffffff) 40%, transparent);
 }
 
 .laps {
@@ -100,7 +98,6 @@ html[data-bg='opaque'] body {
   letter-spacing: -0.02em;
   color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
-  text-shadow: var(--ink-edge);
 }
 
 /* ---------------- 2×2 四轮 ---------------- */
@@ -133,8 +130,7 @@ html[data-bg='opaque'] body {
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.14em;
-  color: #ffffff;
-  text-shadow: var(--ink-edge);
+  color: var(--text-color, #ffffff);
   width: 22px;
   flex: 0 0 auto;
 }
@@ -146,15 +142,13 @@ html[data-bg='opaque'] body {
   line-height: 0.9;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.06em;
-  color: #ffffff;
-  text-shadow: var(--ink-edge);
+  color: var(--text-color, #ffffff);
 }
 
 .unit {
   font-size: 9px;
   font-weight: 800;
   color: var(--ink-dim);
-  text-shadow: var(--ink-edge);
 }
 
 .rate {
@@ -166,7 +160,6 @@ html[data-bg='opaque'] body {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
   color: var(--ink-dim);
-  text-shadow: var(--ink-edge);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -201,7 +194,7 @@ html[data-bg='opaque'] body {
 }
 
 .corner[data-level='ok'] .pct {
-  color: #ffffff;
+  color: var(--text-color, #ffffff);
 }
 
 .corner[data-level='warn'] .pct {

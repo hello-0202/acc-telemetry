@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="F1 方向盘">
+  <title>F1 方向盘（简笔）</title>
+  <!--
+    简笔 F1 / 方程式方向盘，200×200，圆心正好在 (100,100)。
+
+    旋转即转向：整组 #wheel 绕 (100,100) 旋转即可，两种写法都行
+      wheel.setAttribute('transform', 'rotate(' + deg + ' 100 100)')
+      #wheel { transform-box: view-box; transform-origin: 50% 50%; }
+
+    画法只有一层「白线 + 深色描边衬底」：深色比白线粗一档，只当白线的包边用，
+    作用是让白线在浅色游戏画面上不糊掉；暗画面上几乎看不见这层，就只剩线稿。
+    不做渐变、不做发光、端头平切 —— 和 pedals-wheel 的视觉语言一致。
+
+    线条只在 <defs> 里画一遍，用两个 <use> 分别套「衬底 / 白线」两层。
+    要改形状只改 defs 里的 d，两层一起跟着变。
+    改色只动 .sw 里的变量。
+  -->
+  <style>
+    .sw {
+      --sw-ink: #ffffff;                  /* 线稿主色 */
+      --sw-bed: rgba(10, 14, 19, 0.78);   /* 衬底色（白线的包边） */
+      --sw-w: 4;                          /* 线稿粗细（viewBox 单位），衬底自动 +5 */
+    }
+    .sw .bed     { fill: none; stroke: var(--sw-bed); stroke-width: calc(var(--sw-w) + 5);
+                   stroke-linejoin: round; stroke-linecap: butt; }
+    .sw .ink     { fill: none; stroke: var(--sw-ink); stroke-width: var(--sw-w);
+                   stroke-linejoin: round; stroke-linecap: butt; }
+    /* 实心件（按键点、12 点标记）：衬底是同色的粗描边，白层只填色 */
+    .sw .bed-dot { fill: var(--sw-bed); stroke: var(--sw-bed); stroke-width: 7; }
+    .sw .ink-dot { fill: var(--sw-ink); stroke: none; }
+  </style>
+
+  <defs>
+    <!-- 线：盘圈（外框 + 内挖空）、左右握把、中央面板、面板小屏 -->
+    <g id="f1-lines">
+      <path d="M 44,38 H 156 A 14,14 0 0 1 170,52 V 144 A 14,14 0 0 1 156,158
+               H 44 A 14,14 0 0 1 30,144 V 52 A 14,14 0 0 1 44,38 Z
+               M 56,54 H 144 A 10,10 0 0 1 154,64 V 132 A 10,10 0 0 1 144,142
+               H 56 A 10,10 0 0 1 46,132 V 64 A 10,10 0 0 1 56,54 Z" />
+      <rect x="12" y="56" width="28" height="84" rx="14" />
+      <rect x="160" y="56" width="28" height="84" rx="14" />
+      <rect x="72" y="78" width="56" height="80" rx="6" />
+      <rect x="80" y="88" width="40" height="26" rx="2" />
+    </g>
+
+    <!-- 实心件：面板上三个按键 + 12 点标记 -->
+    <g id="f1-dots">
+      <circle cx="86" cy="128" r="3.5" />
+      <circle cx="100" cy="128" r="3.5" />
+      <circle cx="114" cy="128" r="3.5" />
+      <rect x="95" y="36" width="10" height="22" rx="1" />
+    </g>
+  </defs>
+
+  <g id="wheel" class="sw">
+    <use href="#f1-lines" class="bed" />
+    <use href="#f1-lines" class="ink" />
+    <use href="#f1-dots"  class="bed-dot" />
+    <use href="#f1-dots"  class="ink-dot" />
+  </g>
+</svg>

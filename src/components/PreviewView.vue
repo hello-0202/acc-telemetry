@@ -3,6 +3,9 @@
 //
 // 主题 id / 来源 / 模式从 URL 查询参数取（Rust 的 open_theme_preview 拼好传进来）。
 // 主窗口复用已开的预览窗口换主题时，会推一条 preview-load 事件，这里据此重新加载。
+//
+// 窗口初始只有 480×320，让 fit: fluid 的主面板主题按这个视口排版会被压变形，
+// 所以统一 fit="contain"：按设计尺寸渲染后等比缩小铺进窗口，拉大窗口就能看更清楚。
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { listen } from '@tauri-apps/api/event';
 
@@ -50,6 +53,7 @@ onBeforeUnmount(() => {
       :theme="theme"
       :source="source"
       :mode="mode"
+      fit="contain"
       live
       :badge="true"
     />

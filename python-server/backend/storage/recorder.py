@@ -185,6 +185,7 @@ class Recorder:
         bus.runtime["lap"] = 1
 
     async def stop(self) -> None:
+        finished_id = self._session_id
         if self._processor is not None:
             self._processor.stop()
         self._processor = None
@@ -209,7 +210,16 @@ class Recorder:
         bus.runtime["state_meta"] = None
         bus.runtime["recording"] = False
         bus.runtime["lap"] = 1
+        bus.runtime["session_end_requested"] = False
+        bus.runtime["session_end_reason"] = None
         self._emit({"type": "stopped"})
+        # 本次记录彻底结束（用户停监测 / 退出赛道回主菜单 / 游戏退出）。
+        # 只发 stopped 不够：前端 stopped 分支清实时帧但不动 historyRevision，
+        # 历史页列表不会重拉，那一行仍带着 live=true、删除按钮一直禁用。
+        # 发 history 让列表刷新，旧的「记录中」标记随之消失。
+        self._emit(
+            {"type": "history", "reason": "session-end", "sessionId": finished_id}
+        )
 
     async def _wait_for_static(self) -> Any | None:
         """等待采集层读到赛道/车辆信息；游戏没开时返回 None。"""
@@ -505,6 +515,18 @@ class Recorder:
                         bus.frame_queue.get(), timeout=0.5
                     )
                 except asyncio.TimeoutError:
+                    # 采集层判定「已离开赛道 / 回到主菜单」：收尾当前 session，
+                    # 让这一场成为一条完整、可删除的历史记录。
+                    # 先无条件消费掉请求（哪怕当前没在 recording），否则前端监督
+                    # 循环每 3s 重发 start 后会被同一个请求反复 stop。
+                    if bus.runtime.get("session_end_requested"):
+                        reason = bus.runtime.get("session_end_reason") or "left-track"
+                        bus.runtime["session_end_requested"] = False
+                        bus.runtime["session_end_reason"] = None
+                        if self._recording:
+                            logger.info("离开赛道（%s），结束本次记录", reason)
+                            await self.stop()
+                        continue
                     if self._recording and not self.provider.available():
                         self._emit(self._error("GAME_EXITED", "ACC 已退出"))
                         await self.stop()

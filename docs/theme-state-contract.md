@@ -304,13 +304,18 @@ public/themes/speed-gear/
   "desc": "速度 / 档位 / 本圈 / DELTA，适合小尺寸悬浮窗",
   "design": { "w": 380, "h": 150 },
   "fit": "contain",
-  "modes": ["overlay"]
+  "modes": ["overlay"],
+  "overlaySettings": ["background", "textColor"]
 }
 ```
 
 - `design`：设计基准。`contain` 模式下主题内所有尺寸按这个像素写死，不要用 `vw/vh`，也不要做响应式。
 - `fit`：`contain`（默认）或 `fluid`。见下面「缩放规则」。
 - `modes`：`overlay` / `monitor`，宿主按用途筛主题。一个主题可以同时声明多个。
+- `overlaySettings`：可选能力声明，如 `["background", "textColor"]`。外部主题只有声明后，
+  设置页才会出现对应的「背景 / 文字」控件、宿主才会应用对应外观；内置主题默认支持。
+  `background` 同时覆盖宿主级的「模糊」（Acrylic 整窗效果），主题无需处理。
+  不参与 `checkMeta()` 校验，老主题不带此字段不受影响。
 
 ### 缩放规则
 
@@ -336,8 +341,8 @@ iframe 直接 `width:100%; height:100%`、不做 transform，**主题的视口�
 | 方向 | 消息 | 说明 |
 |---|---|---|
 | 主题 → 宿主 | `{ type: 'acc:ready' }` | 主题脚本就绪，可以喂数据。**每次收到 `acc:init` 都要回一次**（幂等，宿主会忽略重复） |
-| 宿主 → 主题 | `{ type: 'acc:init', v, mode, design, fit, scale, box, theme, background }` | 握手 + 告知当前 mode / 设计尺寸 / 缩放方式 / 容器初始尺寸（`box`）/ 宿主黑白色（`theme`）/ 悬浮窗背景（`background`：`transparent` \| `opaque`） |
-| 宿主 → 主题 | `{ type: 'acc:ui', theme, background }` | 用户切黑白主题 / 悬浮窗透明-不透明时补发，不用重新 init（重新 init 会再触发一次 ready） |
+| 宿主 → 主题 | `{ type: 'acc:init', v, mode, design, fit, scale, box, theme, background, backgroundColor, backgroundOpacity, textColor }` | 握手 + 告知当前 mode / 设计尺寸 / 缩放方式 / 容器初始尺寸（`box`）/ 宿主黑白色（`theme`）/ 悬浮窗外观（`backgroundColor`：`#rrggbb`，`backgroundOpacity`：0..1，`textColor`：`#rrggbb`；`background` 是兼容字段：`transparent` \| `opaque`） |
+| 宿主 → 主题 | `{ type: 'acc:ui', theme?, background?, backgroundColor?, backgroundOpacity?, textColor? }` | 用户切黑白主题 / 改悬浮窗背景或文字颜色时补发，不用重新 init（重新 init 会再触发一次 ready） |
 | 宿主 → 主题 | `{ type: 'acc:state', payload }` | 就是本文第三节的 state，录制中 30Hz、待机 2Hz |
 
 握手顺序上有两个坑，两边都做了兜底：
@@ -435,7 +440,7 @@ WebView2 只认 http(s)，Windows 上写 `theme://...` 必定加载失败。
 - 缩放不用自己算：`ThemeHost` 已经按 `theme.json` 的 `design` 做 contain，缩略图小、弹出大，只换容器尺寸。
 - 弹窗舞台高度按主题的 `design` 比例（`aspect-ratio`）撑开，主题正好满宽；上下限 `6.5rem ~ min(46vh, 26rem)` 防极端比例。
 - 坏主题（`error` 非空）不渲染 iframe，显示「无法预览」。
-- 弹窗的 `keydown` 要 `stopPropagation`，否则 `1/2/3` 会切页、`T` 会切黑白主题；`Esc` 关闭。
+- 弹窗的 `keydown` 要 `stopPropagation`，否则 `1/2/3` 会切页；`Esc` 关闭。
 
 ### 热重载
 
@@ -484,8 +489,12 @@ MonitorView.vue          外壳：状态条 + 开始监测 + 加载失败/未监
   直接渲染 `MonitorDashboard`，不挂 iframe。它是**功能最全**的那个 —— 实时赛道图/弯心来自
   `getTrackGeometry()` 的几何数据，目前不在 state 里，主题拿不到（P5 再考虑单独推 `acc:map`）。
 - 主题加载失败（4 秒没 `acc:ready`）→ 自动回退内置面板 + 顶部提示条，主面板不会留空白。
-- 两个槽位共用 `ThemePicker.vue`（卡片网格 + 缩略预览 + 放大预览 + 启用/删除），只是传入的 `mode` 不同；
+- 两个槽位共用 `ThemePicker.vue`（实时预览大框 + 启用/预览/删除 + 导入导出工具），只是 `mode` 不同：
+  悬浮窗弹窗是「双列二级侧栏（分类 / 主题条目）+ 右侧固定大预览框 + 设置面板」，可同时启用最多 5 个
+  悬浮窗（按槽位），右侧不列卡片网格；主面板弹窗是「预览大框 + 不分组平铺网格」，仍是单选。
   列表按 `theme.json` 的 `modes` 过滤，用户不会看到「只能当悬浮窗的主题」出现在主面板里。
+  设置页两行入口都不显示当前主题名；悬浮窗 UI 不暴露槽位编号与设计尺寸，卡片恒显示来源
+  （内置 / 外部），启用 / 停用不弹提示；弹窗固定宽高、内容在内部滚动（详见 `ENGINEERING-NOTES.md` 第 10 节）。
 
 ### 当前限制（后续做）
 

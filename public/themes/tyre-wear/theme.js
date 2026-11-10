@@ -33,6 +33,14 @@
     if (msg.background === 'transparent' || msg.background === 'opaque') {
       document.documentElement.dataset.bg = msg.background;
     }
+    // 用户选的底板色：不透明时正文底板跟着走，避免和宿主铺的颜色不一致
+    if (typeof msg.backgroundColor === 'string') {
+      document.documentElement.style.setProperty('--host-bg', msg.backgroundColor);
+    }
+    // 用户选的文字颜色：标题 / 百分比 / 标签通过 --text-color 跟随
+    if (typeof msg.textColor === 'string') {
+      document.documentElement.style.setProperty('--text-color', msg.textColor);
+    }
   }
 
   function levelOf(w) {

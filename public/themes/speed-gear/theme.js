@@ -64,6 +64,10 @@
     if (msg.background === 'transparent' || msg.background === 'opaque') {
       document.documentElement.dataset.bg = msg.background;
     }
+    // 用户在设置里选的文字颜色：主数字 / 标签通过 --text-color 跟随
+    if (typeof msg.textColor === 'string') {
+      document.documentElement.style.setProperty('--text-color', msg.textColor);
+    }
   }
 
   function gearText(gear) {

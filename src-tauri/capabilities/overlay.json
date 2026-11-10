@@ -18,6 +18,7 @@
     "allow-set-overlay-size",
     "allow-set-overlay-locked",
     "allow-overlay-any-focused",
-    "allow-save-overlay-rect"
+    "allow-save-overlay-rect",
+    "allow-set-overlay-backdrop"
   ]
 }

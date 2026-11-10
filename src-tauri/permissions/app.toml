@@ -62,8 +62,13 @@ description = """查询是否有任意悬浮窗处于聚焦态（多悬浮窗时
 commands.allow = ["overlay_any_focused"]
 
 [[permission]]
+identifier = "allow-set-overlay-backdrop"
+description = """给当前悬浮窗开启 / 关闭 Windows Acrylic 系统模糊。只有悬浮窗自己需要；主窗口不应调用。"""
+commands.allow = ["set_overlay_backdrop"]
+
+[[permission]]
 identifier = "allow-set-overlay-slots"
-description = """设置启用的悬浮窗槽位（1~3）。会创建 / 销毁悬浮窗，只给主窗口。"""
+description = """设置启用的悬浮窗槽位（1~5）。会创建 / 销毁悬浮窗，只给主窗口。"""
 commands.allow = ["set_overlay_slots"]
 
 [[permission]]
@@ -105,3 +110,8 @@ commands.allow = ["open_data_path"]
 identifier = "allow-restart-app"
 description = """重启应用，让待生效的存储位置在 sidecar 启动前完成迁移。只给主窗口。"""
 commands.allow = ["restart_app"]
+
+[[permission]]
+identifier = "allow-check-update-route"
+description = """按 GitHub / Gitee 指定线路检查更新。只给主窗口的设置页。"""
+commands.allow = ["check_update_route"]

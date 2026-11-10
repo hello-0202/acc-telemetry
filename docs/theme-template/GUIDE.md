@@ -11,7 +11,7 @@
 
 | 文件 | 作用 | 必须 |
 |---|---|---|
-| `theme.json` | 清单：id、设计尺寸、fit、支持哪些窗口 | ✅ |
+| `theme.json` | 清单：id、设计尺寸、fit、支持哪些窗口，可选 category / tags | ✅ |
 | `index.html` | 主题的本体结构 | ✅ |
 | `theme.css` | 样式（可以内联进 html，也可以拆出来） | 可选 |
 | `theme.js` | 收数据 + 渲染（可以没有，纯 CSS 主题也行） | 可选 |
@@ -46,12 +46,15 @@
 {
   "id": "my-hud",
   "name": "my-hud",
-  "version": "1.0.0",
-  "author": "你或 AI 的名字",
-  "desc": "一句话说明这个主题长啥样",
-  "design": { "w": 380, "h": 150 },
+  "version": "0.1.0",
+  "author": "",
+  "desc": "写一句话说明这个主题长什么样、给谁用。",
+  "category": "core",
+  "tags": [],
+  "design": { "w": 420, "h": 120 },
   "fit": "contain",
-  "modes": ["overlay"]
+  "modes": ["overlay"],
+  "overlaySettings": ["background", "textColor"]
 }
 ```
 
@@ -60,9 +63,15 @@
 | `id` | 字母 / 数字 / `-` / `_`，且必须等于文件夹名。**卡片和设置页显示的就是这个「安装包名」** |
 | `name` | **请写成和 `id` 完全一样**（两个名字统一），否则同一款主题会出现两种叫法 |
 | `version` / `author` / `desc` | 辅助信息，可随便填（卡片上不再展示描述） |
+| `category` | **可选**：单选分类 id：`core` / `timing` / `inputs` / `tyres` / `fuel` / `overview`。不填或写错都归「未分类」，**不会让主题失效** |
+| `tags` | **可选**：字符串数组，留给搜索 / 以后做场景预设，设置页暂不展示 |
 | `design` | 设计基准尺寸（像素） |
 | `fit` | `contain`（默认）或 `fluid`，见第 5 节 |
 | `modes` | 这个主题给哪种窗口用：`overlay`（悬浮窗）和/或 `monitor`（主面板） |
+| `overlaySettings` | **可选**：声明支持哪些宿主外观设置。`"background"` = 背景颜色 / 不透明度，`"textColor"` = 文字颜色。声明后设置页才出现对应控件、宿主才会应用；不写则只能沿用主题自带样式。老主题不写不受影响 |
+
+> `category` / `tags` 不参与清单校验：老主题不带这两个字段照常导入、照常启用，只是在悬浮窗主题选择器里排到「未分类」组（主面板选择器不分组）。
+> 六个分类的含义与字段全表见 `docs/theme-authoring.md` 第二节。
 
 > **`id` 和 `name` 必须是同一个名字。** 卡片/设置页显示的是安装包名（`id`，也就是文件夹名）；
 > `name` 只是辅助字段，两者不一致会让同一款主题出现两种叫法，导入后容易认错包。
@@ -85,8 +94,8 @@
 
 | 消息 | 含义 |
 |---|---|
-| `{ type: 'acc:init', v, mode, design, fit, scale, box, theme, background }` | 握手：告诉主题当前窗口模式、设计尺寸、缩放方式、黑/白主题、悬浮窗背景 |
-| `{ type: 'acc:ui', theme, background }` | 用户切黑白主题 / 悬浮窗透明-不透明时补发，不用重新握手 |
+| `{ type: 'acc:init', v, mode, design, fit, scale, box, theme, background, backgroundColor, backgroundOpacity, textColor }` | 握手：告诉主题当前窗口模式、设计尺寸、缩放方式、黑/白主题、悬浮窗背景与文字颜色 |
+| `{ type: 'acc:ui', theme?, background?, backgroundColor?, backgroundOpacity?, textColor? }` | 用户切黑白主题 / 改悬浮窗背景或文字颜色时补发，不用重新握手 |
 | `{ type: 'acc:state', payload }` | **真正的数据**，录制中 30Hz、待机 2Hz |
 
 **主题 → 宿主** 只需回一条：
@@ -107,7 +116,7 @@ window.addEventListener('message', function (e) {
     return;
   }
   if (msg.type === 'acc:ui') {
-    applyUi(msg);                                            // { theme?, background? }
+    applyUi(msg);                                            // { theme?, background?, backgroundColor?, backgroundOpacity?, textColor? }
     return;
   }
   if (msg.type === 'acc:state' && msg.payload) {
@@ -115,10 +124,19 @@ window.addEventListener('message', function (e) {
   }
 });
 
-// 把宿主给的界面状态写到 <html> 的 data-*，CSS 里按需切换
+// 把宿主给的界面状态写到 <html> 的 data-* / CSS 变量，CSS 里按需切换
 function applyUi(msg) {
   if (msg.theme) document.documentElement.dataset.theme = msg.theme;
   if (msg.background) document.documentElement.dataset.bg = msg.background;
+  if (msg.backgroundColor) {
+    document.documentElement.style.setProperty('--host-bg', msg.backgroundColor);
+  }
+  if (typeof msg.backgroundOpacity === 'number') {
+    document.documentElement.style.setProperty('--host-bg-opacity', String(msg.backgroundOpacity));
+  }
+  if (msg.textColor) {
+    document.documentElement.style.setProperty('--text-color', msg.textColor);
+  }
 }
 ```
 
@@ -338,18 +356,30 @@ if (msg.theme) document.documentElement.dataset.theme = msg.theme;
 
 在 CSS 里用 `html[data-theme="light"] { ... }` 覆盖变量即可。
 
-**⑤ 悬浮窗背景可能被用户切成「不透明」：**
+**⑤ 悬浮窗背景 / 文字颜色可能被用户改：**
 
-设置里每个悬浮窗都有「背景：透明 / 不透明」。切成不透明时，宿主会在 iframe 后面
-铺一层实心底板，并把 `background: "opaque"` 通过 `acc:init` / `acc:ui` 告诉主题。
-主题默认保持透明即可；如果自带半透明卡片，加一条规则让它在不透明模式下变实心，
-免得两层叠出色差：
+设置里每个悬浮窗都有「背景」分组（不透明度滑杆 + 颜色）和「文字」分组（颜色）。
+宿主会按 `rgba(color, opacity)` 在 iframe 后面铺一层底板，并把 `backgroundColor` /
+`backgroundOpacity` / `textColor` 通过 `acc:init` / `acc:ui` 告诉主题。
+
+背景：主题默认保持透明即可；如果自带底板，让它跟随宿主的颜色和透明度，免得两层叠出色差：
 
 ```css
-html[data-bg="opaque"] .card { background: #0b0f14; }
+html[data-bg="opaque"] .card { background: var(--host-bg, #0b0f14); }
 ```
 
-值只有 `transparent` / `opaque` 两种；`data-bg` 由 `applyUi(msg)` 写入。
+文字：字号 / 字体在主题里，宿主改不了你的文字，只能把颜色告诉你。把 `textColor` 写进
+CSS 变量，并让主数字 / 标签的 `color` 引用它：
+
+```css
+.card { color: var(--text-color, #eef3f8); }
+```
+
+`--host-bg` / `--text-color` 都由 `applyUi(msg)` 写入。旧字段 `background` 仍然保留
+（只有 `opacity` 接近 100% 才是 `opaque`），老主题写 `html[data-bg="opaque"]` 也能继续用。
+
+**外部主题必须在 `theme.json` 的 `overlaySettings` 里声明 `"background"` / `"textColor"`**，
+设置页才会出现对应控件、宿主才会应用。没有声明的主题（包括所有老主题）不受影响，只使用自己画的样式。
 
 **⑥ 非 `streaming` 时要显示占位，不要渲染旧值：**
 

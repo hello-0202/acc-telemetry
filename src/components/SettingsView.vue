@@ -8,11 +8,9 @@ import { open as openDirDialog } from '@tauri-apps/plugin-dialog';
 import { clearHistory, getBaseUrl, getConfig, getHealth, listSessions, saveConfig } from '../telemetry/api.js';
 import { telemetry } from '../telemetry/useTelemetry.js';
 import { applyPrefs, prefs } from '../telemetry/prefs.js';
+import { UPDATE_ROUTES, setUpdateRoute, updateRoute } from '../telemetry/update-route.js';
 import HelpTip from './HelpTip.vue';
 import ThemePicker from './ThemePicker.vue';
-import { OVERLAY_SLOT_MAX } from '../telemetry/theme-choice.js';
-import { isOverlaySlotEnabled, setOverlaySlotEnabled } from '../telemetry/overlay-slots.js';
-import { overlayBackground, setOverlayBackground } from '../telemetry/overlay-background.js';
 
 const props = defineProps({
   visible: { type: Boolean, default: true },
@@ -299,17 +297,20 @@ function toggleResident() {
   patch({ backgroundResident: !prefs.backgroundResident });
 }
 
-/* 悬浮窗槽位开关：localStorage + Rust 窗口一起更新（Rust 负责建 / 销毁窗口） */
-function toggleOverlaySlot(n) {
-  setOverlaySlotEnabled(n, !isOverlaySlotEnabled(n));
-}
-
 /* 自动更新走弹窗里的下载/安装流程，这里只保留一个手动下载的兜底入口 */
 async function openReleases() {
   try {
     await openUrl(releasesUrl.value);
   } catch (e) {
     console.error('open releases page failed:', e);
+  }
+}
+
+async function openProjectSite() {
+  try {
+    await openUrl(REPO_URL);
+  } catch (e) {
+    console.error('open project site failed:', e);
   }
 }
 
@@ -429,49 +430,13 @@ watch(() => telemetry.historyRevision, refresh);
           ></button>
         </div>
       </div>
-      <!-- 主面板主题：收成一行「当前主题 + 更改」，点开弹窗再选 -->
+      <!-- 两个主题入口都只留「标题 + 更改」，都不显示当前选中的主题名；点开弹窗再选 -->
       <ThemePicker mode="monitor" :active="visible" />
-      <!-- 悬浮窗：最多 3 个，每个槽位一个开关 + 一行主题 -->
-      <template v-for="n in OVERLAY_SLOT_MAX" :key="'overlay-' + n">
-        <div class="set-row">
-          <span class="set-label">悬浮窗 {{ n }}
-            <HelpTip
-              v-if="n === 1"
-              label="悬浮窗说明"
-              text="最多同时开 3 个悬浮窗：每个槽位独立主题、独立摆放位置，统一显隐（Ctrl+Shift+O）、统一调整（Ctrl+Shift+L）。"
-            />
-          </span>
-          <button
-            class="switch"
-            :class="{ on: isOverlaySlotEnabled(n) }"
-            :aria-label="`启用悬浮窗 ${n}`"
-            @click="toggleOverlaySlot(n)"
-          ></button>
-        </div>
-        <!-- 槽位下的子设置：缩进 + 左侧细线，一眼看出属于上面那个悬浮窗 -->
-        <div v-if="isOverlaySlotEnabled(n)" class="set-sub">
-          <ThemePicker mode="overlay" :slot="n" :active="visible" row-label="主题" />
-          <div class="set-row">
-            <span class="set-label">背景
-              <HelpTip
-                v-if="n === 1"
-                label="悬浮窗背景说明"
-                text="透明：保留窗口透明，主题留白处能看见游戏画面（默认）。不透明：整块铺深色底板，亮色赛道/白天场景下文字更清楚。"
-              />
-            </span>
-            <div class="seg">
-              <button
-                :class="{ active: overlayBackground[n] === 'transparent' }"
-                @click="setOverlayBackground(n, 'transparent')"
-              >透明</button>
-              <button
-                :class="{ active: overlayBackground[n] === 'opaque' }"
-                @click="setOverlayBackground(n, 'opaque')"
-              >不透明</button>
-            </div>
-          </div>
-        </div>
-      </template>
+      <!-- 悬浮窗：一个入口。弹窗是「双列二级侧栏（分类 / 主题）+ 右侧固定预览与设置」，
+           固定宽高、内容在内部滚动，选中主题后弹窗尺寸不变；每个主题都能「使用 / 停用」，
+           可同时开多个悬浮窗（槽位上限 3），但界面不写「悬浮窗 1/2/3」这类编号。
+           底层仍按槽位存，Rust 不用改。 -->
+      <ThemePicker mode="overlay" :slot="1" :active="visible" title="悬浮窗主题" />
       <div class="set-row"><span>界面语言</span><span class="v">简体中文</span></div>
     </div>
 
@@ -613,6 +578,18 @@ watch(() => telemetry.historyRevision, refresh);
         </span>
         <button class="switch" :class="{ on: autoCheck }" @click="emit('toggle-auto-check')" aria-label="启动时自动检查更新"></button>
       </div>
+      <div class="set-row"><span class="set-label">更新线路
+          <HelpTip label="更新线路说明" text="自动：先走 GitHub，失败后再尝试 Gitee；也可以固定只走其中一个。" />
+        </span>
+        <div class="seg">
+          <button
+            v-for="r in UPDATE_ROUTES"
+            :key="r.id"
+            :class="{ active: updateRoute === r.id }"
+            @click="setUpdateRoute(r.id)"
+          >{{ r.label }}</button>
+        </div>
+      </div>
       <div v-if="updateInfo" class="set-row upd-note">
         <div class="upd-note-main">
           <div class="upd-ver">v{{ updateInfo.currentVersion }} → v{{ updateInfo.version }}</div>
@@ -628,6 +605,9 @@ watch(() => telemetry.historyRevision, refresh);
     <div class="set-group">
       <span class="glbl">关于</span>
       <div class="set-row"><span>版本</span><span class="v" :title="backendVersion ? '本地后端 v' + backendVersion : ''">{{ versionText }}</span></div>
+      <div class="set-row"><span>项目主页</span>
+        <button class="btn btn-ghost" @click="openProjectSite">GitHub</button>
+      </div>
     </div>
 
     <!-- 清空历史数据的确认弹窗：Teleport 到 body，避免被 .view 的 transform 影响定位 -->

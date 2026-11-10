@@ -3,7 +3,8 @@
  * 协议只有四条消息（详见 docs/theme-authoring.md）：
  *   iframe → 宿主：{ type: 'acc:ready' }                                 我准备好了，可以喂数据
  *   宿主 → iframe：{ type: 'acc:init', v, mode, design, scale, ... }      握手，每次 init 都要回一条 ready
- *   宿主 → iframe：{ type: 'acc:ui', theme?, background? }                切黑白 / 透明背景时补发
+ *   宿主 → iframe：{ type: 'acc:ui', theme?, background?, backgroundColor?, backgroundOpacity? }
+ *                                                                        切黑白 / 改背景时补发
  *   宿主 → iframe：{ type: 'acc:state', payload }                        数据帧，待机 2Hz / 录制中 30Hz
  */
 (function () {
@@ -61,12 +62,23 @@
   }
 
   // 宿主告知的界面状态：
-  //   background = transparent（默认，能看见游戏画面）| opaque（宿主已铺实心底板）
-  // 写到 html[data-bg]，CSS 里按需切换底板透明度。
+  //   background        = transparent | opaque（旧协议，老主题兼容用）
+  //   backgroundColor   = #rrggbb（用户在设置里选的底板色）
+  //   backgroundOpacity = 0..1（0 = 完全透明，1 = 不透明）
+  // 把颜色 / 透明度写成 CSS 变量，主题自带底板可以跟着同步。
   function applyUi(msg) {
     if (msg.theme) document.documentElement.dataset.theme = msg.theme;
     if (msg.background === 'transparent' || msg.background === 'opaque') {
       document.documentElement.dataset.bg = msg.background;
+    }
+    if (typeof msg.backgroundColor === 'string') {
+      document.documentElement.style.setProperty('--host-bg', msg.backgroundColor);
+    }
+    if (typeof msg.backgroundOpacity === 'number') {
+      document.documentElement.style.setProperty('--host-bg-opacity', String(msg.backgroundOpacity));
+    }
+    if (typeof msg.textColor === 'string') {
+      document.documentElement.style.setProperty('--text-color', msg.textColor);
     }
   }
 
@@ -80,7 +92,7 @@
       return;
     }
 
-    // 宿主切黑白主题 / 悬浮窗透明-不透明时补发，不用重新握手
+    // 宿主切黑白主题 / 改悬浮窗背景颜色或不透明度时补发，不用重新握手
     if (msg.type === 'acc:ui') {
       applyUi(msg);
       return;

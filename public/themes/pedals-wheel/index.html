@@ -8,9 +8,9 @@
   </head>
   <body>
     <!-- 设计基准 300×190（见 theme.json）。宿主按 contain 等比缩放，直接按像素写。
-         视觉：左侧两根竖直矩形踏板条（从底部往上填充，油门/刹车并排）+ 右侧转向圆环，
+         视觉：左侧两根竖直矩形踏板条（从底部往上填充，油门/刹车并排）+ 右侧转向环，
          背景透明无底板，纯色填充、直角边界、无发光。 -->
-    <div class="hud" id="hud" data-status="idle" data-steer="none">
+    <div class="hud" id="hud" data-status="idle">
       <!-- 左：刹车 + 油门并排 -->
       <div class="pedals">
         <div class="pedal brake">
@@ -30,22 +30,46 @@
         </div>
       </div>
 
-      <!-- 右：内圈圆环 + 外圈转向进度弧。没有方向盘图形，也没有箭头 / 指针标记：
-           方向看弧色（蓝=左 / 橙=右），幅度看弧长，角度数字同步染同色。 -->
+      <!-- 右：外围 270° 进度弧（蓝=左 / 橙=右，弧长=幅度，保留不动）+
+           环心换成 F1 方向盘线稿，盘顶那个小矩形当指针：盘转角 = 弧角，
+           所以指针始终停在彩色弧的末端、指着当前转向那一档颜色。
+           已去掉下方角度数字，整块图标在 190 高的槽里垂直居中。 -->
       <div class="steer">
         <svg class="ring" viewBox="0 0 168 168" aria-hidden="true">
-          <!-- 内圈：深色底环 + 白色细环。两层是为了浅色/深色游戏画面都能看见（单层白色在浅底上会消失） -->
-          <circle class="st-core-bed" cx="84" cy="84" r="47" />
-          <circle class="st-core" cx="84" cy="84" r="47" />
+          <defs>
+            <!-- F1 方向盘（圆滑版）。路径原样取自 docs/steering-wheel/f1-yoke.svg
+                 （= preview.html 的「F1 圆滑」），原始坐标 200×200、几何中心 (100,100)，
+                 下面用 translate/scale 摆到环心 (84,84)。改形状只改这里的 d。 -->
+            <g id="st-wheel-lines">
+              <path d="M 134.1,34 Q 144,34 152.9,38.4 L 179.2,51.6 Q 188,56 188,65.9 L 188,134.1 Q 188,144 179.2,148.4 L 152.9,161.6 Q 144,166 134.1,166
+                       L 65.9,166 Q 56,166 47.1,161.6 L 20.8,148.4 Q 12,144 12,134.1 L 12,65.9 Q 12,56 20.8,51.6 L 47.1,38.4 Q 56,34 65.9,34 Z" />
+              <path d="M 12,100 H 81.3" />
+              <path d="M 118.7,100 H 188" />
+              <circle cx="100" cy="100" r="18.7" />
+            </g>
+            <!-- 12 点指针：盘顶的小矩形（原图里用来分正反），这里当转向指针用 -->
+            <g id="st-wheel-mark">
+              <rect x="97.6" y="27" width="4.8" height="13" rx="1.4" />
+            </g>
+          </defs>
+
+          <!-- 盘面：白线 + 深色衬底两层（和原来的内圈同理，浅色 / 深色画面上都能看见）。
+               transform 由 theme.js 写：rotate(±135 84 84)，和进度弧同一角度。 -->
+          <g id="st-wheel">
+            <g transform="translate(84 84) scale(0.44) translate(-100 -100)">
+              <use href="#st-wheel-lines" class="w-bed" />
+              <use href="#st-wheel-lines" class="w-ink" />
+              <use href="#st-wheel-mark" class="w-mark-bed" />
+              <use href="#st-wheel-mark" class="w-mark-ink" />
+            </g>
+          </g>
+
           <!-- 进度槽：270°，缺口朝下，深色（与踏板槽同色），标出左右满舵可达范围 -->
           <circle class="st-track" cx="84" cy="84" r="64" pathLength="100" transform="rotate(135 84 84)" />
           <!-- 右转弧：从正上方顺时针生长；左转弧：从正上方逆时针生长（rotate 由 JS 跟随弧长更新） -->
           <circle class="st-right" id="st-right" cx="84" cy="84" r="64" pathLength="100" transform="rotate(-90 84 84)" />
           <circle class="st-left" id="st-left" cx="84" cy="84" r="64" pathLength="100" transform="rotate(-90 84 84)" />
         </svg>
-        <div class="st-read">
-          <b id="steer-deg">0°</b>
-        </div>
       </div>
     </div>
 

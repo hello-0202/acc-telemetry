@@ -27,15 +27,16 @@ body {
   border-radius: 10px;
   background: rgba(10, 14, 19, 0.78);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-  color: #eef3f8;
+  color: var(--text-color, #eef3f8);
   /* 与软件外壳同一套字体栈（src/style.css 的 --font-display） */
   font-family: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', sans-serif;
 }
 
-/* 用户把悬浮窗背景设成「不透明」时，把半透明底板换成实心（宿主已在 iframe 后面
-   铺了同色底板，这里只是去掉卡片自己的透明度，避免两层叠出色差）。 */
+/* 用户在设置里把背景不透明度拉高时，把半透明底板换成实心并跟随所选底色
+   （宿主已在 iframe 后面铺了同色 rgba 底板，这里只是去掉卡片自己的透明度，避免两层叠出色差）。
+   --host-bg 由 theme.js 的 applyUi() 从 acc:init / acc:ui 写入。 */
 html[data-bg='opaque'] .card {
-  background: #0b0f14;
+  background: var(--host-bg, #0b0f14);
 }
 
 .speed {
@@ -74,7 +75,7 @@ html[data-bg='opaque'] .card {
   font-size: 26px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: #9aa6b2;
+  color: color-mix(in srgb, var(--text-color, #eef3f8) 70%, transparent);
 }
 
 /* delta < 0 = 领先（更快）：用绿色；> 0 = 落后：用红色。

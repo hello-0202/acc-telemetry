@@ -101,6 +101,26 @@ class AccSharedMemoryProvider:
     def available(self) -> bool:
         return game_running()
 
+    def peek_realtime_status(self) -> tuple[int, int] | None:
+        """直读 graphics **实时页**，返回 ``(status, packetId)``；读不到返回 None。
+
+        `MMapControl` 用的是 copy 模式（``access_mode=0``）：只有 packetId 变化
+        时才把 mmap 拷进 ``self.data``。ACC 退出赛道回主菜单后可能不再刷新
+        graphics 页，这时 ``read()`` 里的 status 会冻结在最后一帧（通常是 2 或 3），
+        游戏写下的 AC_OFF(0) 根本传不到我们这里——暂停和主菜单就变得无法区分。
+
+        ``_realtime`` 是 ``from_buffer(_mmap_buffer)``，始终映射游戏写的最新内容，
+        不走 copy 门槛。这里只读、不改动 ``self.data``，不影响原有采样链路。
+        """
+        gfx = self._gfx
+        realtime = getattr(gfx, "_realtime", None) if gfx is not None else None
+        if realtime is None:
+            return None
+        try:
+            return int(realtime.status), int(realtime.packetId)
+        except Exception:  # noqa: BLE001 - 段被销毁 / 结构异常时交给上层兜底
+            return None
+
     # ------------------------------------------------------------------ 打开/关闭
     def open(self) -> None:
         if not self.available():

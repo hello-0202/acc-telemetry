@@ -232,7 +232,11 @@ samples(
 - `lap` 额外带 `pb`、`pbMs`、`sampleCount`、`persisted`；**不携带 samples**（已落库，前端通过 REST 刷新）。
 - 非契约消息：`{"type":"error","code","message","error"}`（保留旧版 `error` 键）、`{"type":"warning","message"}`、`{"type":"stopped"}`。
 - 同一时刻只允许一个采集会话；重复 `start` 返回 `ALREADY_STREAMING`。
-- 暂停/回放（`graphics.status != 2`）时不采样、不推送。
+- 暂停/回放（`graphics.status != 2`）时不采样、不推送。**暂停(3) 不结束本次记录**，
+  恢复 LIVE 后继续同一条 session；读到 OFF(0)/REPLAY(1) 持续 2s、数据冻结 8s
+  或共享内存段消失时，后端结束本次 session 并推
+  `{"type":"history","reason":"session-end"}`，该记录随即变为非 `live`、可删除。
+  判定细节见 `docs/ENGINEERING-NOTES.md` 第 13 节。
 
 ### 6.4 赛道几何
 - ACC 共享内存不提供赛道样条。后端内置 spa / monza / zandvoort / silverstone / barcelona 五条近似形状（480×290 坐标系、160 点），未知赛道回退为确定性占位环线并置 `geometryKnown=false`、`lengthM=null`。

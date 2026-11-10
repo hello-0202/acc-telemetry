@@ -11,7 +11,7 @@
 
 | 文件 | 作用 | 必须 |
 |---|---|---|
-| `theme.json` | 清单：id、设计尺寸、fit、支持哪些窗口 | ✅ |
+| `theme.json` | 清单：id、设计尺寸、fit、支持哪些窗口，可选 category / tags | ✅ |
 | `index.html` | 主题的本体结构 | ✅ |
 | `theme.css` | 样式（可以内联进 html，也可以拆出来） | 可选 |
 | `theme.js` | 收数据 + 渲染（可以没有，纯 CSS 主题也行） | 可选 |
@@ -47,10 +47,12 @@
   "name": "my-panel",
   "version": "1.0.0",
   "author": "你或 AI 的名字",
-  "desc": "一句话说明这个主题长啥样",
-  "design": { "w": 380, "h": 150 },
-  "fit": "contain",
-  "modes": ["overlay"]
+  "desc": "主面板主题示例（fit: fluid）：速度/档位/DELTA、转速、圈速、踏板、四轮、赛道，铺满数据区自适应排版。",
+  "category": "overview",
+  "tags": [],
+  "design": { "w": 1200, "h": 640 },
+  "fit": "fluid",
+  "modes": ["monitor"]
 }
 ```
 
@@ -59,9 +61,14 @@
 | `id` | 字母 / 数字 / `-` / `_`，且必须等于文件夹名。**卡片和设置页显示的就是这个「安装包名」** |
 | `name` | **请写成和 `id` 完全一样**（两个名字统一），否则同一款主题会出现两种叫法 |
 | `version` / `author` / `desc` | 辅助信息，可随便填（卡片上不再展示描述） |
+| `category` | **可选**：单选分类 id：`core` / `timing` / `inputs` / `tyres` / `fuel` / `overview`。不填或写错都归「未分类」，**不会让主题失效** |
+| `tags` | **可选**：字符串数组，留给搜索 / 以后做场景预设，设置页暂不展示 |
 | `design` | 设计基准尺寸（像素） |
 | `fit` | `contain`（默认）或 `fluid`，见第 5 节 |
 | `modes` | 这个主题给哪种窗口用：`overlay`（悬浮窗）和/或 `monitor`（主面板） |
+
+> `category` / `tags` 不参与清单校验：老主题不带这两个字段照常导入、照常启用，只是在悬浮窗主题选择器里排到「未分类」组（主面板选择器不分组）。
+> 六个分类的含义与字段全表见 `docs/theme-authoring.md` 第二节。
 
 > **`id` 和 `name` 必须是同一个名字。** 卡片/设置页显示的是安装包名（`id`，也就是文件夹名）；
 > `name` 只是辅助字段，两者不一致会让同一款主题出现两种叫法，导入后容易认错包。
@@ -84,8 +91,8 @@
 
 | 消息 | 含义 |
 |---|---|
-| `{ type: 'acc:init', v, mode, design, fit, scale, box, theme, background }` | 握手：告诉主题当前窗口模式、设计尺寸、缩放方式、黑/白主题、背景（主面板固定 `transparent`） |
-| `{ type: 'acc:ui', theme, background }` | 用户切黑白主题时补发，不用重新握手 |
+| `{ type: 'acc:init', v, mode, design, fit, scale, box, theme, background, backgroundColor, backgroundOpacity, textColor }` | 握手：告诉主题当前窗口模式、设计尺寸、缩放方式、黑/白主题、背景与文字颜色（主面板固定 `transparent` / 0 / `#ffffff`） |
+| `{ type: 'acc:ui', theme?, background?, backgroundColor?, backgroundOpacity?, textColor? }` | 用户切黑白主题时补发，不用重新握手 |
 | `{ type: 'acc:state', payload }` | **真正的数据**，录制中 30Hz、待机 2Hz |
 
 **主题 → 宿主** 只需回一条：

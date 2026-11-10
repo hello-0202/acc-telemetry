@@ -1,7 +1,11 @@
 // 主题选择：按「用途槽位」分别记住用户选了哪个主题。
 //
-//   overlay1 / overlay2 / overlay3 —— 最多三个游戏悬浮窗（各自独立主题）
+//   overlay1 .. overlay5 —— 游戏悬浮窗槽位（各自独立主题，最多同时启用 5 个）
 //   monitor —— 主面板数据区（同一窗口，靠这里的 reactive 直接同步）
+//
+// 设置页只有一个「悬浮窗主题」入口，但弹窗里每个主题都能独立「使用 / 停用」：
+// 启用就占一个空闲槽位，Rust 按槽位列表建窗口。`overlay-slots.js` 存启用列表，
+// 上限 OVERLAY_SLOT_MAX 必须与 Rust main.rs 的 OVERLAY_SLOTS 一致（改上限要重编译 Tauri）。
 //
 // 为什么不用 config.json：`POST /api/config` 是按白名单收键的（`acc_telemetry/api/config.py`），
 // 加键就得改 Python 并重打包 sidecar。主题选择只是**这台机器上的界面偏好**，
@@ -14,7 +18,7 @@ import { reactive } from 'vue';
 
 import { DEFAULT_MONITOR_THEME, DEFAULT_THEME } from './themes.js';
 
-export const OVERLAY_SLOT_MAX = 3;
+export const OVERLAY_SLOT_MAX = 5;
 
 const MONITOR_KEY = 'acc.monitorTheme';
 /** 旧版单悬浮窗的键：升级后继续给 1 号槽位用，老用户的选择不会丢 */
@@ -34,7 +38,7 @@ function overlayKey(slot) {
   return `acc.overlayTheme.${clampSlot(slot)}`;
 }
 
-/** themeChoice 里的属性名：overlay1..3 / monitor */
+/** themeChoice 里的属性名：overlay1..5 / monitor */
 export function themeChoiceKey(kind, slot = 1) {
   return kind === 'monitor' ? 'monitor' : `overlay${clampSlot(slot)}`;
 }
@@ -95,6 +99,8 @@ export const themeChoice = reactive({
   overlay1: readOverlay(1),
   overlay2: readOverlay(2),
   overlay3: readOverlay(3),
+  overlay4: readOverlay(4),
+  overlay5: readOverlay(5),
   monitor: readFromStorage(MONITOR_KEY, 'monitor'),
 });
 
@@ -106,7 +112,7 @@ export const themeChoice = reactive({
  * 同窗口里直接读 `themeChoice` 的组件也能跟着更新。
  *
  * @param {'overlay'|'monitor'} kind
- * @param {number} [slot] 悬浮窗槽位（1~3，仅 kind='overlay' 时有效）
+ * @param {number} [slot] 悬浮窗槽位（1~5，仅 kind='overlay' 时有效）
  */
 export function readThemeChoice(kind = 'overlay', slot = 1) {
   const stored = kind === 'monitor'

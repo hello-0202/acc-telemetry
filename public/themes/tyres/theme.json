@@ -1,10 +1,25 @@
 {
   "id": "tyres",
+  "category": "tyres",
+  "tags": [
+    "temperature",
+    "pressure",
+    "brake"
+  ],
   "name": "tyres",
   "version": "1.0.0",
   "author": "acc-telemetry",
   "desc": "四轮轮胎数据圆环：胎压 / 胎温整圈 / 刹车盘温 270° 弧（2×2 紧凑排列，透明背景无底板、无发光）",
-  "design": { "w": 220, "h": 220 },
+  "design": {
+    "w": 220,
+    "h": 220
+  },
   "fit": "contain",
-  "modes": ["overlay"]
+  "modes": [
+    "overlay"
+  ],
+  "overlaySettings": [
+    "background",
+    "textColor"
+  ]
 }

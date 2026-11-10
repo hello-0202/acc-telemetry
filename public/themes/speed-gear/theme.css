@@ -1,7 +1,7 @@
 @import url('/fonts/sarasa-gothic-sc/fonts.css');
 /* 速度挡位 HUD —— 设计基准 325×100，全部用 px 写死；缩放由宿主做（contain）。
  *
- * 和其他悬浮窗主题一致：主题本身完全透明、不画底板，只靠白字 + 正下方 1px 硬影
+ * 和其他悬浮窗主题一致：主题本身完全透明、不画底板，只靠纯色字 + 字重
  * 浮在游戏画面上。悬浮窗的「透明 / 不透明」由宿主控制 —— 不透明时宿主在窗口层
  * 铺 #0b0f14，主题不用改任何东西。
  *
@@ -34,14 +34,11 @@ body {
 body {
   font-family: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Sarasa Gothic SC',
     'Sarasa Mono SC', 'Microsoft YaHei', sans-serif;
-  color: #ffffff;
+  color: var(--text-color, #ffffff);
   -webkit-font-smoothing: antialiased;
   -webkit-user-select: none;
   user-select: none;
   cursor: default;
-
-  /* 和其他悬浮窗主题同一套文字落影：只往正下方投 1px 硬影，不描边、不发光 */
-  --ink-edge: 0 1px 0 rgba(0, 0, 0, 0.85);
 }
 
 .hud {
@@ -53,7 +50,7 @@ body {
   flex-direction: column;
   padding: 10px 22px 18px;
   gap: 14px;
-  color: #ffffff;
+  color: var(--text-color, #ffffff);
 }
 
 /* ---------------- 转速灯带 ----------------
@@ -128,8 +125,7 @@ body {
   font-weight: 700;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
-  color: #ffffff;
-  text-shadow: var(--ink-edge);
+  color: var(--text-color, #ffffff);
 }
 
 .rpm {
@@ -139,8 +135,7 @@ body {
   font-weight: 700;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
-  color: #ffffff;
-  text-shadow: var(--ink-edge);
+  color: var(--text-color, #ffffff);
 }
 
 .unit {
@@ -149,8 +144,7 @@ body {
   line-height: 1;
   font-weight: 700;
   letter-spacing: 0.12em;
-  color: rgba(255, 255, 255, 0.78);
-  text-shadow: var(--ink-edge);
+  color: color-mix(in srgb, var(--text-color, #ffffff) 78%, transparent);
   white-space: nowrap;
 }
 
@@ -170,8 +164,7 @@ body {
   font-weight: 700;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
-  color: #ffffff;
-  text-shadow: var(--ink-edge);
+  color: var(--text-color, #ffffff);
 }
 
 /* 倒挡红色、空挡压暗；前进挡保持纯白 */
@@ -180,7 +173,7 @@ body {
 }
 
 .gear[data-g='n'] {
-  color: rgba(255, 255, 255, 0.62);
+  color: color-mix(in srgb, var(--text-color, #ffffff) 62%, transparent);
 }
 
 /* ---------------- 换挡提示 ----------------

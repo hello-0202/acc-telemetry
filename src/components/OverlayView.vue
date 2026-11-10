@@ -3,20 +3,21 @@
 //   - 主题不连 WebSocket，只收宿主灌进去的 state（后端已算好的快照）
 //   - 数据用被动模式接（passive）：只收不发，绝不影响主窗口的记录状态
 //   - 默认鼠标穿透（锁定）；Ctrl+Shift+L 切编辑模式，可拖动 / 拉边缩放
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import ThemeHost from './ThemeHost.vue';
 import { OVERLAY_SLOT_MAX, readThemeChoice } from '../telemetry/theme-choice.js';
-import { readOverlayBackground } from '../telemetry/overlay-background.js';
+import { overlayBackdropStyle, readOverlayAppearance } from '../telemetry/overlay-background.js';
+import { themeSupportsOverlaySetting } from '../telemetry/overlay-settings.js';
 import { disconnect, start, telemetry } from '../telemetry/useTelemetry.js';
 
 const isTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
 const appWindow = isTauri ? getCurrentWindow() : null;
 
-// 窗口 label 就是槽位：overlay-1 / overlay-2 / overlay-3（浏览器预览时当 1 号）
+// 窗口 label 就是槽位：overlay-1 .. overlay-5（浏览器预览时当 1 号）
 function slotFromLabel(label) {
   const m = /^overlay-(\d+)$/.exec(label || '');
   const n = m ? Number(m[1]) : 1;
@@ -27,11 +28,50 @@ const slot = slotFromLabel(appWindow?.label);
 // 当前悬浮窗主题：按槽位存在 localStorage（与主窗口同源共享），设置页切换后会推一条事件过来
 const choice = ref(readThemeChoice('overlay', slot));
 
-// 悬浮窗背景：透明（默认）/ 不透明。设置页切换后同样会推事件过来。
-const background = ref(readOverlayBackground(slot));
+// 悬浮窗背景外观：颜色 + 不透明度（默认完全透明）。设置页拖动滑杆 / 选色后推事件过来。
+const appearance = ref(readOverlayAppearance(slot));
+// 外部主题只有 theme.json 声明了对应能力才应用外观设置：
+//   overlaySettings: ["background", "textColor"]
+// 内置主题默认支持。用户主题先按「不支持」处理，等 ThemeHost 的 ready 带回 meta 再确认，
+// 避免切换主题时把上一个主题留下的底色 / 字色错误地套到不支持的主题上。
+const backgroundSupported = ref(choice.value.source !== 'user');
+const textSupported = ref(choice.value.source !== 'user');
 
 function applyTheme() {
   choice.value = readThemeChoice('overlay', slot);
+  backgroundSupported.value = choice.value.source !== 'user';
+  textSupported.value = choice.value.source !== 'user';
+}
+
+const effectiveAppearance = computed(() => (
+  backgroundSupported.value ? appearance.value : { color: '#0b0f14', opacity: 0 }
+));
+
+const effectiveTextColor = computed(() => (
+  textSupported.value ? appearance.value.textColor : '#ffffff'
+));
+
+const backdropStyle = computed(() => overlayBackdropStyle(effectiveAppearance.value));
+// 模糊是窗口级效果：CSS backdrop-filter 采不到游戏画面，必须调 Rust 的 Windows Acrylic。
+const blurOn = computed(() => backgroundSupported.value && appearance.value.blur > 0);
+watch(
+  [blurOn, () => effectiveAppearance.value.color, () => effectiveAppearance.value.opacity],
+  () => {
+    if (!isTauri) return;
+    invoke('set_overlay_backdrop', {
+      enabled: blurOn.value,
+      color: effectiveAppearance.value.color,
+      opacity: effectiveAppearance.value.opacity,
+    }).catch((e) => { console.warn('[overlay] 系统模糊不可用:', e); });
+  },
+  { immediate: true },
+);
+
+function onThemeReady(meta) {
+  fitToTheme(meta);
+  const capabilityTheme = { source: choice.value.source, overlaySettings: meta?.overlaySettings };
+  backgroundSupported.value = themeSupportsOverlaySetting(capabilityTheme, 'background');
+  textSupported.value = themeSupportsOverlaySetting(capabilityTheme, 'textColor');
 }
 
 // true = 穿透（默认）。浏览器里预览时先当作未锁定，方便看编辑态的样式。
@@ -183,9 +223,9 @@ onMounted(async () => {
   })
     .then((fn) => { unlistenTheme = fn; })
     .catch(() => { /* 权限缺失时忽略 */ });
-  listen('overlay-background-changed', (e) => {
+  listen('overlay-appearance-changed', (e) => {
     const changed = Number(e.payload?.slot);
-    if (!changed || changed === slot) background.value = readOverlayBackground(slot);
+    if (!changed || changed === slot) appearance.value = readOverlayAppearance(slot);
   })
     .then((fn) => { unlistenBackground = fn; })
     .catch(() => { /* 权限缺失时忽略 */ });
@@ -252,7 +292,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="ov-root" :class="{ editing: !locked, opaque: background === 'opaque' }">
+  <div class="ov-root" :class="{ editing: !locked }" :style="backdropStyle">
     <!-- 编辑态工具条：单独一行、固定在主题正上方。
          解锁时 Rust 会把窗口向上长高 22px（主题位置和尺寸都不动），
          所以工具条不会压住主题，也不会把 contain 的缩放比压小。 -->
@@ -270,9 +310,11 @@ onBeforeUnmount(() => {
           :theme="choice.id"
           :source="choice.source"
           mode="overlay"
-          :background="background"
+          :background-color="effectiveAppearance.color"
+          :background-opacity="effectiveAppearance.opacity"
+          :text-color="effectiveTextColor"
           :state="telemetry.state"
-          @ready="fitToTheme"
+          @ready="onThemeReady"
         />
       </div>
 
@@ -300,21 +342,17 @@ onBeforeUnmount(() => {
   height: 100vh;
   box-sizing: border-box;
   padding: 6px;
+  border-radius: 12px;
   /* 纵向排：编辑态工具条一行 + 主题卡片。窗口解锁时会自动长高 22px（Rust 侧），
      所以卡片高度始终等于主题 design，不会被工具条挤压。 */
   display: flex;
   flex-direction: column;
 }
 
-/* 不透明模式：整窗（含 6px 内边距）铺纯黑底板，主题的透明留白也不会透出游戏画面。
+/* 背景底板由 overlayBackdropStyle() 以内联 background-color 铺在根节点上：
+   整窗（含 6px 内边距）按用户选的颜色 / 不透明度显示，主题的透明留白也不会透出游戏画面。
    窗口本身是透明的，所以圆角外的四个角仍然透 —— 和主题卡片的圆角视觉一致。
-
-   所有悬浮窗主题共用这一层底板（主题 body 保持透明），换主题时黑色底色不会变。
-   #0b0f14 与 tyre-wear 主题里写的纯黑色一致；「透明」模式仍然完全透出游戏画面。 */
-.ov-root.opaque {
-  background: #0b0f14;
-  border-radius: 12px;
-}
+   透明度 0% 时完全不铺底色（看见游戏画面）。 */
 
 .ov-card {
   position: relative;

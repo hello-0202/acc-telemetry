@@ -53,6 +53,10 @@
     if (msg.background === 'transparent' || msg.background === 'opaque') {
       document.documentElement.dataset.bg = msg.background;
     }
+    // 用户在设置里选的文字颜色：标签 / 数值 / 单位通过 --text-color 跟随
+    if (typeof msg.textColor === 'string') {
+      document.documentElement.style.setProperty('--text-color', msg.textColor);
+    }
   }
 
   /* 平均圈时（ms）：上一圈 > 本场最佳 > 游戏估算 */

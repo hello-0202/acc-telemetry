@@ -642,18 +642,18 @@ fn open_data_path(
         .map_err(|e| format!("打开目录失败: {e}"))
 }
 
-// ───────────────────────── 悬浮窗（最多 3 个槽位） ─────────────────────────
+// ───────────────────────── 悬浮窗（最多 5 个槽位） ─────────────────────────
 
 /// 悬浮窗槽位数：每个槽位独立主题 / 位置 / 尺寸，统一显隐、统一编辑态。
-/// 窗口 label 约定为 `overlay-1` / `overlay-2` / `overlay-3`（capability 用 `overlay-*`）。
-const OVERLAY_SLOTS: u8 = 3;
+/// 窗口 label 约定为 `overlay-1` .. `overlay-5`（capability 用 glob `overlay-*`，无需为新槽位改配置）。
+const OVERLAY_SLOTS: u8 = 5;
 
 /// 当前启用的槽位。前端从 localStorage 推过来。
 /// `None` = 前端还没推过（旧行为：只启用 1 号）；`Some([])` = 用户明确全关了。
 static OVERLAY_ENABLED: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 
 /// 各槽位第一次显示时贴主显示器右上角（向下错开）；之后保留系统给的位置。
-static OVERLAY_PLACED: Mutex<[bool; 3]> = Mutex::new([false; 3]);
+static OVERLAY_PLACED: Mutex<[bool; 5]> = Mutex::new([false; 5]);
 
 /// 是否处于「锁定」态：true = 鼠标穿透到游戏（默认）。所有悬浮窗共用同一个编辑态。
 static OVERLAY_LOCKED: AtomicBool = AtomicBool::new(true);
@@ -668,7 +668,7 @@ fn overlay_label(slot: u8) -> String {
     format!("overlay-{slot}")
 }
 
-/// 从窗口 label 反推槽位（overlay-1 / overlay-2 / overlay-3）。
+/// 从窗口 label 反推槽位（overlay-1 .. overlay-5）。
 fn overlay_slot_of(label: &str) -> Option<u8> {
     let slot: u8 = label.strip_prefix("overlay-")?.parse().ok()?;
     (1..=OVERLAY_SLOTS).contains(&slot).then_some(slot)
@@ -763,7 +763,7 @@ struct OverlayRect {
 struct WindowStateFile {
     /// 旧版单悬浮窗的几何（读出来当 1 号槽位，保证老用户升级后位置不丢）
     overlay: Option<OverlayRect>,
-    /// 多悬浮窗：key = 槽位序号（"1" / "2" / "3"）
+    /// 多悬浮窗：key = 槽位序号（"1" .. "5"）
     #[serde(default)]
     overlays: std::collections::BTreeMap<String, OverlayRect>,
 }
@@ -806,9 +806,15 @@ fn place_overlay<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>, slot: u8) {
         .outer_size()
         .unwrap_or(tauri::PhysicalSize::new(380, 150));
     let margin = 20.0;
-    let x = screen.width as f64 - size.width as f64 - margin;
-    // 多个悬浮窗默认在右上角纵向排开，不互相盖住
-    let y = margin + (slot as f64 - 1.0) * (size.height as f64 + 16.0);
+    // 每列最多 3 个：1~3 号仍是原来的右上角纵向排布（老用户位置不变），
+    // 4~5 号换到左边一列，避免 5 个窗口纵向叠出屏幕。
+    let per_col = 3.0;
+    let idx = slot as f64 - 1.0;
+    let col = (idx / per_col).floor();
+    let row = idx % per_col;
+    let x = screen.width as f64 - size.width as f64 - margin
+        - col * (size.width as f64 + margin);
+    let y = margin + row * (size.height as f64 + 16.0);
     let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
 }
 
@@ -818,9 +824,9 @@ fn place_overlay<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>, slot: u8) {
 const EDIT_BAR_HEIGHT: f64 = 22.0;
 
 /// 各槽位是否已经为编辑态工具条增加了高度（保证重复调用幂等）。
-static OVERLAY_PADDED: Mutex<[bool; 3]> = Mutex::new([false; 3]);
+static OVERLAY_PADDED: Mutex<[bool; 5]> = Mutex::new([false; 5]);
 /// 解锁时为避免工具条顶出屏幕而少上移的像素（物理像素），锁定时原样还回去。
-static OVERLAY_PAD_OFFSET: Mutex<[i32; 3]> = Mutex::new([0; 3]);
+static OVERLAY_PAD_OFFSET: Mutex<[i32; 5]> = Mutex::new([0; 5]);
 
 /// 给工具条腾一行：解锁时变高 + 上移，锁定时还原。失败就回滚标记，下次还能重试。
 fn overlay_set_edit_pad<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>, slot: u8, pad: bool) {
@@ -1044,6 +1050,207 @@ fn save_overlay_rect(window: tauri::WebviewWindow, x: f64, y: f64, w: f64, h: f6
     st.overlays
         .insert(slot.to_string(), OverlayRect { x, y, w, h });
     persist_window_state(&st);
+}
+
+/// 直接调 undocumented `SetWindowCompositionAttribute` 的 Acrylic blur。
+///
+/// 为什么不用 window-vibrancy：
+///   - `apply_acrylic` 在 Win11 22621+ 会走 DWM `DWMSBT_TRANSIENTWINDOW`，窗口失焦时系统会
+///     把 Acrylic 退化成实色；悬浮窗平时穿透 / 不聚焦，看起来就是「点别处就不透明」。
+///   - `apply_blur` 在这台机器上会让窗口变成纯黑（legacy accent 状态在 Win11 表现不稳定）。
+/// 所以这里自己调状态 4（ACCENT_ENABLE_ACRYLICBLURBEHIND）：不随焦点失效，tint 保持极低 alpha，
+/// 真正的底色仍由前端 `.ov-root` 按用户设置铺。
+#[cfg(target_os = "windows")]
+mod window_accent {
+    use std::ffi::c_void;
+    use std::sync::OnceLock;
+
+    use windows_sys::Win32::Foundation::HMODULE;
+    use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+
+    #[repr(C)]
+    struct AccentPolicy {
+        accent_state: u32,
+        accent_flags: u32,
+        gradient_color: u32,
+        animation_id: u32,
+    }
+
+    #[repr(C)]
+    struct WindowCompositionAttributeData {
+        attrib: u32,
+        pv_data: *mut c_void,
+        cb_data: usize,
+    }
+
+    type SetWindowCompositionAttributeFn =
+        unsafe extern "system" fn(hwnd: isize, data: *mut WindowCompositionAttributeData) -> i32;
+
+    fn function() -> Option<SetWindowCompositionAttributeFn> {
+        static FUNC: OnceLock<Option<SetWindowCompositionAttributeFn>> = OnceLock::new();
+        *FUNC.get_or_init(|| unsafe {
+            let module: HMODULE = GetModuleHandleA(b"user32.dll\0".as_ptr());
+            if module.is_null() {
+                return None;
+            }
+            let proc = GetProcAddress(module, b"SetWindowCompositionAttribute\0".as_ptr());
+            proc.map(|f| std::mem::transmute::<_, SetWindowCompositionAttributeFn>(f))
+        })
+    }
+
+    /// enabled=false 时用 ACCENT_DISABLED 清除；gradient 是 AABBGGRR。
+    /// tint 的 alpha 固定为 1（几乎透明）；背景颜色 / 不透明度由前端 `.ov-root` 自己叠。
+    pub fn set(hwnd: isize, enabled: bool, color: (u8, u8, u8)) -> Result<(), String> {
+        let func = function().ok_or("当前系统没有 SetWindowCompositionAttribute")?;
+        let (r, g, b) = color;
+        let gradient = if enabled {
+            (1u32 << 24) | ((b as u32) << 16) | ((g as u32) << 8) | (r as u32)
+        } else {
+            0
+        };
+        let mut policy = AccentPolicy {
+            accent_state: if enabled { 4 } else { 0 },
+            accent_flags: 0,
+            gradient_color: gradient,
+            animation_id: 0,
+        };
+        let mut data = WindowCompositionAttributeData {
+            attrib: 0x13, // WCA_ACCENT_POLICY
+            pv_data: &mut policy as *mut _ as *mut c_void,
+            cb_data: std::mem::size_of_val(&policy),
+        };
+        let ok = unsafe { func(hwnd, &mut data) };
+        if ok == 0 {
+            Err("SetWindowCompositionAttribute 调用失败".into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Win11 窗口圆角偏好：让 DWM 自己把窗口（连同背后的 blur）裁成圆角。
+/// SetWindowRgn 对 SWCA blur 无效（DWM 合成不认 region），只能试这个。
+/// Win10 / 失败时静默忽略，不影响模糊本身。
+#[cfg(target_os = "windows")]
+fn set_round_corners(hwnd: isize, round: bool) {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND,
+    };
+    let pref = if round { DWMWCP_ROUND } else { DWMWCP_DONOTROUND };
+    let _ = unsafe {
+        DwmSetWindowAttribute(
+            hwnd as _,
+            DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+            &pref as *const _ as *const _,
+            std::mem::size_of_val(&pref) as u32,
+        )
+    };
+}
+
+#[cfg(target_os = "windows")]
+fn overlay_hwnd(window: &tauri::WebviewWindow) -> Result<isize, String> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    match window
+        .window_handle()
+        .map_err(|e| format!("读取窗口句柄失败：{e}"))?
+        .as_raw()
+    {
+        RawWindowHandle::Win32(h) => Ok(h.hwnd.get()),
+        _ => Err("不是 Win32 窗口".into()),
+    }
+}
+
+/// 悬浮窗「系统模糊」：Windows Acrylic（不随窗口焦点失效）。
+/// 只作用于调用它的那个 overlay 窗口；关闭时清除。
+#[tauri::command]
+fn set_overlay_backdrop(
+    window: tauri::WebviewWindow,
+    enabled: bool,
+    color: Option<String>,
+    opacity: Option<f64>,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let hwnd = overlay_hwnd(&window)?;
+        let tint = parse_overlay_tint(color.as_deref());
+        // 模糊层 tint 固定几乎透明；背景颜色 / 不透明度由前端根节点自己叠。
+        let _ = opacity;
+        let result = window_accent::set(hwnd, enabled, tint);
+        // 模糊层是整窗矩形，必须让窗口本身圆角，否则四角会多出直角。
+        set_round_corners(hwnd, enabled);
+        result
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (window, enabled, color, opacity);
+        Ok(())
+    }
+}
+
+/// #rrggbb → (r,g,b)；非法值回落到默认深黑。
+#[cfg(target_os = "windows")]
+fn parse_overlay_tint(color: Option<&str>) -> (u8, u8, u8) {
+    let Some(hex) = color.map(str::trim).filter(|s| s.len() == 7 && s.starts_with('#')) else {
+        return (11, 15, 20);
+    };
+    let parse = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).ok();
+    match (parse(1), parse(3), parse(5)) {
+        (Some(r), Some(g), Some(b)) => (r, g, b),
+        _ => (11, 15, 20),
+    }
+}
+
+/// 按指定线路检查更新（settings 里的「更新线路」）：
+///   'github' / 'gitee' 强制单线路；不传 / auto 时前端仍走插件默认的双线路 check()。
+/// 返回与 `plugin:updater|check` 相同的 metadata，并把它登记进当前 webview 的资源表，
+/// 这样前端可以用 `new Update(metadata)` 复用插件自带的 download / install。
+#[tauri::command]
+async fn check_update_route(
+    webview: tauri::Webview,
+    route: String,
+    timeout: Option<u64>,
+) -> Result<Option<serde_json::Value>, String> {
+    use tauri::Manager;
+    use tauri_plugin_updater::UpdaterExt;
+
+    if webview.label() != "main" {
+        return Err("not allowed from this window".into());
+    }
+    const GITHUB: &str =
+        "https://github.com/hello-0202/acc-telemetry/releases/latest/download/latest.json";
+    const GITEE: &str =
+        "https://gitee.com/helloets/acc-telemetry-releases/raw/main/update/latest.json";
+    let url = match route.as_str() {
+        "github" => GITHUB,
+        "gitee" => GITEE,
+        _ => return Err("未知的更新线路".into()),
+    };
+    let endpoint: tauri::Url = url.parse().map_err(|e| format!("更新地址无效：{e}"))?;
+
+    let mut builder = webview.updater_builder();
+    if let Some(ms) = timeout {
+        builder = builder.timeout(std::time::Duration::from_millis(ms));
+    }
+    let updater = builder
+        .endpoints(vec![endpoint])
+        .map_err(|e| e.to_string())?
+        .build()
+        .map_err(|e| e.to_string())?;
+    let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
+        return Ok(None);
+    };
+
+    let metadata = serde_json::json!({
+        "currentVersion": update.current_version.clone(),
+        "version": update.version.clone(),
+        "date": update.date.as_ref().map(|d| d.to_string()),
+        "body": update.body.clone(),
+        "rawJson": update.raw_json.clone(),
+    });
+    let rid = webview.resources_table().add(update);
+    let mut metadata = metadata;
+    metadata["rid"] = serde_json::json!(rid);
+    Ok(Some(metadata))
 }
 
 /// 前端在安装更新前主动调用：先干掉 sidecar、释放 8008 端口。
@@ -1670,6 +1877,8 @@ fn main() {
         set_overlay_slots,
         overlay_any_focused,
         save_overlay_rect,
+        set_overlay_backdrop,
+        check_update_route,
         open_theme_preview,
         list_user_themes,
         open_themes_dir,

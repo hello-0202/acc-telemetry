@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="GT 方向盘">
+  <title>GT 方向盘（简笔）</title>
+  <!--
+    简笔 GT / 房车方向盘，200×200，圆心正好在 (100,100)。
+    圆盘 + 平底 + 三根辐条 + 圆形中央盖：小尺寸下最容易被读成「方向盘」的一版，
+    转向量也是最好读的（辐条 + 平底 + 12 点标记三重冗余）。
+
+    旋转即转向：整组 #wheel 绕 (100,100) 旋转即可，两种写法都行
+      wheel.setAttribute('transform', 'rotate(' + deg + ' 100 100)')
+      #wheel { transform-box: view-box; transform-origin: 50% 50%; }
+
+    画法只有一层「白线 + 深色描边衬底」：深色比白线粗一档，只当白线的包边用，
+    作用是让白线在浅色游戏画面上不糊掉；暗画面上几乎看不见这层，就只剩线稿。
+    不做渐变、不做发光、端头平切 —— 和 pedals-wheel 的视觉语言一致。
+
+    线条只在 <defs> 里画一遍，用两个 <use> 分别套「衬底 / 白线」两层。
+    要改形状只改 defs 里的 d，两层一起跟着变。
+    改色只动 .sw 里的变量。
+  -->
+  <style>
+    .sw {
+      --sw-ink: #ffffff;                  /* 线稿主色 */
+      --sw-bed: rgba(10, 14, 19, 0.78);   /* 衬底色（白线的包边） */
+      --sw-w: 4;                          /* 线稿粗细（viewBox 单位），衬底自动 +5 */
+    }
+    .sw .bed     { fill: none; stroke: var(--sw-bed); stroke-width: calc(var(--sw-w) + 5);
+                   stroke-linejoin: round; stroke-linecap: butt; }
+    .sw .ink     { fill: none; stroke: var(--sw-ink); stroke-width: var(--sw-w);
+                   stroke-linejoin: round; stroke-linecap: butt; }
+    .sw .bed-dot { fill: var(--sw-bed); stroke: var(--sw-bed); stroke-width: 7; }
+    .sw .ink-dot { fill: var(--sw-ink); stroke: none; }
+  </style>
+
+  <defs>
+    <!-- 线：盘圈（整圆扣掉平底）+ 三根辐条 + 中央盖 + 盖上的小圆环 -->
+    <g id="gt-lines">
+      <path d="M 42.9,156 A 80,80 0 1,1 157.1,156 L 42.9,156 Z
+               M 58,140 A 58,58 0 1,1 142,140 L 58,140 Z" />
+      <path d="M 42,100 H 74" />
+      <path d="M 126,100 H 158" />
+      <path d="M 100,126 V 140" />
+      <circle cx="100" cy="100" r="26" />
+      <circle cx="100" cy="100" r="10" />
+    </g>
+
+    <!-- 实心件：12 点标记（跨在盘圈上沿，跟着盘转） -->
+    <g id="gt-dots">
+      <rect x="95" y="18" width="10" height="26" rx="1" />
+    </g>
+  </defs>
+
+  <g id="wheel" class="sw">
+    <use href="#gt-lines" class="bed" />
+    <use href="#gt-lines" class="ink" />
+    <use href="#gt-dots"  class="bed-dot" />
+    <use href="#gt-dots"  class="ink-dot" />
+  </g>
+</svg>

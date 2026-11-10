@@ -1,10 +1,25 @@
 {
   "id": "throttle-fuel",
+  "category": "fuel",
+  "tags": [
+    "throttle",
+    "fuel",
+    "strategy"
+  ],
   "name": "throttle-fuel",
   "version": "1.1.0",
   "author": "acc-telemetry",
   "desc": "油量策略：剩余油量 / 可跑圈数 / 每圈油耗 / 正赛补给量；排位时预排整场正赛所需油量（左标签右数值，透明背景）",
-  "design": { "w": 260, "h": 140 },
+  "design": {
+    "w": 260,
+    "h": 140
+  },
   "fit": "contain",
-  "modes": ["overlay"]
+  "modes": [
+    "overlay"
+  ],
+  "overlaySettings": [
+    "background",
+    "textColor"
+  ]
 }

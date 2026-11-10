@@ -5,6 +5,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import { isTauriRuntime, themeBaseUrl } from './theme-url.js';
+import { normalizeCategory } from './theme-categories.js';
 
 // 内置主题登记表：新增一个内置主题 = 放进 public/themes/<id>/ + 这里加一行。
 // （public/ 下的文件不会被 import 分析，没法自动枚举，所以只能显式列。）
@@ -55,6 +56,21 @@ function checkMeta(id, meta, hasIndex) {
   return null;
 }
 
+// tags 只做展示/以后搜索用：不是字符串的元素丢掉，最多留 12 个，防止脏数据撑爆卡片。
+function readTags(meta) {
+  return Array.isArray(meta?.tags)
+    ? meta.tags.filter((t) => typeof t === 'string').slice(0, 12)
+    : [];
+}
+
+// 主题声明的外观能力（如 ['background']）。不校验、不判坏主题：
+// 老主题没有这个字段时 = 不支持，设置面板只显示说明；内置主题默认支持。
+function readOverlaySettings(meta) {
+  return Array.isArray(meta?.overlaySettings)
+    ? meta.overlaySettings.filter((v) => typeof v === 'string').slice(0, 16)
+    : [];
+}
+
 function makeEntry(id, source, meta, hasIndex) {
   const m = meta && typeof meta === 'object' ? meta : null;
   return {
@@ -69,6 +85,11 @@ function makeEntry(id, source, meta, hasIndex) {
     design: m?.design || null,
     fit: m?.fit || 'contain',
     modes: m?.modes || [],
+    // 分类与标签都是可选元数据：checkMeta 不校验它们，非法值只归一、不判坏主题
+    category: normalizeCategory(m?.category),
+    tags: readTags(m),
+    // 外部主题必须显式声明，才会出现「背景颜色 / 不透明度」等设置
+    overlaySettings: readOverlaySettings(m),
   };
 }
 

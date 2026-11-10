@@ -219,3 +219,12 @@ vite.config.ts.timestamp-*
 *.key
 *.key.pub
 *.sig
+
+# 工具文件夹
+tools
+
+# 浏览器临时配置目录（截图 / 调试用的 Edge profile）
+.edge-tmp/
+
+# PyInstaller 一次性构建目录（build_session_fix / build_paths_* 等）
+python-server/build_*/

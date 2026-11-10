@@ -130,8 +130,13 @@
   capability 里应用级权限**不带命名空间**（`"allow-stop-sidecar"`），生效与否看 `gen/schemas/acl-manifests.json` 的 `__app-acl__`。
   按窗口授权：main = `stop_sidecar` + 全部悬浮窗命令；overlay = 仅 `set_overlay_size` + `set_overlay_locked`。
   `stop_sidecar(app, window: WebviewWindow)` 非 main 直接 `Err`（双保险）。
-- **多悬浮窗（2026-10-28）**：最多 3 个，窗口 label 固定为 `overlay-1/2/3`（capability 用 glob `overlay-*`）。
-  1 号在 `tauri.conf.json` 里静态创建，2/3 由 `set_overlay_slots` 按需创建、停用时 `destroy()`。
+- **多悬浮窗（2026-10-28，2026-11-10 上限改 5）**：最多 5 个，窗口 label 为 `overlay-1..5`
+  （capability 用 glob `overlay-*`，加槽位不用改 capabilities / tauri.conf.json）。
+  1 号在 `tauri.conf.json` 里静态创建，2..5 由 `set_overlay_slots` 按需创建、停用时 `destroy()`。
+  上限有 **4 处必须同步**：Rust `OVERLAY_SLOTS`、三个定长数组 `OVERLAY_PLACED/PADDED/PAD_OFFSET`
+  （`[bool; N]` / `[i32; N]`，忘了改会越界 panic）、前端 `theme-choice.js::OVERLAY_SLOT_MAX`、
+  `permissions/app.toml` 描述。`place_overlay()` 每列最多 3 个，4/5 号换到左边一列，避免叠出屏幕。
+  **改 Rust 后必须重编译 Tauri**（只 `npm run build` 不会更新 exe）。
   **创建窗口只能在非主线程**：同步命令和事件回调都在主线程，`WebviewWindowBuilder::build()` 在 Windows 上会死锁
   （wry#583），所以显隐/编辑快捷键的回调里都 `std::thread::spawn` 后再建；`show/hide/toggle_overlay` 已改成 async 命令。
   状态：`OVERLAY_ENABLED: Option<Vec<u8>>`（None = 还没被前端推过 → 默认只有 1 号）、
@@ -143,10 +148,69 @@
   `theme-template-monitor.zip`（主面板）是「导入主题包」能直接吃的安装包；Rust 用
   `include_bytes!` 编译进二进制，设置页「导出模板」原样写盘。源文件在 `docs/theme-template*/`，
   **改完模板目录要重新打这两个 zip**，否则导出的还是旧内容。
-- **主题预览隔离（2026-10-28 已完成）**：设置页放大预览已改为独立 `WebviewWindow`（`label: theme-preview`，
-  `capabilities/preview.json` 只列 `core:event:allow-listen`/`unlisten`，**无任何 app 命令**）。
-  第三方主题在此加载也调不到 `stop_sidecar`/`delete_user_theme`。由 `open_theme_preview` 命令（只授 main）打开；
-  卡片缩略图改静态占位，不再在主窗口内执行主题 JS。做「主题市场」的前置条件已具备。
+- **主题预览：2026-11-10 按需求改回内嵌**：两个选择器（overlay / monitor）顶部固定一块实时预览大框，
+  卡片去掉 6.2rem 大缩略图、改成「使用 / 预览 / 删除」紧凑按钮；点「预览」就在大框里跑
+  `ThemePreview`（演示数据，`mock-state.js`）。⚠️ **这是用户明确选择的取舍**：iframe 重新跑在主窗口里，
+  继承主窗口全部 app 命令权限，WebView2 注入的 Tauri IPC 不受 iframe `sandbox` 限制。
+  **2026-11-10 第五次微调**：连「独立窗口打开」和「关闭预览」两个按钮也按用户要求去掉了，
+  现在预览恒定内嵌、不可手动关闭（`clearPreview()` 只在开关弹窗时重置）。Rust 的
+  `open_theme_preview` / `capabilities/preview.json` / `PreviewView.vue` 都还在，只是设置页没有入口；
+  也就是说**外部主题现在只能在主窗口 iframe 里预览**，风险比之前更高。
+  **做「主题市场」前必须把预览重新挪回隔离窗口**（恢复按钮或直接内嵌隔离窗口），否则不安全。
+- **设置项实时进预览（2026-11-10 第六次微调；同日改为滑杆 + 颜色 / 文字色）**：右侧设置面板改
+  「背景不透明度 / 背景颜色 / 文字颜色」时，`ThemePicker` 把值透传给 `ThemePreview` 的
+  `:background-color` / `:background-opacity` / `:text-color`，预览立刻跟着变
+  （`overlayAppearance` 是响应式的），和真机 `OverlayView` 的 rgba 底板同一套
+  `overlayColorWithAlpha()`；文字色由主题自己写进 `--text-color`。以后加「影响预览外观」的新设置项，只要从 `activeSettings` 取值并透传进预览，
+  设置面板改完预览就跟着变，不用改 UI。同一轮还把预览底板 / 空状态的**斜纹**全部去掉了
+  （`ThemePreview .tp-stage` 与 `style.css` 的 `.tpk-stage-empty`），底色改成纯净深灰渐变。
+- **主题分类（2026-11-10）**：`src/telemetry/theme-categories.js` 是 UI 侧单一真源（6 类 + 未分类），
+  `theme.json` 的 `category` / `tags` 只是可选元数据，Rust `list_user_themes` 不解释它们；
+  `themes.js::makeEntry()` 用 `normalizeCategory()` 归一，`checkMeta()` 不校验 —— 老主题不受影响。
+  **分组只用于悬浮窗选择器**：`ThemePicker.vue` 里 `mode === 'monitor'` 走 `flat`，不渲染分组标题、
+  卡片与预览框也不显示分类，直接一张网格列完（内置面板置顶、坏主题沉底）。
+  悬浮窗侧栏第一列的顺序：`THEME_CATEGORIES`（6 类 + 未分类）→「外部主题」→「异常主题」（仅有条目时）。
+  **外部主题（`source === 'user'`）统一进「外部主题」，不看它自己的 `category`**；该分类永远可点
+  （否则一个外部主题都没有时找不到导入按钮），导入 / 导出 / 打开目录 / 刷新工具也只在它里面出现。
+- **多悬浮窗 + 双列二级侧栏（2026-11-10 第三次调整，取代本日早些时候的「单悬浮窗 UI」）**：
+  设置页仍只有一行「悬浮窗主题」，但**这一行不显示当前主题名**（多选下没有「当前这一个」）；
+  弹窗是「第一列分类 / 第二列该分类主题条目 / 右侧固定大预览框 + 设置面板」，右侧**不再有卡片网格**。
+  每个条目有「预览 / 使用·停用 / 删除」：`toggleUse()` 是开关式，启用时找 1~5 里的空闲槽位，
+  **先 `saveThemeChoice()` 写该槽位主题 + emit `overlay-theme-changed`，再 `setOverlaySlotEnabled(slot, true)`**
+  让 Rust 建窗口（顺序反了新窗口会读到旧主题）；停用把槽位还给池子。上限 = Rust `OVERLAY_SLOTS=5`。
+  `overlay-slots.js::read()` 读 localStorage `acc.overlaySlots`（clamp 1~5 / 去重 / 排序，
+  无记录默认 `[1]`）；`App.vue` 启动 `pushOverlaySlots()` 把这份列表推给 Rust。
+  `themeChoice` 预置 `overlay1..5`，按槽位的主题 / 背景键跟着常量自动生效。
+  分类导航 `navItems` + `activeGroupId`：空分类禁用（外部主题除外）、选中分类失效自动回落；
+  `selectedKey` 把「选中的主题」「预览框内容」「右侧设置面板的目标」绑成一个，切分类自动选第一个，
+  右侧永不莫名空白。
+- **悬浮窗设置面板可扩展（2026-11-10；同日改为外观设置）**：`src/telemetry/overlay-settings.js` 的
+  `OVERLAY_SETTING_DEFS` 是单一真源，目前有 `backgroundOpacity`（slider 0~100%）、
+  `backgroundColor` / `textColor`（color：预设色板 + 系统调色盘），共用按槽位存的
+  `acc.overlayAppearance.<slot> = { color, opacity, textColor }` 与 `overlay-appearance-changed`
+  事件（旧 `acc.overlayBackground.<slot>` 两档值会迁移）。
+  每项声明 `group/id/label/type/min/max/step/unit/presets/hint/appliesTo(theme)/read(slot)/write(slot,value)`，
+  `ThemePicker` 按 `OVERLAY_SETTING_GROUPS` 分组渲染（目前「背景」一组，以后加「文字」组），
+  再按 `type` 渲染 `segmented` / `slider` / `color` 控件，加设置项**不用改组件**。
+  **内置 / 外部界限**：`themeSupportsOverlaySetting(theme, capability)` —— 内置主题默认支持；
+  外部主题必须在 `theme.json` 写 `"overlaySettings": ["background", "textColor"]`，否则不出现对应控件、
+  `OverlayView` 也不应用该设置（ThemeHost 在 `ready` 事件里带回 theme.json 的声明）。
+  面板按 `OVERLAY_SETTING_GROUPS` 分为「背景 / 文字」两组，作用于「选中主题占用的槽位」，
+  主题没启用 / 外部主题未声明时只给提示。
+  ⚠️ 新设置项若按槽位存，记得同步 `OverlayView.vue` 读值 + 透传给 `ThemeHost` / `acc:ui`。
+- **预览框固定尺寸**：`.tpk-stage` 高度写死 `15.3846rem`，删掉 `.has-preview` 的高度切换与
+  `transition:height` —— 点不点预览都不跳变（用户明确要求）。打开弹窗会自动选中并预览
+  当前分类第一个主题（有已启用的优先已启用）。
+- **文案收敛 + 整个弹窗尺寸写死（2026-11-10 第四次微调）**：
+  `.dlg.dlg-theme.tpk-split` 固定 `width:min(74rem,100%)` + `height:min(80vh,44rem)`，
+  `.tpk-main{overflow:hidden}`、`.tpk-pane-bar` 固定高度、`.tpk-stage-head` 不换行 ——
+  选中主题后右侧设置面板冒出内容时，弹窗仍是恒定尺寸（实测各状态都是 1117×642 @1440×900），
+  多出来的内容只在 `.dlg-body` / 侧栏内部滚动，底部「完成」永远可见。
+  同时按用户要求去掉：`toggleUse()` 的启用 / 停用 notice、预览标题栏与卡片里的 `300×190`
+  设计尺寸、卡片里的「· 悬浮窗 N」（恒显示「内置 / 外部」，启用状态看色条 / 「停用」按钮 /
+  「已启用」chip）、右侧 chip 和设置面板的槽位编号、`useTitle` tooltip 的「（槽位 N）」、
+  设置页两行的当前主题名与主面板弹窗的「当前使用 X」。**只删展示，不动底层槽位逻辑**
+  （`slotOfTheme()` / `activeSlot` / 按槽位存的主题与背景键都还在）。
 - **主题地址**：内置主题编译进二进制 → `/themes/<id>/`；用户主题走自定义协议 `theme`，Windows 实际是
   `http://theme.localhost/<id>/`（**手拼 `theme://` 必失败**），统一走 `theme-url.js::themeBaseUrl()`。
 - `serve_user_theme()`：id 只允许 `[A-Za-z0-9_-]`；拒绝 `..` / `.` / `\` / NUL；`canonicalize()` 后比前缀；
@@ -161,15 +225,43 @@
 - 槽位与选择：`theme-choice.js` 按槽位存 localStorage（`acc.overlayTheme` / `acc.monitorTheme`）并导出响应式
   `themeChoice`；**同窗口靠它同步，跨窗口才用 `overlay-theme-changed` 事件**。
 - `ThemeHost.fit`：`contain`（固定 design + transform scale）/ `fluid`（铺满、主题自己响应式；
-  `acc:init` 多带 `fit`/`box`/`theme`/`background`，切黑白或切悬浮窗背景补发 `acc:ui`）。主题 4s 没 ready → emit `fail` → 回退内置面板。
-- **悬浮窗背景（2026-10-28，2026-10-29 修正色值）**：设置页每个悬浮窗槽位可选「透明 / 不透明」（localStorage `acc.overlayBackground.<slot>`）。
-  窗口本身一直是 `transparent(true)`，不透明模式由 `OverlayView` 给根节点（`.ov-root.opaque`）铺 `#0b0f14` 纯黑底板实现。
-  主题通过 `acc:init.background` / `acc:ui.background` 得知，需要时用 `html[data-bg="opaque"]` 调自己的配色。
+  `acc:init` 多带 `fit`/`box`/`theme`/`backgroundColor`/`backgroundOpacity`/`background`，切黑白或改背景补发 `acc:ui`；
+  `ready` 事件还会带回 theme.json 的 `overlaySettings` 供 OverlayView 判断外观能力）。主题 4s 没 ready → emit `fail` → 回退内置面板。
+- **悬浮窗背景（2026-10-28；2026-10-29 修正色值；2026-11-10 收进右侧设置面板并改为连续可调）**：
+  悬浮窗主题弹窗右侧「悬浮窗设置」分「背景 / 文字」两组：背景不透明度滑杆（0~100%）、
+  背景颜色（黑 / 白预设 + 调色盘）、背景模糊（关 / 开启）、文字颜色
+  （`#7db6c7` / `#f7c964` / `#e53325` / 黑 / 白 + 调色盘）。
+  设置页不再单独占一行；多选下作用于选中主题占用的槽位。
+  存储改为 localStorage `acc.overlayAppearance.<slot> = { color, opacity, blur, textColor }`（旧
+  `acc.overlayBackground.<slot>` 的 transparent/opaque 自动迁移），设置项注册表见 `overlay-settings.js`。
+  窗口本身一直是 `transparent(true)`，`OverlayView` 用 `overlayBackdropStyle()` 给根节点铺
+  `rgba(color, opacity)` 内联底色（只影响背景，不淡化主题内容），不再有 `.ov-root.opaque` 类。
+  主题通过 `acc:init` / `acc:ui` 的 `backgroundColor` / `backgroundOpacity` 得知精确值；
+  `background: transparent | opaque` 保留为兼容字段（只有 opacity ≥ 99% 才给 opaque，中间档保持
+  transparent，避免老主题的 `html[data-bg='opaque']` 把自带底板画死）。
+  「模糊」真机走 **custom SWCA Acrylic**：`OverlayView` 调 Rust 命令
+  `set_overlay_backdrop(enabled, color, opacity)`，Rust 直接 `GetProcAddress("SetWindowCompositionAttribute")`
+  并设置 `ACCENT_ENABLE_ACRYLICBLURBEHIND`（state 4，`main.rs::window_accent`）。
+  整窗效果；系统 Acrylic 的模糊半径固定，只有开 / 关；tint 的 alpha 固定 1（几乎透明），
+  背景颜色 / 不透明度仍由前端 `.ov-root` 叠。开启时同时调
+  `DwmSetWindowAttribute(DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND)` 让窗口圆角，
+  试图把矩形 blur 层裁掉直角（`SetWindowRgn` 对 SWCA blur 无效）。
+  **踩过的坑：**
+  - `apply_acrylic`（window-vibrancy）在 Win11 22621+ 走 DWM `DWMSBT_TRANSIENTWINDOW`，窗口失焦时
+    系统会把 Acrylic 退化成实色 —— 悬浮窗平时穿透 / 不聚焦，表现为「点别处就不透明」。
+  - `apply_blur`（`ACCENT_ENABLE_BLURBEHIND`，state 3）在 Win11 上会把窗口渲染成纯黑，实测不可用。
+  - 纯 CSS `backdrop-filter` 在透明 WebView2 窗口里采样不到窗口外的游戏画面。
+  设置页预览没有 OS 窗口，仍用 16px CSS 模糊近似。权限只授给 `overlay-*` 窗口
+  （`allow-set-overlay-backdrop`）。
+  文字颜色通过 `acc:init` / `acc:ui` 的 `textColor` 传给主题，内置主题写入 `--text-color` 并让
+  主数字 / 标签的 `color` 引用它（`color-mix` 处理压暗档）。
+  外部主题必须在 `theme.json` 的 `overlaySettings` 声明 `"background"` / `"textColor"` 才可调 / 生效，
+  内置主题默认支持。
 
   ⚠️ **主题卡片别拿 72% 近黑当"半透明"**（2026-10-29 踩过）。`rgba(11,14,19,.72)` 压在游戏画面上
   就是个实心黑块，用户选「透明」会以为设置没生效。真要能看见画面，卡片背景就得是 `transparent`
-  （`speed-gear` 现在就是零底板，靠字号 + 向下软投影保证可读），别靠压暗背景。
-  不透明模式现在统一铺 `#0b0f14` 纯黑；主题自带底板时同步用这个值（模板里已改成同一色），不要叠得比底板更黑。
+  （`speed-gear` 现在就是零底板，靠字号 + 字重保证可读，不加文字阴影），别靠压暗背景。
+  用户拉高不透明度时宿主会铺所选颜色；主题自带底板时用 `var(--host-bg)` 同步（模板里已改），不要叠得比底板更黑。
 - 缺口：主题拿不到赛道几何（`getTrackGeometry()` 不在 state 里），带地图的纯主题（如副屏）需单独推 `acc:map`。
 
 ## 11. 调试技巧
@@ -246,3 +338,50 @@
   `layoutFromRoot()` 派生 `<根>` / `<根>\data` / `<根>\data\themes`，和 Rust `install_layout()` 同一形状，
   **两边形状要一起改**。弹窗主按钮文案「移动数据并重启」，点了就 `set_data_paths` + 立即 `restart_app`；
   重启失败时 pending 已落盘，界面上留「立即重启」按钮兜底。浏览器预览（无 IPC）退回只读展示。
+
+## 13. 赛道会话边界：暂停 vs 回主菜单（2026-11-09）
+
+**症状**：跑了一会儿退出赛道回主菜单，历史页那条记录仍显示「记录中」，点删除提示无法删除。
+
+**根因**：`sessions` 表没有 live / 结束字段，`live` 是纯内存计算值
+（`HistoryService.list_sessions`：`streaming and item.id == Recorder._session_id`）。
+让一条记录变非 live 的**唯一途径**是 `Recorder.stop()` 把 `_recording=False`、`_session_id=None`。
+而 `collect_loop` 遇到非直播帧只往 `bus.event_queue` 丢 `{"type":"stopped"}` 给前端清实时帧，
+**完全不碰 Recorder**；`run_worker` 原有的自动结束条件只有 `not provider.available()`（段消失），
+ACC 进程还在主菜单时段仍在，于是 session 永远 live。
+
+**能不能区分暂停和主菜单**：ACC 的 `graphics.status` 官方枚举本身是能区分的
+（`pyACCSharedMemory/acc_enum.py::ACCStatus`：0=OFF / 1=REPLAY / 2=LIVE / 3=PAUSE），
+暂停报 3、主菜单/无赛事报 0。**但底层 `MMapControl` 是 copy 模式**（`access_mode=0`），
+只有 `packetId` 变化才把 mmap 拷进 `self.data`；ACC 离开赛道后若不再刷 graphics 页，
+`read()` 里的 status 会冻结在最后一帧（2 或 3），游戏写下的 0 根本读不到。
+所以加 `AccSharedMemoryProvider.peek_realtime_status()` 直读 `_realtime`
+（`from_buffer(_mmap_buffer)`，不走 copy 门槛），再用 `packetId` 新鲜度兜底。
+
+**判定规则**（`backend/collector/reader.py::TrackPresence`，常量在文件头）：
+
+| 观测 | 处理 |
+| --- | --- |
+| LIVE(2) 且 packetId 在动 | 在赛道 |
+| **PAUSE(3)** | **永不结束**，用户随时会继续，这一场要保留 |
+| OFF(0) / REPLAY(1) 持续 ≥ `LEAVE_TRACK_GRACE_S`(2s) | 回主菜单 → 结束 |
+| packetId 冻结 ≥ `PACKETS_FROZEN_GRACE_S`(8s) 且非 PAUSE | 数据源已死 → 兜底结束 |
+| 共享内存段消失 | 立即结束 |
+
+- **必须边沿触发**：从「在赛道」变「离开」只请求一次，恢复 LIVE 才重新武装。
+  否则前端 `tickSupervisor` 每 3s 重发 `start`，会被同一个请求反复 stop。
+- 信号经 `bus.runtime["session_end_requested"]` 传给 `Recorder.run_worker` 的
+  0.5s timeout 分支，消费后调 `stop()`；请求无论当时是否 recording 都要先清掉。
+- `stop()` 除了 `stopped` 还必须补一条 `{"type":"history","reason":"session-end"}`：
+  前端 `stopped` 分支只清实时帧、**不动 `historyRevision`**，历史页不重拉列表，
+  那一行仍带 `live=true`、删除按钮一直禁用。听 `history` 才会刷新。
+- 前端 `ui.liveSessionId` 由 `MonitorView` 的 watch 在 `status !== 'streaming'` 时置 null，
+  配合列表刷新，`deleteIsLive` 才会变 false。
+- `stop()` 后前端会自动 `start()` 待命（新 session 只在内存，没有 LIVE 帧就不落库），
+  旧记录因 id 不匹配而可删；再次进赛道会自动开一条新记录，正好「一次进图一条」。
+
+**真机验证**：后端日志会打 `ACC graphics.status → N` 和 `判定已离开赛道（<reason>）`。
+进赛道=2、按 Esc 暂停=3、退回主菜单=0。若某版本 ACC 暂停也报 0，
+就无法从数据源区分，只能调大 `LEAVE_TRACK_GRACE_S` 或用「暂停后手动停止监测」兜底。
+
+> 改了 Python 后端 → 按第 2 节重打包 sidecar（三处 exe 同步），否则跑的还是旧 exe。

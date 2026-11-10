@@ -1,9 +1,15 @@
 {
   "id": "pedals-wheel",
+  "category": "inputs",
+  "tags": [
+    "throttle",
+    "brake",
+    "steer"
+  ],
   "name": "pedals-wheel",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "author": "acc-telemetry",
-  "desc": "油门 / 刹车两根竖直踏板条并排放在转向圆环左侧（从底部填充、中文标签）；圆环不画箭头或方向盘图形，只用蓝（左）/ 橙（右）270° 进度弧的颜色与长度表示转向方向和幅度，角度数字同步染同色；透明背景无底板",
+  "desc": "油门 / 刹车两根竖直踏板条并排放在转向环左侧（从底部填充、中文标签）；环外围 270° 进度弧用蓝（左）/ 橙（右）的颜色与长度表示转向方向和幅度，环心是 F1 方向盘线稿，盘顶小矩形指针按同一角度偏转、始终停在彩色弧末端；不显示角度数字；透明背景无底板",
   "design": {
     "w": 300,
     "h": 190
@@ -11,5 +17,9 @@
   "fit": "contain",
   "modes": [
     "overlay"
+  ],
+  "overlaySettings": [
+    "background",
+    "textColor"
   ]
 }
