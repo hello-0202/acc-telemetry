@@ -136,6 +136,10 @@ class Snapshot:
     # 当前使用的轮胎组编号（graphics.currentTyreSet）。
     # 换胎后编号变化，轮胎磨损估算器据此清零，避免把上一套胎的磨损累加进来。
     current_tyre_set: int = 0
+    # 玩家自己的广播 carId（graphics.playerCarID）。**跨源 join 的唯一自我标识**：
+    # 广播侧的 focusedCarID 是摄像机焦点，切镜头就变，绝不能拿来判断玩家（ADR-0001 §2.3）。
+    # 0 表示未知；非直播态 / 回放里游戏也可能给 0。
+    player_car_id: int = 0
 
 
 @dataclass(frozen=True, slots=True)

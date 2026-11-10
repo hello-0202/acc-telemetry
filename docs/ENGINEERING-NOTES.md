@@ -17,6 +17,16 @@
 - 状态流（P0 起）：`acc_provider.read()` → `bus.latest_snapshot` → `recorder::_publish_meta()` 挂
   `runtime["state_meta"]` → `state.py::build_state()` → `broadcaster` 推 `{type:"state"}`。
   **组装不查库、不加锁；PB 参考只留内存算 delta，绝不进消息**（上千点会撑爆 30Hz）。
+- **第二条数据通道（广播 / UDP）已接进运行链路**：领域模型在 `acc_telemetry/domain/`，适配器在
+  `acc_telemetry/sources/broadcast.py`，服务在 `backend/collector/broadcast_reader.py`（lifespan 里的
+  `standings` Task），读模型在 `acc_telemetry/services/standings_model.py`，输出到 `state.standings`。
+  边界与依赖方向见 `adr/0001-data-source-architecture.md`。三条硬规则：①**只读注册**（故意给错的
+  `commandPassword`）；②榜单只写 `bus.latest_standings`，**绝不进 `bus.runtime`、绝不进 `frame`**；
+  ③广播的任何异常都吞在广播 Task 里，`state.py::_standings()` 还有一层兜底 —— 广播坏了不能让
+  录制/圈次/HUD 受影响。广播侧的实测坑（`broadcasting.json` 是 UTF-16LE 无 BOM、
+  默认 `updListenerPort=0` 等于关闭）记在 ADR 第 6.1 节。
+  **报文缓冲不能用 `asyncio.Queue`**：`queue.get()` 被超时取消时那条报文就永久丢了，
+  实测会让榜单全是 stale；现在用「deque + Event」，Event 只负责叫醒、数据等 `drain()`。
 
 ## 2. 打包 sidecar（改后端必做）
 

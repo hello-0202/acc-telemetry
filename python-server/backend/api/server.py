@@ -1,7 +1,10 @@
-"""装配层：FastAPI 生命周期 + 采集/记录/广播三个 Task。
+"""装配层：FastAPI 生命周期 + 采集/记录/广播/榜单四个 Task。
 
-启动顺序：记录 Task → 广播 Task → 采集 Task（下游先就绪）。
-停止顺序：stop_event.set() → 采集退出 → 记录排空 → 广播退出。
+启动顺序：记录 Task → 广播 Task → 采集 Task → 榜单 Task。
+停止顺序：stop_event.set() → 采集退出 → 记录排空 → 广播退出 → 榜单退出。
+
+榜单 Task（广播 UDP）是**增强不是依赖**：它自己管连接、自己吞异常，
+退出慢一点也只等 3s，不影响其它 Task 的启停。
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ from acc_telemetry.services.tyre_wear import TyreWearEstimator
 from acc_telemetry.trackmaps.resolver import TrackResolver
 
 from .. import bus
+from ..collector.broadcast_reader import BroadcastSettings, broadcast_standings_loop
 from ..collector.reader import collect_loop
 from ..storage.recorder import Recorder
 from . import routes
@@ -101,14 +105,31 @@ def create_app(
         # 兼容 acc_telemetry.api.sessions 的依赖（它读取 app.state.telemetry）
         app.state.telemetry = recorder
 
+        # 广播配置的单一真源是 config.json，读进这个 dict 供广播 Task 每轮取用。
+        # 不在 bus.runtime 里放副本：那份字典已经是杂项抽屉了。
+        broadcast_conf: dict[str, object] = {
+            "broadcastEnabled": config_values.get("broadcastEnabled", True),
+            "broadcastPort": config_values.get("broadcastPort", 0),
+            "broadcastIntervalMs": config_values.get("broadcastIntervalMs", 250),
+        }
+
         def apply_runtime_config(values: dict) -> None:
             """配置保存后立即作用到采集/广播循环。"""
             if "sampleHz" in values:
                 bus.runtime["sample_hz"] = int(values["sampleHz"])
             if "pushHz" in values:
                 bus.runtime["push_hz"] = int(values["pushHz"])
+            # 广播配置只改「下一次重连」的行为，不打断当前连接：
+            # 断线 / 换会话时主循环自然会读到新值。
+            for key in ("broadcastEnabled", "broadcastPort", "broadcastIntervalMs"):
+                if key in values:
+                    broadcast_conf[key] = values[key]
 
         app.state.apply_runtime_config = apply_runtime_config
+        app.state.broadcast_settings = broadcast_conf
+
+        def broadcast_settings() -> BroadcastSettings:
+            return BroadcastSettings.from_config(broadcast_conf)
 
         stop_event = asyncio.Event()
         # 下游先就绪，上游才开跑
@@ -127,8 +148,14 @@ def create_app(
             ),
             name="collector",
         )
+        # 广播榜单是「增强不是依赖」的第四条 Task：自己管连接、自己吞异常，
+        # 不参与采集/记录的任何路径（ADR-0001 §3）。
+        standings_task = asyncio.create_task(
+            broadcast_standings_loop(stop_event, settings=broadcast_settings),
+            name="standings",
+        )
         app.state.stop_event = stop_event
-        app.state.tasks = [recorder_task, broadcast_task, collect_task]
+        app.state.tasks = [recorder_task, broadcast_task, collect_task, standings_task]
 
         try:
             yield
@@ -138,6 +165,11 @@ def create_app(
             await asyncio.gather(collect_task, return_exceptions=True)
             await asyncio.gather(recorder_task, return_exceptions=True)
             await asyncio.gather(broadcast_task, return_exceptions=True)
+            # 广播 socket 是非阻塞的，正常 100ms 内退出；超时也不等它
+            try:
+                await asyncio.wait_for(standings_task, timeout=3.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                standings_task.cancel()
 
     application = FastAPI(
         title="ACC Telemetry Async Backend", version=VERSION, lifespan=lifespan

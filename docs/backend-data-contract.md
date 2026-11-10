@@ -15,6 +15,11 @@
 | 监测（实时） | WebSocket `ws://127.0.0.1:8008` | 实时帧流、圈完成通知 | 前端发 `{"cmd":"start"}` |
 | 历史（查询） | HTTP REST（同服务或独立端口） + SQLite | 赛道列表、圈速、单圈采样、删除 | 前端按需 GET / DELETE |
 
+> **对手榜单只走 state 通道**：`standings`（来自 ACC UDP 广播的只读连接，≈4Hz）**不进 `frame`**。
+> `frame` 是 30–60Hz 的高频消息，把几十辆车的名册塞进去会让每条帧膨胀一个数量级，
+> 而名次/圈速的变化频率远低于物理量。需要榜单就订阅 `{"type":"state"}`；
+> 主面板的旧链路保持原样。字段口径见 `docs/theme-state-contract.md` 的 `standings` 一节。
+
 后端 `python-server/server.py` 同时承担两个角色：
 1. 读 ACC 共享内存 → 转发为 WebSocket 帧；
 2. 暴露 `/api/*` 读写本地 SQLite 库（落库每圈采样）。

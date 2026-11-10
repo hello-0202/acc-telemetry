@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>speed-delta HUD</title>
+    <link rel="stylesheet" href="./theme.css" />
+  </head>
+  <body>
+    <!-- 设计基准 520×264（见 theme.json）。主题透明、不画底板，缩放由宿主做（contain）。
+         左侧 270° 缺口转速环包挡位：环带随转速由浅到浓重（同色相），换挡时仅整块仪表同色闪烁。
+         右侧：迈速 + 与最佳圈实时差值（绿=更快 / 红=落后）+ 当前圈速 + 最佳 / 最后参考圈。 -->
+    <div class="hud" id="hud" data-shift="0">
+      <!-- 左侧：270° 缺口圆弧；矩形弯成圆，两端平切方头；圆内只有挡位 + 转速两个数字 -->
+      <div class="dial">
+        <div class="dial-glow" id="dialGlow"></div>
+        <svg viewBox="0 0 220 220" aria-hidden="true">
+          <defs>
+            <!-- 进度遮罩：只改这条 path 的 dasharray，就能裁出整条渐变带的可见长度 -->
+            <mask id="progressMask" maskUnits="userSpaceOnUse" x="0" y="0" width="220" height="220">
+              <path id="maskArc" fill="none" stroke="#fff" stroke-width="16"
+                    pathLength="1000" stroke-dasharray="0 1000"
+                    d="M 44.95 175.05 A 92 92 0 1 1 175.05 175.05" />
+            </mask>
+          </defs>
+          <!-- 内衬细弧：环带内沿的呼应，不是刻度线 -->
+          <path class="ring-inner" fill="none" stroke-width="1"
+                d="M 54.85 165.15 A 78 78 0 1 1 165.15 165.15" />
+          <!-- 底轨 -->
+          <path class="ring-track" fill="none" stroke-width="11"
+                d="M 44.95 175.05 A 92 92 0 1 1 175.05 175.05" />
+          <!-- 沿弧从浅到浓重的渐变带，由 theme.js 生成 30 段；mask 按转速裁切 -->
+          <g id="ringSegs" mask="url(#progressMask)"></g>
+          <!-- 圆内只有挡位 + 转速两个数字，不带标签不带单位。
+               x/y + text-anchor/dominant-baseline 保证居中，换字体不漂移。
+               挡位略上移（y=104），转速在圆心下方（y=168）。 -->
+          <text id="gearText" class="gear-text" x="110" y="104"
+                text-anchor="middle" dominant-baseline="central">4</text>
+          <text id="rpmText" class="rpm-text" x="110" y="168"
+                text-anchor="middle" dominant-baseline="central">5472</text>
+        </svg>
+      </div>
+
+      <!-- 右侧：迈速 + 差值 / 当前圈速（本圈实时）/ 最佳 + 最后参考圈 -->
+      <div class="right">
+        <div class="pairs">
+          <div class="num speed-num" id="speed">248<span class="u">KM/H</span></div>
+          <div class="delta-box" id="deltaBox" data-sign="neg">
+            <div class="num delta-num" id="delta">−0.284</div>
+          </div>
+        </div>
+        <div class="current-row">
+          <div class="current-label">CURRENT LAP</div>
+          <div class="current-value" id="tCur">1:08.240</div>
+        </div>
+        <div class="times">
+          <div class="time-row best">
+            <div class="time-label">BEST LAP</div>
+            <div class="time-value" id="tBest">2:18.432</div>
+          </div>
+          <div class="time-row">
+            <div class="time-label">LAST LAP</div>
+            <div class="time-value" id="tLast">2:19.106</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="./theme.js"></script>
+  </body>
+</html>

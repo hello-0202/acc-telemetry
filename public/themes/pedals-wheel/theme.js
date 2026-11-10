@@ -4,10 +4,13 @@
  * 主题 → 宿主：{ type:'acc:ready' }
  * 独立打开（双击 index.html）没有宿主，2 秒后自动跑演示数据。
  *
- * 踏板条：填充高度 = 开度百分比（从底部往上长）。
- * 转向弧：pathLength="100" 归一化，270° 整圈 = 75 单位，
- *   ±450° 映射到 ±135°，即 37.5 个 dasharray 单位。
- * 盘面：同一角度旋转环心的 F1 方向盘，盘顶小矩形指针就落在彩色弧末端。
+ * 踏板条：填充高度 = 开度百分比（从底部往上长）；条上方是纯数字读数（无 %），
+ *   颜色跟随红 / 绿语义色 —— 与 pedal-trace 的踏板是同一套写法。
+ * 转向弧：pathLength="100" 归一化，270° 整圈 = 75 单位，满舵 37.5 单位 = 135°。
+ *   长度不是线性 |steer|，先过 steerVisual() 视觉增益（与 pedal-trace 同一条曲线）：
+ *   0~200° 放大到满舵的 82%，200~450° 压进末段 18%。真机很少打满舵，线性映射
+ *   会让 180° 只画出窄窄一截颜色。
+ * 盘面：用同一个增益后的值旋转环心的 F1 方向盘，盘顶小矩形指针就始终落在弧端。
  *   不按真车 ±450° 转 —— 转过 135° 后指针会跑出环外，指不到颜色。
  */
 (function () {
@@ -28,6 +31,24 @@
   // 满舵（steer ±1）对应的弧长与盘转角。两个数必须同源：37.5 单位 × 3.6°/单位 = 135°。
   var ARC_UNITS_FULL = 37.5;
   var WHEEL_DEG_FULL = 135;
+
+  // 视觉增益：与 pedal-trace 的 steerVisual() 一字不差（两套 HUD 读同一个手感的量）。
+  //   STEER_DEG_FULL   契约约定归一化 1 = 满舵 450°
+  //   STEER_VIS_KNEE   常用弯角上限 200°
+  //   STEER_VIS_SHARE  常用区间占满舵幅度的比例：0~200° 吃满 82%
+  // 只改显示的弧长 / 盘转角度，不动任何真值（真值只用来算角度）。
+  var STEER_DEG_FULL = 450;
+  var STEER_VIS_KNEE = 200;
+  var STEER_VIS_SHARE = 0.82;
+  // ≈9° 死区：增益把 1° 也放大了，真机方向盘微抖会让蓝 / 橙两色来回闪，直行压成 0
+  var STEER_DEAD = 0.02;
+
+  function steerVisual(v) {
+    var deg = Math.abs(v) * STEER_DEG_FULL;
+    if (deg <= STEER_VIS_KNEE) return (deg / STEER_VIS_KNEE) * STEER_VIS_SHARE;
+    return STEER_VIS_SHARE
+      + ((deg - STEER_VIS_KNEE) / (STEER_DEG_FULL - STEER_VIS_KNEE)) * (1 - STEER_VIS_SHARE);
+  }
 
   var gotState = false;
   var demoTimer = null;
@@ -53,10 +74,12 @@
     el.style.height = (p * 100).toFixed(1) + '%';
   }
 
-  /* 转向：s -1..1。弧长 len 是 dasharray 单位，0..37.5（37.5 = 135°）；
-   * 盘面按 s × 135° 同角度旋转，指针就精确停在彩色弧的末端。 */
+  /* 转向：s -1..1。先算增益后的幅度 vis（0..1，只表示"画多长"），
+   * 弧长 = vis × 37.5 单位，盘转角 = sign × vis × 135° —— 两者同源，
+   * 盘顶指针就精确停在彩色弧的末端（改一处必须改另一处，否则指针会脱离弧端）。 */
   function setSteer(s) {
-    var len = Math.abs(s) * ARC_UNITS_FULL;
+    var vis = steerVisual(s);
+    var len = vis * ARC_UNITS_FULL;
     if (s > 0.004) {
       // 右：从正上方顺时针长
       stRight.setAttribute('transform', 'rotate(-90 84 84)');
@@ -73,7 +96,8 @@
       stLeft.style.opacity = '0';
       stRight.style.opacity = '0';
     }
-    stWheel.setAttribute('transform', 'rotate(' + (s * WHEEL_DEG_FULL).toFixed(2) + ' 84 84)');
+    var turn = (s < 0 ? -1 : s > 0 ? 1 : 0) * vis * WHEEL_DEG_FULL;
+    stWheel.setAttribute('transform', 'rotate(' + turn.toFixed(2) + ' 84 84)');
   }
 
   function render(st) {
@@ -93,16 +117,20 @@
 
       setFill(thrFill, thrP);
       setFill(brakeFill, brkP);
-      $('thr-val').textContent = thr == null ? '--' : Math.round(thrP * 100) + '%';
-      $('brake-val').textContent = brk == null ? '--' : Math.round(brkP * 100) + '%';
+      // 纯数字、无 %：条本身已经在表达百分比，符号是多余的噪声
+      $('thr-val').textContent = thr == null ? '--' : String(Math.round(thrP * 100));
+      $('brake-val').textContent = brk == null ? '--' : String(Math.round(brkP * 100));
 
       if (steer == null) {
         setSteer(0);
         return;
       }
 
-      // 约定：steer -1..1，±1 是满舵
-      setSteer(steer < -1 ? -1 : steer > 1 ? 1 : steer);
+      // 约定：steer -1..1，±1 是满舵。先夹紧，再过死区（增益会把 1° 也放大成可见的弧长，
+      // 不压死区的话真机微抖会让蓝 / 橙两色在直线上来回闪）
+      var sv = steer < -1 ? -1 : steer > 1 ? 1 : steer;
+      if (Math.abs(sv) < STEER_DEAD) sv = 0;
+      setSteer(sv);
     } catch (e) {
       console.warn('[pedals-wheel] render failed', e);
     }

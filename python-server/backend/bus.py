@@ -55,6 +55,15 @@ latest_static: Any | None = None
 # 面向前端的子集，不适合当作 state 的数据源。
 latest_snapshot: Any | None = None
 
+# 广播榜单（acc_telemetry.domain.model.StandingsSnapshot），由广播服务按 ≤4Hz 覆盖写。
+# **只放这里，不进 runtime**：runtime 已经是杂项抽屉，高频数据挤进去只会更难排查。
+# 类型用 Any 避免 backend → acc_telemetry.domain 的 import（读模型在 state 侧转换）。
+latest_standings: Any | None = None
+
+# 广播服务的运行状态，给 state 组装 ``standings.reason`` 用。
+# 与上面那份「数据」分开：数据没了要知道为什么，但原因不是数据的一部分。
+standings_status: dict[str, Any] = {"reason": "no-data", "port": None, "connected": False}
+
 # 跨 Task 共享的轻量运行时状态
 runtime: dict[str, Any] = {
     "recording": False,
@@ -93,11 +102,14 @@ stats: dict[str, int] = {
 def reset() -> None:
     """应用启动时清空总线（同一进程内重启 lifespan 时也能干净开始）。"""
     global frame_queue, event_queue, latest_static, latest_snapshot
+    global latest_standings, standings_status
     frame_queue = asyncio.Queue(maxsize=FRAME_QUEUE_MAXSIZE)
     event_queue = asyncio.Queue()
     latest_buffer.clear()
     latest_static = None
     latest_snapshot = None
+    latest_standings = None
+    standings_status = {"reason": "no-data", "port": None, "connected": False}
     runtime.update(
         recording=False,
         game_running=False,

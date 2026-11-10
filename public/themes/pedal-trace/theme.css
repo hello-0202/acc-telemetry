@@ -1,0 +1,386 @@
+/* 踏板时序 HUD —— 设计基准 600×134，全部 px 写死，缩放交给宿主（contain）。
+ *
+ * 视觉：一整块横向卡片，三段紧凑排布——
+ *   左 380px：上下两条时序轨道（上刹车红 / 下油门绿），折线 + 沿 y 轴向 x 轴
+ *             渐淡的面积，最新点贴右；框外不叠任何文字。固定宽度、不再撑满；
+ *   中 88px：两根 30px 竖直输入条（矩形 + 上方纯数字），框内是贴框铺满的
+ *            纯色块，从底部升起；
+ *   右 132px：转向横条（中心 0 点，左蓝 / 右橙、两半暗底）+ 条下方度数
+ *             （无正负号，只靠颜色分左右），挡位数字真居中，迈速小字靠底
+ *             （无单位、无中文标签）。
+ * 设计宽度从 640 收到 600：竖线右侧收窄 40px，左侧曲线与双条尺寸一点没动。
+ * 竖分割线放在双条的右边缘，把踏板信息区与车辆状态区分开。
+ * 踏板数值全卡片只出现一次：条上方的纯数字，无 %。
+ * 直角硬边、纯色高亮、无发光，和 public/themes/pedals-wheel 同一套语言。
+ *
+ * 背景不自己画：完全交给设置里的「背景颜色 / 不透明度 / 模糊」——
+ *   0%（默认）  → 宿主不铺底，这里也绝不画，画面直接透出来（只剩下面这些
+ *                 自带暗底的图形元素：两条曲线框、两根踏板条、转向条）；
+ *   0% < x < 100% → 宿主在 iframe 后面铺 rgba(颜色, 不透明度)，主题不能再叠
+ *                 一层，否则两层复合会比用户选的值更黑；
+ *   ≈100%       → 宿主告知 data-bg='opaque'，这里把底板并成同一个 --host-bg，
+ *                 免得主题的深色把用户选的颜色染深（模板约定的做法）。
+ * 文字色跟随 --text-color，红 / 绿 / 蓝 / 橙状态色保持语义不跟随
+ * （选了黑字也不能把刹车变黑）。浅色底上分割线换深色，见 host-light。
+ */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+:root {
+  --brake: #ff3b52;
+  --throttle: #25e07a;
+  /* 转向左右两方沿用 pedals-wheel 转向弧的语义色：负=左蓝 / 正=右橙 */
+  --steer-left: #1a94ff;
+  --steer-right: #ff9500;
+  --mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', monospace;
+}
+
+body {
+  font-family: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Sarasa Gothic SC', 'Sarasa Gothic', 'Noto Sans Mono CJK SC', 'SimHei', 'Microsoft YaHei', sans-serif;
+  color: var(--text-color, #f2f6fa);
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+/* ---------------- 整块卡片 ----------------
+ * 卡片本身没有底板：背景 100% 由宿主按设置铺。加任何自带底色都会让
+ * 「不透明度 0%」这个默认选项失效（之前那版固定 72% 黑底就是这个毛病）。
+ * 也不画外框：透明时一圈空矩形反而像没画完的选中框；实心时窗口边缘
+ * 已经由宿主圆角给出边界。
+ */
+.hud {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  background: transparent;
+}
+
+/* 不透明度拉满：宿主已经铺了实色，这里并成同一块，避免主题再叠一层深色。
+   分割线在实心底上改用中性浅色（跟随所选背景的明暗，见文件末尾）。 */
+html[data-bg='opaque'] .hud {
+  background: var(--host-bg, #0b0f14);
+}
+
+/* 非 streaming：整体压暗，别把上一场的值当实时值 */
+.hud[data-status='idle'],
+.hud[data-status='waiting'],
+.hud[data-status='error'] {
+  opacity: 0.72;
+}
+
+/* ---------------- 左：两条时序 ---------------- */
+
+.traces {
+  flex: 0 0 380px;      /* 曲线短一档：固定宽度，省下的宽度给车辆状态区 */
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 10px 8px 10px 10px;
+  display: flex;
+  align-items: stretch;
+}
+
+.chart {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 曲线框自带暗底（和两根踏板条同一套）：卡片已经不画底了，
+   框本身必须能压在任意背景上——亮天空、雪地、甚至设置里选的白色底板，
+   都一样读得出边界。浓度取 0.72：浅底上仍是深灰，曲线和网格不会糊掉。
+   之前是白色 3.5% 的「提亮」底，那是靠卡片黑底才成立的，撤掉卡片后会消失。 */
+.trace {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: rgba(4, 8, 12, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+.trace svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.grid line {
+  stroke: rgba(255, 255, 255, 0.11);
+  stroke-width: 1;
+  stroke-dasharray: 3 5;
+}
+
+.trace .area { stroke: none; }
+.trace .line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.trace .dot { stroke: none; }
+
+/* 面积渐变定义在 index.html 的 <linearGradient>（userSpaceOnUse，锚在 y=0..52）：
+   离 x 轴（y=52）越近越淡。这里不要写 fill —— CSS 的 fill 会盖掉
+   polygon 上的 fill="url(#...)"。 */
+.trace.brake .line    { stroke: var(--brake); }
+.trace.brake .dot     { fill: var(--brake); }
+.trace.throttle .line { stroke: var(--throttle); }
+.trace.throttle .dot  { fill: var(--throttle); }
+
+/* ---------------- 车辆状态区：转向条（中心 0 点，左蓝 / 右橙） ----------------
+ * car.steer -1..1：负向左、正向右。整条横线以中心竖线分界，左右两半常驻
+ * 一层暗的对应色（静止时也能读出「这是两个方向」），转向时亮色填充从
+ * 中心向对应一侧长出。填充长度不是线性 |steer| —— 真机很少打满舵，
+ * 按线性的话 180° 只占半条 40%，永远看着是一小截；映射曲线见 theme.js
+ * 的 steerVisual()（常用区间放大、末段压缩）。条是视觉指示不是线性尺，
+ * 精确角度看下方度数。不做 width 过渡：30Hz 会不断打断过渡，填充落后真值。
+ */
+.steer-bar {
+  position: absolute;
+  top: 13px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 118px;
+  height: 8px;
+  background: rgba(4, 8, 12, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.steer-bed {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+}
+.steer-bed.left  { left: 0;  background: rgba(26, 148, 255, 0.22); }
+.steer-bed.right { right: 0; background: rgba(255, 149, 0, 0.22); }
+
+.steer-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 0;
+}
+.steer-fill.left  { right: 50%; background: var(--steer-left); }
+.steer-fill.right { left: 50%;  background: var(--steer-right); }
+
+/* 中心 0 点：比横条略高的亮竖线，明确分界 */
+.steer-center {
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  width: 2px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+/* 方向盘度数：契约 car.steer 是 -1..1 归一化，本项目约定满舵 ±450°，
+   主题乘 450 取绝对值得到度数（见 telemetry-state.json）。
+   放在横条下方居中，不写正负号——方向只靠颜色（左蓝 / 右橙）区分，
+   直行时回到中性文字色。字号 14px + 一点字距（12px 在缩放后的悬浮窗上偏小、
+   要眯眼看），读数横向略拉长、更好认。
+   只有数字参与居中：单位是绝对定位、挂在数字右边，不占布局宽度。 */
+.steer-deg {
+  position: absolute;
+  top: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+
+/* 不参与居中：容器宽度只由 .n 决定，° 从数字右边缘往外长。
+   单位跟着数字一起放大一档（9 → 10px），但始终保持明显小于数字。 */
+.steer-deg .u {
+  position: absolute;
+  left: 100%;
+  top: -1px;
+  margin-left: 1px;
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+/* ---------------- 车辆状态区：挡位 / 迈速（无单位、无中文标签） ---------------- */
+
+/* 挡位真居中（含垂直方向），迈速是下方的一组小读数、贴着卡片底部。
+   两块各自绝对定位，改任一字号都不会把另一块挤偏移。 */
+.center {
+  position: relative;
+  flex: 1;              /* 600 − 380 − 88 = 132px：竖线右侧收紧后不再留大片空白 */
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.cell {
+  position: absolute;
+  display: flex;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.cell.gear {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.cell.speed {
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+}
+
+.cell .v {
+  font-family: var(--mono);
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 迈速与挡位拉开层级：数字明显小一档 */
+.cell.speed .v { font-size: 21px; }
+
+/* ---------------- 换挡提示 ----------------
+ * 转速 ≥ 96% 允许转速且不是空挡 / 倒挡时，挡位数字同色硬切明灭。
+ * 与 speed-gear / gt-cockpit 同一套语言：steps(1) 开关量、不做渐变呼吸，
+ * 0.28s 一个周期；只在状态翻转时改 hud[data-shift]，不每帧重挂动画。
+ * 保持文字原色（不转红）：本主题里红色已经是刹车语义，不能借给换挡。 */
+@keyframes gear-shift {
+  0%, 49%     { opacity: 1; }
+  50%, 100%   { opacity: 0.15; }
+}
+
+.hud[data-shift='1'] .cell.gear .v {
+  animation: gear-shift 0.28s steps(1, end) infinite;
+}
+
+/* ---------------- 中：两根输入条（整块搬到曲线右侧） ----------------
+ * 曲线与双条同属踏板信息区，中间不加分割线；分割线在这一块的右边缘，
+ * 把右侧的转向 / 挡位 / 迈速分开。两根条在 88px 里居中，左右留白均衡。
+ */
+.inputs {
+  flex: none;
+  box-sizing: border-box;
+  width: 88px;
+  padding: 10px 8px;
+  border-right: 1px solid rgba(187, 187, 187, 0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 12px;
+}
+
+.pedal {
+  width: 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 全卡片唯一的踏板数值：纯数字、无 %，颜色沿用红 / 绿做区分 */
+.pedal .cap {
+  height: 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pedal.brake .cap    { color: var(--brake); }
+.pedal.throttle .cap { color: var(--throttle); }
+
+.bar {
+  position: relative;
+  width: 30px;
+  height: 96px;
+  overflow: hidden;
+  background: rgba(4, 8, 12, 0.78);
+}
+
+/* 条内不画刻度横线：纯色填充高度本身就是读数 */
+
+/* 内描边最上层，保证框线完整一圈 */
+.bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+}
+
+/* 恢复成原来的纯色块：贴着框从底部升起，不做内缩 / 液面高光 / 渐层 */
+.fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  height: 0;
+  /* 不做 transition：30Hz 刷新会不断打断过渡，高度会明显落后于数值 */
+}
+.pedal.brake .fill    { background: var(--brake); }
+.pedal.throttle .fill { background: var(--throttle); }
+
+/* ---------------- 背景是浅色时：中性线换深色 ----------------
+ * 用户在设置里选了浅色底（白、浅灰，或不透明度拉高后的浅色）时，
+ * 白色分割线会直接消失。状态色（红 / 绿 / 蓝 / 橙）和文字色不动 ——
+ * 一个属于语义、一个是用户自己选的。
+ * 判定在 theme.js：按 backgroundColor 的亮度 × backgroundOpacity 算，
+ * 写到 html[data-host-light]。
+ */
+html[data-host-light='1'] .inputs {
+  border-right-color: rgba(0, 0, 0, 0.45);
+}
+
+/* ---------------- 独立打开（双击 index.html）时的预览舞台 ----------------
+ * 只用于本地看样式：给一块模拟游戏画面的底色 + 固定 600×134 居中，
+ * 避免浏览器窗口比 design 宽时被拉扁。真宿主发 acc:init 后 theme.js 会
+ * 移除 data-standalone，恢复 100% 铺满 + 完全透明。
+ */
+html[data-standalone] body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(120% 85% at 50% -10%, rgba(150, 190, 218, 0.85), transparent 62%),
+    linear-gradient(180deg,
+      #7d97ab 0%, #a6b6b9 25%,
+      #58634f 26%, #3c4439 39%,
+      #292e2b 66%, #343936 100%);
+}
+
+/* 卡片本身透明，不要再加投影：投出来会是一块空矩形的影子 */
+html[data-standalone] .hud {
+  width: 600px;
+  height: 134px;
+  flex: none;
+}

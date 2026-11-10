@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>踏板时序 · Pedal Trace</title>
+    <link rel="stylesheet" href="./theme.css" />
+  </head>
+  <body>
+    <!--
+      设计基准 600×134（见 theme.json），宿主按 contain 等比缩放，内部一律按设计像素写死。
+      三段顺序：时序曲线（固定 380px）→ 两根踏板输入条＋数值（88px）→
+      挡位·迈速·转向（竖线右侧收紧到 132px，转向条 118px 并带度数读数）。
+      踏板信息全部聚在左侧：曲线看历史、紧邻的双条看当前输入，数值只出现一次
+      （条上方纯数字、无 %）；曲线框外不再单列读数栏。
+      一条竖分割线把右侧的车辆状态区分开。
+    -->
+    <div class="hud" id="hud" data-status="idle">
+
+      <!-- 左：上下两条时序，上刹车 / 下油门。最新点恒贴右，历史向左滚。
+           曲线框外不叠任何文字，当前踏板数值由右侧紧邻的双条上方给出。 -->
+      <div class="traces">
+        <div class="chart">
+          <div class="trace brake">
+            <svg viewBox="0 0 400 52" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <!-- 面积渐变锚在用户坐标（不是图形 bbox）：顶部浓、越靠近 x 轴（y=52）越淡，
+                     曲线高低变化时渐变始终相对固定的 x 轴，不会跟着面积高度一起缩放。
+                     中段浓度留够，低开度时那一小条面积也能看出层次，不会整块淡到消失。 -->
+                <linearGradient id="brake-fade" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="52">
+                  <stop offset="0" stop-color="#ff3b52" stop-opacity="0.64" />
+                  <stop offset="0.55" stop-color="#ff3b52" stop-opacity="0.34" />
+                  <stop offset="1" stop-color="#ff3b52" stop-opacity="0.05" />
+                </linearGradient>
+              </defs>
+              <g class="grid">
+                <line x1="0" y1="13" x2="400" y2="13" />
+                <line x1="0" y1="26" x2="400" y2="26" />
+                <line x1="0" y1="39" x2="400" y2="39" />
+              </g>
+              <polygon id="brake-area" class="area" fill="url(#brake-fade)" points="" />
+              <polyline id="brake-line" class="line" points="" />
+              <circle id="brake-dot" class="dot" cx="-10" cy="26" r="2.6" opacity="0" />
+            </svg>
+          </div>
+
+          <div class="trace throttle">
+            <svg viewBox="0 0 400 52" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <linearGradient id="thr-fade" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="52">
+                  <stop offset="0" stop-color="#25e07a" stop-opacity="0.64" />
+                  <stop offset="0.55" stop-color="#25e07a" stop-opacity="0.34" />
+                  <stop offset="1" stop-color="#25e07a" stop-opacity="0.05" />
+                </linearGradient>
+              </defs>
+              <g class="grid">
+                <line x1="0" y1="13" x2="400" y2="13" />
+                <line x1="0" y1="26" x2="400" y2="26" />
+                <line x1="0" y1="39" x2="400" y2="39" />
+              </g>
+              <polygon id="thr-area" class="area" fill="url(#thr-fade)" points="" />
+              <polyline id="thr-line" class="line" points="" />
+              <circle id="thr-dot" class="dot" cx="-10" cy="26" r="2.6" opacity="0" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- 中：两根竖直输入条，从底部往上填，红=刹车 / 绿=油门。
+           整块（矩形 + 上方纯数字）从卡片最右侧搬到曲线右侧，和曲线同属踏板信息区。
+           条内无刻度横线、无文字；数字是纯数字、无 %。 -->
+      <div class="inputs">
+        <div class="pedal brake">
+          <span class="cap" id="brake-pct">--</span>
+          <div class="bar">
+            <div class="fill" id="brake-fill"></div>
+          </div>
+        </div>
+        <div class="pedal throttle">
+          <span class="cap" id="thr-pct">--</span>
+          <div class="bar">
+            <div class="fill" id="thr-fill"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右：上方转向条（横线以中心 0 点分左右，左蓝 / 右橙，两半常驻暗色底），
+           亮色长度走视觉增益曲线（见 theme.js steerVisual），常用转角也能占大半截；
+           条下方是方向盘度数（car.steer × 450 取绝对值，无正负号、靠颜色分左右），
+           只有数字参与居中，° 挂在数字右侧、不进布局；
+           挡位数字真居中（含垂直方向），转速逼近红线时挡位数字同色硬切闪烁提示换挡；
+           迈速小字贴底部、无单位。
+           全卡片不放任何中文标签，只留读数。 -->
+      <div class="center">
+        <div class="steer-bar" aria-hidden="true">
+          <div class="steer-bed left"></div>
+          <div class="steer-bed right"></div>
+          <div class="steer-fill left" id="steer-left"></div>
+          <div class="steer-fill right" id="steer-right"></div>
+          <div class="steer-center"></div>
+        </div>
+        <!-- 数字单独居中，° 绝对定位挂在数字右侧、不参与居中计算 -->
+        <span class="steer-deg" id="steer-deg"><span class="n" id="steer-deg-num">--</span><span class="u" id="steer-deg-unit"></span></span>
+        <div class="cell gear">
+          <span class="v" id="gear">–</span>
+        </div>
+        <div class="cell speed">
+          <span class="v" id="speed">--</span>
+        </div>
+      </div>
+    </div>
+
+    <script src="./theme.js"></script>
+  </body>
+</html>

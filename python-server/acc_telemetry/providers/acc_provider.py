@@ -63,6 +63,19 @@ def _wheel_tuple(arr) -> tuple[float, float, float, float]:
     return (float(arr[0]), float(arr[1]), float(arr[2]), float(arr[3]))
 
 
+def _player_car_id(graphics) -> int:
+    """玩家自己的广播 carId（graphics.playerCarID），未知返回 0。
+
+    这是跨源 join 的唯一自我标识：广播侧 ``focusedCarID`` 是摄像机焦点，切镜头
+    就变，不能用来判断玩家（见 ADR-0001 §2.3）。
+    """
+    try:
+        value = int(graphics.playerCarID)
+    except Exception:
+        return 0
+    return value if value > 0 else 0
+
+
 def _player_world_xy(graphics) -> tuple[float | None, float | None]:
     """从 graphics.carCoordinates 里找出玩家车的世界坐标（米）。
 
@@ -175,6 +188,7 @@ class AccSharedMemoryProvider:
         g_long = (ax * math.cos(heading) + ay * math.sin(heading)) / 9.81
         g_lat = (-ax * math.sin(heading) + ay * math.cos(heading)) / 9.81
         world_x, world_y = _player_world_xy(g)
+        player_car_id = _player_car_id(g)
 
         return Snapshot(
             t_mono=time.monotonic(),
@@ -274,6 +288,8 @@ class AccSharedMemoryProvider:
             disc_life=_wheel_tuple(getattr(p, "discLife", (0.0, 0.0, 0.0, 0.0))),
             # 轮胎组：换胎后编号变化，磨损估算器据此清零
             current_tyre_set=int(getattr(g, "currentTyreSet", 0)),
+            # 玩家自己的广播 carId：跨源 join 的唯一自我标识（0 = 未知）
+            player_car_id=player_car_id,
         )
 
     def read_static(self) -> StaticInfo:

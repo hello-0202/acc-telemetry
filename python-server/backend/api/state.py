@@ -14,11 +14,21 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from bisect import bisect_left
 from typing import Any
 
+from acc_telemetry.services.standings_model import (
+    STANDINGS_STALE_AFTER_S,
+    StandingsSelf,
+    build_standings,
+    empty_standings,
+)
+
 from .. import bus
+
+logger = logging.getLogger(__name__)
 
 # 与 contracts/telemetry-state.json 的 version 保持一致：只有破坏性变更才 +1
 STATE_VERSION = 1
@@ -202,6 +212,37 @@ def _delta_best_ms(snap: Any, meta: dict[str, Any]) -> int | None:
     return int(round(lap_time - reference))
 
 
+def _standings(snap: Any | None) -> dict[str, Any]:
+    """``state.standings``：广播榜单 + 共享内存里的自己。
+
+    - 只有直播态（``status == streaming``）才把实时值传进来；其余情况由
+      ``build_state`` 传 ``None``，输出完整的空结构 + ``reason``；
+    - 广播是增强不是依赖：这里读的只是总线上的一个槽位，广播没连上就是
+      ``available=false``，不影响任何别的字段。
+    """
+    reason = _standings_reason()
+    snapshot = bus.latest_standings
+    if snapshot is None:
+        return empty_standings(reason)
+    try:
+        return build_standings(
+            snapshot,
+            now=time.monotonic(),
+            self_state=StandingsSelf.from_snapshot(snap),
+            stale_after_s=STANDINGS_STALE_AFTER_S,
+            reason=reason,
+        )
+    except Exception:  # noqa: BLE001 - 主题通道绝不能被榜单数据拖垮
+        logger.warning("组装 standings 失败，本次给空结构", exc_info=True)
+        return empty_standings("error")
+
+
+def _standings_reason() -> str:
+    """广播服务报上来的不可用原因（``backend/collector/broadcast_reader.py``）。"""
+    status = bus.standings_status or {}
+    return str(status.get("reason") or "no-data")
+
+
 def _build_live(snap: Any, meta: dict[str, Any]) -> dict[str, Any]:
     track = meta.get("track") or {}
     car = meta.get("car") or {}
@@ -331,6 +372,8 @@ def _build_live(snap: Any, meta: dict[str, Any]) -> dict[str, Any]:
             "trackStatus": getattr(snap, "track_status", "") or "",
             "mandatoryPitMissing": _i(getattr(snap, "mandatory_pits_missing", 0)),
         },
+        # 全场榜单（广播 ~4Hz 单独一条链路，只在 state 里出现，不进高频 frame）
+        "standings": _standings(snap),
     }
 
 
@@ -453,6 +496,8 @@ def _blank_state() -> dict[str, Any]:
             "trackStatus": "",
             "mandatoryPitMissing": None,
         },
+        # 键必须齐全：主题不能因为 standings 缺失而崩
+        "standings": empty_standings("no-data"),
     }
 
 
@@ -505,6 +550,8 @@ def build_state() -> dict[str, Any]:
     else:
         state = _blank_state()
         _apply_meta(state, meta)
+        # 非直播态不给实时榜单，但 reason 要如实说（disabled / no-session / timeout…）
+        state["standings"] = empty_standings(_standings_reason())
 
     _seq += 1
     # 顶层字段放在最前面，方便排查日志时一眼看到状态

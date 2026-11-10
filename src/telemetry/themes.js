@@ -16,9 +16,15 @@ export const BUILTIN_THEME_IDS = [
   'tyres',
   // 轮胎磨损：后端滑移能量估算 + 每圈损耗 / 剩余圈数
   'tyre-wear',
+  // 速度 / 挡位 / 转速环 / 差值 / 圈速：270° 缺口环包挡位，环带随转速由浅到浓重，
+  // 右侧迈速 + 与最佳圈实时差值（绿=更快/红=落后）+ 当前圈速 + 最佳/最后参考圈；换挡时仅左仪表闪烁
+  'speed-delta',
   // 主面板：纯黑底白线框的 GT 座舱。原来只作为外部主题发过 zip，
   // 现在内置 —— 它同时做了深/浅两套配色（宿主切黑白主题会通过 acc:ui 通知）。
   'gt-cockpit',
+  // 踏板时序 HUD：曲线看历史 + 双条看当前输入，右侧转向 / 挡位 / 迈速，
+  // 转速逼近红线时挡位闪烁提示换挡。分类 inputs（操控输入）。
+  'pedal-trace',
 ];
 
 export const DEFAULT_THEME = { id: 'speed-gear', source: 'builtin' };

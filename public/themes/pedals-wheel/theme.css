@@ -7,6 +7,14 @@
  * 没有底板 / 没有卡片边框。
  * 方向 + 幅度看蓝 / 橙进度弧的颜色与长度；环心的盘跟着同角度偏转，
  * 盘顶小矩形指针因此始终停在彩色弧的末端。不显示角度数字。
+ *
+ * 两个细节与内置主题 pedal-trace 对齐（同一个人的两套 HUD 不该有两种语言）：
+ *   1. 踏板：数字在条上方、纯数字无 %、颜色跟随红 / 绿语义色；条内只有贴框
+ *      纯色块，无刻度线、无中文标签（颜色本身就是标签）。原来「标签在上、
+ *      白色数值在下」的写法已撤掉。
+ *   2. 转向：弧长与盘转角都走 steerVisual() 视觉增益 —— 真机常见弯角在 180°
+ *      上下，线性映射只会画出窄窄一截颜色；同一条曲线下 180° 能占到满舵弧长的
+ *      3/4，满舵仍顶到 ±135°。
  */
 
 html,
@@ -16,6 +24,14 @@ body {
   padding: 0;
   background: transparent;
   overflow: hidden;
+}
+
+:root {
+  --brake: #ff3b52;
+  --throttle: #25e07a;
+  /* 槽底色：踏板槽 / 转向进度槽 / 盘面衬底共用同一个浓度，和 pedal-trace 一致 */
+  --trough: rgba(4, 8, 12, 0.78);
+  --mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', monospace;
 }
 
 body {
@@ -45,7 +61,10 @@ body {
   gap: 10px;
 }
 
-/* ---------------- 左右踏板：竖直矩形条 ---------------- */
+/* ---------------- 左右踏板：竖直矩形条（pedal-trace 同一套） ----------------
+ * 一列只有两个节点：条上方的读数 + 条本体。不放中文标签 —— 红 / 绿就是标签，
+ * 标签一进来整列会变成「标签 + 条 + 数值」三行，在 190 高的槽里挤成一团。
+ */
 .pedal {
   position: relative;
   flex: none;
@@ -55,35 +74,34 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 6px;
 }
 
-/* 中文标签「刹车 / 油门」只有两个字，可以放到 12px；字距不用为了塞英文单词压那么紧 */
-.p-lab {
+/* 条上方唯一的读数：纯数字、无 %。
+ * 颜色跟随各自语义色（不跟 --text-color）：选了黑字也不能让刹车数值变黑，
+ * 数值和条必须是同一个颜色，才读得出「这一根就是刹车」。 */
+.p-val {
+  font-family: var(--mono);
   font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  color: var(--text-color, #ffffff);
+  font-weight: 700;
+  line-height: 14px;
+  height: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-/* 左 / 右标签：彩色是设计意图（红=刹车、绿=油门），但要亮到能压在任意画面上 */
-.brake .p-lab {
-  color: #ff5568;
-}
+.brake .p-val { color: var(--brake); }
+.thr .p-val   { color: var(--throttle); }
 
-.thr .p-lab {
-  color: #00f57c;
-}
-
-/* 条本体 = 一个凹槽：底色 + 内描边都在填充之上，填充只负责在里面涨高。 */
+/* 条本体 = 一个凹槽：暗底 + 内描边都在填充之上，填充只负责在里面涨高。
+ * 宽度 30 与 pedal-trace 的输入条同宽，高度按本主题 190 的槽放大到 104。 */
 .p-bar {
   position: relative;
-  width: 28px;
+  width: 30px;
   height: 104px;
-  /* 槽底压深一点，填充与槽的对比才够（透明背景上尤其重要） */
-  background: rgba(10, 14, 19, 0.72);
-  border-radius: 0;
   overflow: hidden;
+  background: var(--trough);
+  border-radius: 0;
 }
 
 /* 内描边：最上层，压住填充边缘，保证框线始终是完整的一圈 */
@@ -93,12 +111,12 @@ body {
   inset: 0;
   z-index: 3;
   pointer-events: none;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
 }
 
-/* 填充：从底部往上长，高度 = 踏板开度。z-index 压在描边之下，所以不会盖住槽壁。
- * 不做 height 过渡：刷新间隔 60ms，过渡会被下一帧反复打断，填充高度会明显落后于数值
- * （实测显示 98% 但只填了不到一半）。60ms 直更已经够顺滑。 */
+/* 填充：贴着框从底部往上长，高度 = 踏板开度；纯色块，不做内缩 / 液面高光 / 渐层。
+ * 不做 height 过渡：刷新间隔 30~60ms，过渡会被下一帧反复打断，填充高度会明显落后
+ * 于数值（实测显示 98% 但只填了不到一半）。 */
 .p-fill {
   position: absolute;
   left: 0;
@@ -108,24 +126,8 @@ body {
   height: 0%;
 }
 
-/* 纯色填充：不做渐变、不做发光，边界就是一条硬线。
- * 高饱和 + 高亮度：背景会透明在游戏画面上，颜色发暗会在亮场景里糊掉。 */
-.brake .p-fill {
-  background: #ff1f38;
-}
-
-.thr .p-fill {
-  background: #00dd5c;
-}
-
-.p-val {
-  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', monospace;
-  font-size: 16px;
-  font-weight: 800;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-color, #ffffff);
-}
+.brake .p-fill { background: var(--brake); }
+.thr .p-fill   { background: var(--throttle); }
 
 /* ---------------- 右侧：转向环（环心是 F1 盘面） ---------------- */
 .steer {
@@ -155,7 +157,7 @@ body {
  * 盘线跟着变暗就会陷进同色的深衬底里，整块盘看不清了。 */
 .w-bed {
   fill: none;
-  stroke: rgba(10, 14, 19, 0.72);
+  stroke: var(--trough);
   stroke-width: 9;
   stroke-linejoin: round;
   stroke-linecap: round;
@@ -171,8 +173,8 @@ body {
 
 /* 12 点指针（盘顶小矩形）：实心，衬底用 7 的描边往外扩一圈 */
 .w-mark-bed {
-  fill: rgba(10, 14, 19, 0.72);
-  stroke: rgba(10, 14, 19, 0.72);
+  fill: var(--trough);
+  stroke: var(--trough);
   stroke-width: 7;
   stroke-linejoin: miter;
 }
@@ -182,15 +184,17 @@ body {
   stroke: none;
 }
 
-/* 进度槽：270°（缺口朝下），深色槽底与踏板的槽同色，彩色进度弧直接盖在它上面 */
+/* 进度槽：270°（缺口朝下），槽底与踏板槽同色，彩色进度弧直接盖在它上面 */
 .st-track {
   fill: none;
-  stroke: rgba(10, 14, 19, 0.72);
+  stroke: var(--trough);
   stroke-width: 8;
   stroke-dasharray: 75 100;
 }
 
-/* 左 / 右转向弧（-450..450 度映射到 ±135°，即 37.5 个 dasharray 单位）
+/* 左 / 右转向弧。满舵 37.5 个 dasharray 单位（= 135°），但长度不是线性 |steer|：
+ * 先过 theme.js 的 steerVisual() 视觉增益（0~200° → 半条弧的 82%，200~450° → 末段 18%），
+ * 180° 也能拉到 3/4 条弧。盘面旋转用的是同一个 vis 值，所以指针始终贴在弧端。
  * 不做 dasharray 过渡：60ms 刷新会打断 80ms 过渡，弧长永远追不上真实值。 */
 /* 弧端与连接一律平切（butt / miter），不要圆头也不要发光 */
 .st-left,

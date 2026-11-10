@@ -34,7 +34,7 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 - **时间**：一律毫秒（`ms`），整数。没有值用 `0`（圈速类）或 `null`（增量类）。
 - **比例**：一律 `0..1`，不给百分比，取整由主题决定。
 - **速度** `km/h`、**温度** `°C`、**胎压** `psi`、**油量** `L`、**距离/坐标** `m`、**角度** `rad`（显示成度由主题换算）。
-- **命名空间**：`session` / `track` / `car` / `lap` / `position` / `wheels[]` / `env` / `flags`。
+- **命名空间**：`session` / `track` / `car` / `lap` / `position` / `wheels[]` / `env` / `flags` / `standings`。
 - 未知字段主题必须忽略；后端只增不删。
 
 ## 四、完整样例
@@ -74,11 +74,15 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
     { "corner": "FL", "pressure": 27.4, "temp": 78.2, "brakeTemp": 412.0, "slip": 0.02, "slipRatio": 0.01, "slipAngle": 0.03, "suspensionTravel": 0.041, "wear": 0.0, "wearEst": 0.12, "wearRatePerLap": 0.021, "wearLapsLeft": 41.9, "wearSource": "estimated" }
   ],
   "env": { "airTemp": 26.0, "roadTemp": 31.0, "airDensity": 1.18, "rainIntensity": 0, "rainIn10min": 0, "rainIn30min": 0, "grip": 2, "surfaceGrip": 1.0, "windSpeed": 1.6, "windDirection": 2.1, "timeOfDay": 52200.0 },
-  "flags": { "yellow": 0, "white": 0, "green": 1, "chequered": 0, "red": 0, "trackStatus": "GREEN", "mandatoryPitMissing": 0 }
+  "flags": { "yellow": 0, "white": 0, "green": 1, "chequered": 0, "red": 0, "trackStatus": "GREEN", "mandatoryPitMissing": 0 },
+  "standings": { "available": true, "stale": false, "complete": true, "source": "broadcasting", "reason": null, "trackMeters": 5793.0,
+    "self": { "carId": 1016, "raceNumber": 811, "name": "BAOBAO DUDU", "team": null, "position": 7, "cupPosition": 0, "trackPosition": 7, "spline": 0.62, "laps": 3, "lastLapMs": 92310, "bestLapMs": 91980, "currentLapMs": 41230, "deltaBestMs": null, "location": "track", "inPit": false, "x": 812.4, "z": -1533.2, "speedKmh": 213, "gapToSelfM": 0.0, "gapAheadM": 7125.4, "gapBehindM": null, "stale": false },
+    "rows": [ /* 与 self 同结构，按官方名次排序；完整两条见 contracts/telemetry-state.json 的 example */ ] }
 }
 ```
 
-`wheels` 实际固定 4 项，顺序 **FL / FR / RL / RR**。
+`wheels` 实际固定 4 项，顺序 **FL / FR / RL / RR**。`standings.rows[]` 的完整样例（含多车）
+以 `contracts/telemetry-state.json` 的 `example.standings` 为准，本文只列字段含义。
 
 ## 五、字段表
 
@@ -227,6 +231,66 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 | `flags.trackStatus` | str | `graphics.trackStatus` | 原文，如 `GREEN` |
 | `flags.mandatoryPitMissing` | int | `graphics.missingMandatoryPits` | 还差几次强制进站 |
 
+### standings（对手榜单，来自广播）
+
+数据源是 ACC 的 **UDP 广播协议**（后端开一条只读连接，每 250ms 组装一次），
+和共享内存那条链路**完全独立**：广播没连上 / 挂了 / 用户根本没开端口，`standings`
+只会变成 `available: false`，其它字段一个都不受影响。所以主题必须当作「可能一直不可用」来写。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `standings.available` | bool | 是否有数据。`false` 时 `rows` 为空，看 `reason` |
+| `standings.stale` | bool | 所有车都超过 5s 没实时更新（或快照本身超过 3s）。`rows` 仍保留（名次/圈速是历史结论），位置类字段可能已是 `null` |
+| `standings.complete` | bool | 名册（EntryList）是否收齐。`false` 表示 `rows` 可能缺车（有人迟到加入） |
+| `standings.source` | str | 固定 `"broadcasting"`，为将来多数据源预留 |
+| `standings.reason` | enum | 不可用原因，见下表。可用时为 `null` |
+| `standings.trackMeters` | float | 赛道长度（米）。未知为 `null` —— 此时其它车的 `gapToSelfM` 也是 `null`（自己那行恒 `0.0`） |
+| `standings.self` | object\|null | 自己这一行（按 `carId` 匹配）。广播里还没自己时为 `null`，`rows` 照出 |
+| `standings.self.gapAheadM` | float\|null | 紧贴前方那辆车的距离（**正数**）。没有前车为 `null` |
+| `standings.self.gapBehindM` | float\|null | 紧贴后方那辆车的距离（**负数**）。没有后车为 `null` |
+| `standings.rows[]` | array | 按官方名次排序的行，字段见下 |
+
+`standings.reason` 取值：
+
+| 值 | 含义 | 用户能做什么 |
+|---|---|---|
+| `disabled` | 配置里关掉了广播 | 打开 `broadcastEnabled` |
+| `port-not-configured` | `broadcasting.json` 的 `updListenerPort` 为 0（**默认就是 0**） | 改成 9000 并重启 ACC |
+| `connecting` | 正在注册 / 等第一个报文 | 等 |
+| `timeout` | 注册超时，或 3s 没新报文（正在退避重连） | 检查游戏是否在赛道上 |
+| `no-session` | 游戏没运行 / 不在赛道上（菜单、回放） | 进场 |
+| `no-data` | 还没收到过任何广播数据 | 等 |
+| `error` | 注册被拒 / 协议异常 | 看后端日志 |
+
+`rows[]` 每行：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `carId` | int | 车辆唯一 ID。**跨源 join 只用它**（姓名/车号/名次都可能重名或被改成 0） |
+| `raceNumber` | int | 车号。未知为 0 |
+| `name` | str | 车手显示名：`FirstName LastName`；缺失时退 `shortName`，最后空串 |
+| `team` | str\|null | 车队名 |
+| `position` | int | 官方名次（P/Q/R）。**0 = 未知**，不要当成最后一名 |
+| `cupPosition` | int | 组别名次。0 = 未知 / 无分组 |
+| `trackPosition` | int | 赛道实际位置，`position` 未知时后端用它排序 |
+| `spline` | float\|null | 赛道归一化进度 `0..1`。超时后为 `null`（`0` 是起跑线，不能拿来当未知） |
+| `laps` | int | 已完成圈数 |
+| `lastLapMs` / `bestLapMs` / `currentLapMs` | int | 毫秒。0 = 还没有 |
+| `deltaBestMs` | int\|null | 与最佳圈的差值，未知为 `null` |
+| `location` | str | `track` / `pitlane` / `pit_entry` / `pit_exit` / `garage` / `unknown` |
+| `inPit` | bool | 是否在维修区（`carLocation == pitlane`；pit_entry / pit_exit / garage 不算） |
+| `x` / `z` | float\|null | 世界坐标，与 `position.x/z` **同一坐标系**，可直接和 `position` 一起画在同一张地图上；未知为 `null` |
+| `speedKmh` | int\|null | 车速 |
+| `gapToSelfM` | float\|null | **正 = 在自车前方，负 = 在自车后方**，单位米。自己那行恒为 `0.0`；算不出为 `null` |
+| `stale` | bool | 这一辆车超过 5s 没实时更新：位置类字段已置空，名次/圈速仍保留 |
+
+三个容易写错的地方：
+
+1. **`gapToSelfM` 是距离不是时间差**。v1 不提供「+1.2s」这种秒差，别自己除以速度估算。
+2. **`position: 0` 不是第一名也不是最后一名**，是「还不知道」。排序时才用 `trackPosition` 兜底。
+3. **`self` 可能为 `null`**（刚进赛道、名册还没回来），此时 `rows` 里的 `gapToSelfM` 仍会算出来；
+   需要「我」的信息时优先用 `state.car` / `state.position`，它们来自共享内存，始终有。
+
 ## 六、需要后端计算的字段
 
 这些共享内存里没有，是契约的重点：
@@ -241,6 +305,8 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 | `lap.deltaBestMs` | 游戏内 DELTA 的比较对象是**本场最佳圈**。优先用本场已记录、且圈速等于 `graphics.iBestTime` 的曲线（先找最快有效圈，再找最快任意圈——ACC 可能把无效圈算进最佳）；没有时退回 PB 曲线并按圈速比例缩放（起点 0、终点对齐 `iBestTime`），再退回 `pbMs × progress` 线性估算；本场无最佳圈返回 `null` |
 | `session.raceDurationMs` | 共享内存不提供正赛长度；读 ACC 本地 `menuSettings.json` 里当前赛季 `CustomRace.raceLength`（秒）×1000。读不到 / 联机 → `null` |
 | `status` | `recording=false` → `idle`（有未清除的错误则 `error`）；recording 中但超过 1.5s 没有新帧 → `waiting`；否则 `streaming`。`GAME_NOT_FOUND`（还没进赛道）不算错误 |
+| `standings.rows[].gapToSelfM` | `(Δ圈数 + Δ进度) × 赛道长度`，Δ进度按 ±0.5 跨起跑线修正、Δ圈数单独计入（套圈的车约等于一整圈，不是几十米）。自己那行固定 `0.0` |
+| `standings.self.gapAheadM` / `gapBehindM` | 所有正 gap 的最小值 / 所有负 gap 的最大值（最接近 0）。没有有效值为 `null` |
 
 ## 七、稳定性规则
 
@@ -256,7 +322,7 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 
 | 项 | 原因 |
 |---|---|
-| `opponents[]`（对手车坐标/圈速） | `carCoordinates` + `carIDs` 有坐标，但缺「车 ID → 车手名/圈速」完整映射，要解析额外 session 命令 |
+| 对手的逐圈历史 / 分段成绩 | 需要广播 + 本地库联合；v1 只给当前圈的 `lastLapMs` / `bestLapMs` |
 | 分区黄旗 `globalYellow1/2/3` | v1 只给全场黄旗 |
 | `carDamage`（5 个部位） | 当前 UI 用不到 |
 | 每段独立成绩 `sectorTimes[]` | 等历史库结构定型 |
@@ -268,6 +334,11 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 - ✅ **P1**：`backend/api/state.py` 组装 + `{"type":"state"}`（录制 30Hz / 待机 2Hz）+ `GET /api/contract` + `GET /api/state`。
   `contracts/telemetry-state.json` 已随 PyInstaller 打进包里（`_MEIPASS/contracts/`）。
 - ✅ **P2**：`ThemeHost`（iframe 沙箱 + contain 缩放 + postMessage）+ 第一个预设主题 `speed-gear`（悬浮窗）。
+- ✅ **广播榜单（`standings`）**：`backend/collector/broadcast_reader.py` 开一条**只读** UDP 连接
+  （`backend/collector/broadcast_reader.py` 注册时故意给错的 `commandPassword`），≤4Hz 把
+  `StandingsSnapshot` 写入 `bus.latest_standings`，`state.py` 用
+  `acc_telemetry/services/standings_model.py` 合成 `standings`。字段口径见本文 §五。
+  广播是**增强不是依赖**：任何异常都吞在广播 Task 里，不影响录制 / 圈次 / HUD。
 ### 实现细节（给后续接手的人）
 
 | 位置 | 职责 |
@@ -277,6 +348,9 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 | `backend/storage/recorder.py::_publish_meta()` | 把赛道/车辆/PB 挂到 `bus.runtime["state_meta"]`，state 组装不去查库 |
 | `backend/api/state.py::build_state()` | 组装 + delta 插值 + status 判定，纯函数式读取总线 |
 | `backend/api/broadcaster.py` | 与旧帧并行推送，`state_hz` / `state_idle_hz` 可在 `bus.runtime` 调 |
+| `backend/collector/broadcast_reader.py` | 广播 UDP 只读连接 + ≤4Hz 组装，写 `bus.latest_standings` / `bus.standings_status`；断线退避 1/2/5/10s，换会话/赛道 `adapter.reset()` |
+| `acc_telemetry/services/standings_model.py` | 广播快照 + 共享内存里的自己 → `standings`（纯函数，可离线测） |
+| `acc_telemetry/sources/broadcast.py` | 唯一接触 `UDPCarInfo` / `UDPLapInfo` 的地方；每车独立新鲜度（5s） |
 
 **参考圈曲线不进 state**：`pbRef`（历史 PB）和 `sessionRef`（本场最佳）都有上千点，只留在内存算
 `lap.deltaMs` / `lap.deltaBestMs`；逐点曲线仍走原来的 `pbref` 事件（那一路是历史 PB 口径）。

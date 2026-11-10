@@ -9,29 +9,30 @@
   <body>
     <!-- 设计基准 300×190（见 theme.json）。宿主按 contain 等比缩放，直接按像素写。
          视觉：左侧两根竖直矩形踏板条（从底部往上填充，油门/刹车并排）+ 右侧转向环，
-         背景透明无底板，纯色填充、直角边界、无发光。 -->
+         背景透明无底板，纯色填充、直角边界、无发光。
+         踏板与 pedal-trace 用的是同一套语言：数字在条上方、纯数字无 %、红 / 绿跟随
+         各自语义色；条内只有贴框的纯色块，没有刻度线，也不放中文标签。 -->
     <div class="hud" id="hud" data-status="idle">
-      <!-- 左：刹车 + 油门并排 -->
+      <!-- 左：刹车 + 油门并排（红=刹车 / 绿=油门，颜色本身就是标签） -->
       <div class="pedals">
         <div class="pedal brake">
-          <span class="p-lab">刹车</span>
+          <span class="p-val" id="brake-val">--</span>
           <div class="p-bar">
             <div class="p-fill" id="brake-fill"></div>
           </div>
-          <span class="p-val" id="brake-val">--</span>
         </div>
 
         <div class="pedal thr">
-          <span class="p-lab">油门</span>
+          <span class="p-val" id="thr-val">--</span>
           <div class="p-bar">
             <div class="p-fill" id="thr-fill"></div>
           </div>
-          <span class="p-val" id="thr-val">--</span>
         </div>
       </div>
 
-      <!-- 右：外围 270° 进度弧（蓝=左 / 橙=右，弧长=幅度，保留不动）+
-           环心换成 F1 方向盘线稿，盘顶那个小矩形当指针：盘转角 = 弧角，
+      <!-- 右：外围 270° 进度弧（蓝=左 / 橙=右，弧长=幅度，走 pedal-trace 同一条
+           视觉增益曲线：0~200° 放大到满舵弧长的 82%，200~450° 压进末段 18%）+
+           环心换成 F1 方向盘线稿，盘顶那个小矩形当指针：盘转角与弧长同源，
            所以指针始终停在彩色弧的末端、指着当前转向那一档颜色。
            已去掉下方角度数字，整块图标在 190 高的槽里垂直居中。 -->
       <div class="steer">

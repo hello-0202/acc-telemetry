@@ -1,7 +1,7 @@
 {
   "version": 1,
   "title": "ACC Telemetry — Theme State Contract",
-  "description": "主题（悬浮窗 / 监测面板 / 副屏看板）能看到的唯一数据源。后端把三块 ACC 共享内存 + 本地数据库（PB 参考）合成一份扁平状态，按 30Hz 推给主题宿主，宿主再注入 iframe。字段只增不删，破坏性变更才升 version。",
+  "description": "主题（悬浮窗 / 监测面板 / 副屏看板）能看到的唯一数据源。后端把三块 ACC 共享内存 + 广播（UDP 只读连接，提供对手榜单）+ 本地数据库（PB 参考）合成一份扁平状态，按 30Hz 推给主题宿主，宿主再注入 iframe。字段只增不删，破坏性变更才升 version。",
   "message": {
     "type": "state",
     "transport": "WebSocket /ws/telemetry",
@@ -54,6 +54,15 @@
       "shared": "ACC 共享内存的原始 tyreWear 在单调增长，直接采用",
       "estimated": "后端按滑移能量积分估算（ACC 官方不用 tyreWear，绝大多数情况是这一档）",
       "none": "还没有有效数据 / 非直播态"
+    },
+    "standingsReason": {
+      "disabled": "配置里关掉了广播（broadcastEnabled=false）",
+      "port-not-configured": "broadcasting.json 的 updListenerPort 为 0，游戏根本没在监听（默认就是 0）",
+      "connecting": "正在注册 / 等第一个报文",
+      "timeout": "注册超时，或超过 3s 没有新报文（判定断线，正在退避重连）",
+      "no-session": "游戏没运行，或不在赛道上（菜单 / 回放）",
+      "no-data": "还没收到过任何广播数据",
+      "error": "注册被拒 / 协议异常"
     }
   },
   "example": {
@@ -101,6 +110,39 @@
     "flags": {
       "yellow": 0, "white": 0, "green": 1, "chequered": 0, "red": 0,
       "trackStatus": "GREEN", "mandatoryPitMissing": 0
+    },
+    "standings": {
+      "available": true,
+      "stale": false,
+      "complete": true,
+      "source": "broadcasting",
+      "reason": null,
+      "trackMeters": 5793.0,
+      "self": {
+        "carId": 1016, "raceNumber": 811, "name": "BAOBAO DUDU", "team": null,
+        "position": 7, "cupPosition": 0, "trackPosition": 7, "spline": 0.62,
+        "laps": 3, "lastLapMs": 92310, "bestLapMs": 91980, "currentLapMs": 41230,
+        "deltaBestMs": null, "location": "track", "inPit": false,
+        "x": 812.4, "z": -1533.2, "speedKmh": 213,
+        "gapToSelfM": 0.0, "gapAheadM": 7125.4, "gapBehindM": null,
+        "stale": false
+      },
+      "rows": [
+        {
+          "carId": 1004, "raceNumber": 802, "name": "CAR 1004", "team": null,
+          "position": 1, "cupPosition": 0, "trackPosition": 1, "spline": 0.85,
+          "laps": 4, "lastLapMs": 115085, "bestLapMs": 114900, "currentLapMs": 12000,
+          "deltaBestMs": null, "location": "track", "inPit": false,
+          "x": 10.0, "z": 20.0, "speedKmh": 212, "gapToSelfM": 7125.4, "stale": false
+        },
+        {
+          "carId": 1016, "raceNumber": 811, "name": "BAOBAO DUDU", "team": null,
+          "position": 7, "cupPosition": 0, "trackPosition": 7, "spline": 0.62,
+          "laps": 3, "lastLapMs": 92310, "bestLapMs": 91980, "currentLapMs": 41230,
+          "deltaBestMs": null, "location": "track", "inPit": false,
+          "x": 812.4, "z": -1533.2, "speedKmh": 213, "gapToSelfM": 0.0, "stale": false
+        }
+      ]
     }
   },
   "fields": [
@@ -217,10 +259,40 @@
     { "path": "flags.chequered", "type": "int", "unit": "", "source": "shared", "raw": "graphics.globalChequered", "desc": "方格旗。" },
     { "path": "flags.red", "type": "int", "unit": "", "source": "shared", "raw": "graphics.globalRed", "desc": "红旗。" },
     { "path": "flags.trackStatus", "type": "str", "unit": "", "source": "shared", "raw": "graphics.trackStatus", "desc": "赛道状态原文（如 GREEN）。" },
-    { "path": "flags.mandatoryPitMissing", "type": "int", "unit": "", "source": "shared", "raw": "graphics.missingMandatoryPits", "desc": "还差几次强制进站。" }
+    { "path": "flags.mandatoryPitMissing", "type": "int", "unit": "", "source": "shared", "raw": "graphics.missingMandatoryPits", "desc": "还差几次强制进站。" },
+
+    { "path": "standings.available", "type": "bool", "unit": "", "source": "broadcasting", "desc": "广播榜单是否可用。false 时 rows 为空，reason 说明原因；其余字段全部不受影响。" },
+    { "path": "standings.stale", "type": "bool", "unit": "", "source": "broadcasting", "desc": "所有车都超过 5s 没实时更新（或快照本身超过 3s）。rows 仍保留（名次/圈速是历史结论），位置类字段可能已是 null。" },
+    { "path": "standings.complete", "type": "bool", "unit": "", "source": "broadcasting", "desc": "EntryList 是否收齐。false 表示 rows 可能缺车（迟到加入 / 名册还没回）。" },
+    { "path": "standings.source", "type": "str", "unit": "", "source": "meta", "desc": "固定 \"broadcasting\"，为将来多数据源预留。" },
+    { "path": "standings.reason", "type": "enum", "unit": "", "enum": "standingsReason", "source": "meta", "desc": "不可用原因。available=true 时为 null。" },
+    { "path": "standings.trackMeters", "type": "float", "unit": "m", "source": "broadcasting", "raw": "trackData.trackMeters", "desc": "赛道长度。未知为 null（此时 gapToSelfM 一律 null）。" },
+    { "path": "standings.self", "type": "object", "unit": "", "source": "broadcasting+shared", "desc": "自己这一行。按 carId 匹配玩家；广播里还没有自己时为 null（rows 照出）。" },
+    { "path": "standings.self.gapAheadM", "type": "float", "unit": "m", "source": "derived", "desc": "紧贴自车前方那辆车相对自车的距离（正数）。没有前车为 null。" },
+    { "path": "standings.self.gapBehindM", "type": "float", "unit": "m", "source": "derived", "desc": "紧贴自车后方那辆车相对自车的距离（负数）。没有后车为 null。" },
+    { "path": "standings.rows[].carId", "type": "int", "unit": "", "source": "broadcasting", "desc": "车辆唯一 ID。跨源 join 只用它——姓名/车号/名次都可能重名或被改成 0。" },
+    { "path": "standings.rows[].raceNumber", "type": "int", "unit": "", "source": "broadcasting", "desc": "车号。未知为 0。" },
+    { "path": "standings.rows[].name", "type": "str", "unit": "", "source": "broadcasting", "desc": "车手显示名：FirstName LastName；缺失时退 shortName，最后空串。" },
+    { "path": "standings.rows[].team", "type": "str", "unit": "", "source": "broadcasting", "desc": "车队名。未填为 null。" },
+    { "path": "standings.rows[].position", "type": "int", "unit": "", "source": "broadcasting", "desc": "官方名次（P/Q/R）。0 = 未知。" },
+    { "path": "standings.rows[].cupPosition", "type": "int", "unit": "", "source": "broadcasting", "desc": "组别名次。0 = 未知 / 无分组。" },
+    { "path": "standings.rows[].trackPosition", "type": "int", "unit": "", "source": "broadcasting", "desc": "赛道上的实际位置。position 未知时用它排序。" },
+    { "path": "standings.rows[].spline", "type": "float|null", "unit": "0..1", "source": "broadcasting", "raw": "splinePosition", "desc": "赛道归一化进度。超时后为 null（0 是起跑线，不能被当成未知）。" },
+    { "path": "standings.rows[].laps", "type": "int", "unit": "", "source": "broadcasting", "desc": "已完成圈数。" },
+    { "path": "standings.rows[].lastLapMs", "type": "int", "unit": "ms", "source": "broadcasting", "desc": "上一圈用时。0 = 还没跑完一圈。" },
+    { "path": "standings.rows[].bestLapMs", "type": "int", "unit": "ms", "source": "broadcasting", "desc": "本场最佳圈。0 = 还没有。" },
+    { "path": "standings.rows[].currentLapMs", "type": "int", "unit": "ms", "source": "broadcasting", "desc": "当前圈已用时。" },
+    { "path": "standings.rows[].deltaBestMs", "type": "int", "unit": "ms", "source": "broadcasting", "desc": "与自车最佳的差值。未知为 null。" },
+    { "path": "standings.rows[].location", "type": "str", "unit": "", "source": "broadcasting", "raw": "carLocation", "desc": "track / pitlane / pit_entry / pit_exit / garage / unknown。" },
+    { "path": "standings.rows[].inPit", "type": "bool", "unit": "", "source": "broadcasting", "desc": "是否在维修区（carLocation == pitlane；pit_entry/pit_exit/garage 不算）。" },
+    { "path": "standings.rows[].x", "type": "float|null", "unit": "m", "source": "broadcasting", "desc": "世界坐标 x，与 position.x 同一坐标系；未知为 null。" },
+    { "path": "standings.rows[].z", "type": "float|null", "unit": "m", "source": "broadcasting", "desc": "世界坐标 z，与 position.z 同一坐标系；未知为 null。" },
+    { "path": "standings.rows[].speedKmh", "type": "int", "unit": "km/h", "source": "broadcasting", "desc": "车速。超时后为 null。" },
+    { "path": "standings.rows[].gapToSelfM", "type": "float", "unit": "m", "source": "derived", "desc": "相对自车的距离：正 = 前方，负 = 后方。自己那行恒为 0.0；算不出为 null。" },
+    { "path": "standings.rows[].stale", "type": "bool", "unit": "", "source": "broadcasting", "desc": "这一辆车超过 5s 没有实时更新。位置类字段已置空，名次/圈速仍保留。" }
   ],
   "deferred": {
-    "opponents": "对手车：graphics.carCoordinates / carIDs 有坐标，但缺「车 ID → 车手名 / 圈速」的完整映射，需要额外的 session 命令解析，放到 v1.1。",
+    "opponentTiming": "对手的逐圈历史与分段成绩（需要广播 + 本地库联合），v1 只给当前圈的 lastLapMs / bestLapMs。",
     "sectorTimes": "每段的独立成绩（不含 lastSectorTime 之外的累积值），等历史库结构确定后再加。",
     "sectorFlags": "globalYellow1/2/3 分区黄旗，v1 只给全场黄旗。",
     "carDamage": "physics.carDamage 五个部位，UI 目前用不到，v1.1 再说。",

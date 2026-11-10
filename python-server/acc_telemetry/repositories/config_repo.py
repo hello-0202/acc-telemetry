@@ -28,6 +28,12 @@ DEFAULTS = {
     "sampleHz": 100,
     "autoStart": True,
     "backgroundResident": False,
+    # 广播（UDP）数据源：只影响 state.standings，不影响录制 / 高频 frame。
+    # broadcastPort = 0 表示自动读 ACC 的 broadcasting.json（读不到回退 9000）。
+    # 本轮没有设置页控件，要改直接编辑 config.json。
+    "broadcastEnabled": True,
+    "broadcastPort": 0,
+    "broadcastIntervalMs": 250,
 }
 
 

@@ -1,0 +1,27 @@
+{
+  "id": "speed-delta",
+  "name": "speed-delta",
+  "version": "1.0.0",
+  "author": "acc-telemetry",
+  "desc": "270° 缺口转速环包挡位，环带随转速由浅到浓重（同色相、不换色）；右侧迈速、与最佳圈实时差值（绿=更快 / 红=落后）、当前圈速与最佳 / 最后参考圈；换挡时仅左侧仪表同色闪烁。",
+  "category": "core",
+  "tags": [
+    "speed",
+    "gear",
+    "rpm",
+    "delta",
+    "lap"
+  ],
+  "design": {
+    "w": 520,
+    "h": 264
+  },
+  "fit": "contain",
+  "modes": [
+    "overlay"
+  ],
+  "overlaySettings": [
+    "background",
+    "textColor"
+  ]
+}
