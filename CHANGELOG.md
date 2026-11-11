@@ -2,7 +2,7 @@
 
 本项目版本号遵循 [语义化版本 2.0.0](https://semver.org/lang/zh-CN/)（SemVer）。
 
-> 当前版本：`1.3.0`（悬浮窗外观设置、多悬浮窗与更新线路，对应 tag `v1.3.0`，发布流程见下文）。
+> 当前版本：`1.4.0`（广播榜单数据、两个新悬浮窗主题与内置主题设置，对应 tag `v1.4.0`，发布流程见下文）。
 
 ## 版本号命名规则 / Versioning rules
 
@@ -17,6 +17,20 @@
 
 
 ## [Unreleased]
+
+## [1.4.0] - 2026-11-11
+
+**新增 / 改动：广播榜单数据（`state.standings`）**
+
+- 新增第二条数据通道：后端另开一条**只读**的 ACC UDP 广播连接（注册时故意给错 `commandPassword`，确保不会对游戏下发任何指令），每 250ms（≤4Hz）把全场车手名册、官方 / 组别名次、赛道进度（`spline`）、圈速（上圈 / 本场最佳 / 当前圈）、与最佳圈差值、维修区状态和世界坐标合成一份 `state.standings`，随主题 state 通道下发（录制 30Hz / 待机 2Hz 的信封，内容实际约 4Hz 刷新）。
+- `standings` 固定 8 个顶层键（`available` / `reason` / `stale` / `complete` / `source` / `trackMeters` / `self` / `rows`），`rows` 每车 20 个字段、已按官方名次排好序；`self` 额外给出前车 / 后车距离（`gapAheadM` / `gapBehindM`）。相对距离一律是**米**，v1 不推算秒差。
+- 不可用时给出 7 种 `reason`：`disabled` / `port-not-configured` / `connecting` / `timeout` / `no-session` / `no-data` / `error`，主题可直接据此写占位文案；非直播态（暂停 / 菜单 / 回放 / 退出）一律返回空结构，不保留上一场旧榜单。
+- 广播是**增强不是依赖**：广播 Task 自己吞掉全部异常并退避重连（1 / 2 / 5 / 10s），数据只写独立槽位，不进 `bus.runtime`、不进高频 `frame`；广播坏了不影响录制、圈次识别和其余 HUD 字段。
+- 合并规则：跨源 join 只用 `carId`（共享内存 `graphics.playerCarID` 对广播 `carId`），玩家身份不读广播的 `focusedCarId`；每车独立新鲜度，超过 5s 没更新就标 `stale` 并清掉位置类字段，名次 / 圈速仍保留。
+- `config.json` 新增 `broadcastEnabled`（默认 `true`）、`broadcastPort`（默认 `0` = 自动读 ACC 的 `broadcasting.json`，读不到回退 9000）、`broadcastIntervalMs`（默认 250）；本轮没有设置页控件。ACC 默认 `updListenerPort = 0` 等于关闭广播，需要用户自行开启。
+- 契约只增不删，`STATE_VERSION` 仍为 1；`contracts/telemetry-state.json` 与主题契约新增 `standings` 一节。
+- 新增文档：`docs/standings-ai-guide.md`（给 AI / 主题作者的使用指南）、`docs/adr/0001-data-source-architecture.md`（数据源分层与失败隔离）、两份广播任务书；`python-server/tools/broadcast_probe.py` 提供真机只读探针（抓包 / 报告）。
+- 广播侧新增 70+ 项测试（适配器 / 读模型 / 契约 / 重放 / 配置），`python -m pytest tests -q` 全绿；Monza 真机已验证注册、名册、坐标映射与名次一致，`deltaBest == 0` 的真实语义待一次行驶采集确认。
 
 **新增 / 改动：内置主题**
 
