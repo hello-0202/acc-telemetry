@@ -41,6 +41,13 @@ import { onThemesChanged } from '../telemetry/theme-watch.js';
 import { THEME_CATEGORIES, UNCATEGORIZED, categoryLabel } from '../telemetry/theme-categories.js';
 import { overlaySlots, setOverlaySlotEnabled } from '../telemetry/overlay-slots.js';
 import { settingGroupsForTheme, settingsForTheme, writeOverlaySetting } from '../telemetry/overlay-settings.js';
+import {
+  overlayThemeSettingsVersion,
+  readThemeSettings,
+  themeSettingsKey,
+  writeThemeSetting,
+} from '../telemetry/overlay-theme-settings.js';
+import { resolveThemeSettings } from '../telemetry/theme-settings.js';
 import ThemePreview from './ThemePreview.vue';
 
 const props = defineProps({
@@ -312,6 +319,26 @@ const activeSlot = computed(() => slotOfTheme(selectedTheme.value));
 const activeSettings = computed(() => settingsForTheme(selectedTheme.value, activeSlot.value));
 // 设置面板按「背景 / 以后加的文字」分组渲染；空分组自动隐藏。
 const activeSettingGroups = computed(() => settingGroupsForTheme(selectedTheme.value, activeSlot.value));
+// 内置主题自己的配置项：schema 来自 theme.json（themes.js 已归一，外部主题恒为空）。
+// 值按「槽位 + 主题」存，切主题 / 切槽位互不串；写完后 version 变化让这里立即重算。
+const activeThemeSettings = computed(() => {
+  const t = selectedTheme.value;
+  if (!t || !activeSlot.value || !(t.settings || []).length) return {};
+  overlayThemeSettingsVersion.value; // 依赖：同窗口写入后重算
+  return resolveThemeSettings(t.settings, readThemeSettings(activeSlot.value, themeSettingsKey(t)));
+});
+const activeThemeSettingGroups = computed(() => {
+  const schema = selectedTheme.value?.settings || [];
+  if (!schema.length) return [];
+  const values = activeThemeSettings.value;
+  const byGroup = new Map();
+  for (const def of schema) {
+    const label = def.group || '主题';
+    if (!byGroup.has(label)) byGroup.set(label, []);
+    byGroup.get(label).push({ def, value: values[def.id] });
+  }
+  return [...byGroup].map(([label, items]) => ({ id: `theme:${label}`, label, items }));
+});
 // 外部主题没有在 theme.json 里声明 overlaySettings 时，注册表返回空数组：
 // 不显示任何控件，只提示「该主题不支持这些外观设置」—— 这就是内置 / 外部的界限。
 const settingsUnsupported = computed(() => (
@@ -319,6 +346,13 @@ const settingsUnsupported = computed(() => (
 ));
 function changeSetting(def, value) {
   writeOverlaySetting(def, activeSlot.value, value);
+}
+
+// 内置主题自己的配置项：写入「槽位 + 主题」存储，广播后悬浮窗立刻生效。
+function changeThemeSetting(def, value) {
+  const t = selectedTheme.value;
+  if (!t || !activeSlot.value) return;
+  writeThemeSetting(activeSlot.value, themeSettingsKey(t), def.id, value);
 }
 
 function settingValue(id) {
@@ -347,6 +381,14 @@ const previewBackgroundBlur = computed(() => {
 const previewTextColor = computed(() => (
   sidebar.value && activeSlot.value ? settingValue('textColor') || '#ffffff' : '#ffffff'
 ));
+// 预览同步主题配置：选中主题即可预览，不必先启用；未启用时按默认值渲染。
+const previewThemeSettings = computed(() => {
+  const t = selectedTheme.value;
+  if (!sidebar.value || !t || !(t.settings || []).length) return null;
+  overlayThemeSettingsVersion.value; // 依赖：改完配置预览立即跟着变
+  const raw = activeSlot.value ? readThemeSettings(activeSlot.value, themeSettingsKey(t)) : {};
+  return resolveThemeSettings(t.settings, raw);
+});
 
 function canPreview(t) {
   return !!t && !t.error && !t.isPanel;
@@ -732,6 +774,7 @@ watch(() => props.active, (on) => {
                   :background-opacity="previewBackgroundOpacity"
                   :background-blur="previewBackgroundBlur"
                   :text-color="previewTextColor"
+                  :settings="previewThemeSettings"
                   :badge="false"
                   live
                 />
@@ -875,6 +918,28 @@ watch(() => props.active, (on) => {
                     </div>
 
                     <div v-if="s.def.hint" class="tpk-setting-hint">{{ s.def.hint }}</div>
+                    </div>
+                  </section>
+
+                  <!-- 内置主题自己的配置项（theme.json 的 settings）。
+                       外部主题 schema 恒为空，所以这里不会出现 —— 外部仍只有背景 / 文字色。 -->
+                  <section
+                    v-for="g in activeThemeSettingGroups"
+                    :key="g.id"
+                    class="tpk-setting-group tpk-setting-group-theme"
+                  >
+                    <div class="tpk-setting-group-head">{{ g.label }}</div>
+                    <div v-for="s in g.items" :key="s.def.id" class="tpk-setting">
+                      <div class="tpk-setting-label">{{ s.def.label }}</div>
+                      <div class="seg tpk-setting-seg" role="group" :aria-label="s.def.label">
+                        <button
+                          v-for="o in s.def.options"
+                          :key="o.value"
+                          :class="{ active: s.value === o.value }"
+                          @click="changeThemeSetting(s.def, o.value)"
+                        >{{ o.label }}</button>
+                      </div>
+                      <div v-if="s.def.hint" class="tpk-setting-hint">{{ s.def.hint }}</div>
                     </div>
                   </section>
                 </template>

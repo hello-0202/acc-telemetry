@@ -15,10 +15,10 @@
       （条上方纯数字、无 %）；曲线框外不再单列读数栏。
       一条竖分割线把右侧的车辆状态区分开。
     -->
-    <div class="hud" id="hud" data-status="idle">
+    <div class="hud" id="hud" data-status="idle" data-trace-layout="split" data-vehicle="show">
 
-      <!-- 左：上下两条时序，上刹车 / 下油门。最新点恒贴右，历史向左滚。
-           曲线框外不叠任何文字，当前踏板数值由右侧紧邻的双条上方给出。 -->
+      <!-- 左：默认上下两条时序（上刹车 / 下油门），设置里可改成合并成一张图。
+           最新点恒贴右，历史向左滚。曲线框外不叠任何文字，当前踏板数值由右侧紧邻的双条上方给出。 -->
       <div class="traces">
         <div class="chart">
           <div class="trace brake">
@@ -40,7 +40,6 @@
               </g>
               <polygon id="brake-area" class="area" fill="url(#brake-fade)" points="" />
               <polyline id="brake-line" class="line" points="" />
-              <circle id="brake-dot" class="dot" cx="-10" cy="26" r="2.6" opacity="0" />
             </svg>
           </div>
 
@@ -60,7 +59,6 @@
               </g>
               <polygon id="thr-area" class="area" fill="url(#thr-fade)" points="" />
               <polyline id="thr-line" class="line" points="" />
-              <circle id="thr-dot" class="dot" cx="-10" cy="26" r="2.6" opacity="0" />
             </svg>
           </div>
         </div>

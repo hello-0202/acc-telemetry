@@ -11,6 +11,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import ThemeHost from './ThemeHost.vue';
 import { OVERLAY_SLOT_MAX, readThemeChoice } from '../telemetry/theme-choice.js';
 import { overlayBackdropStyle, readOverlayAppearance } from '../telemetry/overlay-background.js';
+import { readThemeSettings, themeSettingsKey } from '../telemetry/overlay-theme-settings.js';
 import { themeSupportsOverlaySetting } from '../telemetry/overlay-settings.js';
 import { disconnect, start, telemetry } from '../telemetry/useTelemetry.js';
 
@@ -37,10 +38,18 @@ const appearance = ref(readOverlayAppearance(slot));
 const backgroundSupported = ref(choice.value.source !== 'user');
 const textSupported = ref(choice.value.source !== 'user');
 
+// 内置主题自己的配置值（曲线布局 / 显示模块……）。按「槽位 + 主题」读，换主题时重新读。
+const themeSettings = ref({});
+function refreshThemeSettings() {
+  const c = choice.value;
+  themeSettings.value = c?.id ? readThemeSettings(slot, themeSettingsKey(c)) : {};
+}
+
 function applyTheme() {
   choice.value = readThemeChoice('overlay', slot);
   backgroundSupported.value = choice.value.source !== 'user';
   textSupported.value = choice.value.source !== 'user';
+  refreshThemeSettings();
 }
 
 const effectiveAppearance = computed(() => (
@@ -86,6 +95,7 @@ let unlistenFocus = null;
 let unlistenVisible = null;
 let unlistenTheme = null;
 let unlistenBackground = null;
+let unlistenThemeSettings = null;
 let blurTimer = null;
 // 拖动 / 缩放期间焦点会短暂离开 webview，此时不能当成「用户去玩游戏了」而回锁
 let interacting = false;
@@ -229,6 +239,13 @@ onMounted(async () => {
   })
     .then((fn) => { unlistenBackground = fn; })
     .catch(() => { /* 权限缺失时忽略 */ });
+  // 内置主题配置（曲线布局 / 显示模块……）：设置页写完后只发一条事件，这里重读并透传给主题。
+  listen('overlay-theme-settings-changed', (e) => {
+    const changed = Number(e.payload?.slot);
+    if (!changed || changed === slot) refreshThemeSettings();
+  })
+    .then((fn) => { unlistenThemeSettings = fn; })
+    .catch(() => { /* 权限缺失时忽略 */ });
   listen('overlay-lock', (e) => {
     locked.value = !!e.payload;
     clearTimeout(blurTimer);
@@ -288,6 +305,7 @@ onBeforeUnmount(() => {
   if (unlistenVisible) unlistenVisible();
   if (unlistenTheme) unlistenTheme();
   if (unlistenBackground) unlistenBackground();
+  if (unlistenThemeSettings) unlistenThemeSettings();
 });
 </script>
 
@@ -313,6 +331,7 @@ onBeforeUnmount(() => {
           :background-color="effectiveAppearance.color"
           :background-opacity="effectiveAppearance.opacity"
           :text-color="effectiveTextColor"
+          :settings="themeSettings"
           :state="telemetry.state"
           @ready="onThemeReady"
         />

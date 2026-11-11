@@ -42,7 +42,7 @@
   }
 
   var TRACE_H = 52;
-  var X_RIGHT = 396;              // 右端留 4px，末端圆点不会被裁
+  var X_RIGHT = 396;              // 右端留 4px，折线不会被裁
   var HISTORY = 150;
   var STEP = X_RIGHT / (HISTORY - 1);
   var hist = [];                   // [{ b: 0..1, t: 0..1 }]
@@ -65,8 +65,8 @@
 
   var hud = $('hud');
   var els = {
-    brakeArea: $('brake-area'), brakeLine: $('brake-line'), brakeDot: $('brake-dot'),
-    thrArea: $('thr-area'), thrLine: $('thr-line'), thrDot: $('thr-dot'),
+    brakeArea: $('brake-area'), brakeLine: $('brake-line'),
+    thrArea: $('thr-area'), thrLine: $('thr-line'),
     brakeFill: $('brake-fill'), thrFill: $('thr-fill'),
     brakePct: $('brake-pct'), thrPct: $('thr-pct'),
     steerLeft: $('steer-left'), steerRight: $('steer-right'), steerDeg: $('steer-deg'),
@@ -102,23 +102,20 @@
 
   /* ------------------------------ 时序绘制 ------------------------------ */
 
-  function drawTrace(key, area, line, dot) {
+  function drawTrace(key, area, line) {
     var len = hist.length;
     if (!len) {
       area.setAttribute('points', '');
       line.setAttribute('points', '');
-      dot.setAttribute('opacity', '0');
       return;
     }
 
     var pts = [];
-    var lastY = TRACE_H;
     for (var i = 0; i < len; i++) {
       var v = hist[i][key];
       var x = X_RIGHT - (len - 1 - i) * STEP;  // 最新点恒定在右端
       var y = 1 + (1 - v) * (TRACE_H - 2);     // v=1 → 1，v=0 → 51
       pts.push(x.toFixed(1) + ',' + y.toFixed(1));
-      lastY = y;
     }
 
     var firstX = X_RIGHT - (len - 1) * STEP;
@@ -127,9 +124,6 @@
     // 面积：从底部起 → 沿折线 → 回到底部右端
     area.setAttribute('points',
       firstX.toFixed(1) + ',' + TRACE_H + ' ' + points + ' ' + X_RIGHT + ',' + TRACE_H);
-    dot.setAttribute('cx', String(X_RIGHT));
-    dot.setAttribute('cy', lastY.toFixed(1));
-    dot.setAttribute('opacity', '1');
   }
 
   /* -------------------------------- 渲染 -------------------------------- */
@@ -157,8 +151,8 @@
         if (hist.length > HISTORY) hist.shift();
       }
 
-      drawTrace('b', els.brakeArea, els.brakeLine, els.brakeDot);
-      drawTrace('t', els.thrArea, els.thrLine, els.thrDot);
+      drawTrace('b', els.brakeArea, els.brakeLine);
+      drawTrace('t', els.thrArea, els.thrLine);
 
       // 唯一的踏板数值：曲线右侧两根条的上方，纯数字、无 %
       els.brakePct.textContent = (live && brk != null) ? String(Math.round(bp * 100)) : '--';
@@ -243,8 +237,23 @@
     try { window.parent.postMessage({ type: 'acc:ready' }, '*'); } catch (e) { /* 独立打开没有 parent */ }
   }
 
+  // 内置主题自己的配置项（theme.json 的 settings）。宿主在 acc:init / acc:ui 里给
+  // 已经补好默认值的对象；这里只认白名单值，避免脏数据把布局写坏。
+  //   traceLayout: split = 刹车 / 油门上下两条；merged = 两条叠在同一张图里
+  //   showVehicle: show / hide = 右侧转向角度、挡位、速度是否显示
+  function applyThemeSettings(s) {
+    if (!s || typeof s !== 'object') return;
+    if (s.traceLayout === 'split' || s.traceLayout === 'merged') {
+      hud.dataset.traceLayout = s.traceLayout;
+    }
+    if (s.showVehicle === 'show' || s.showVehicle === 'hide') {
+      hud.dataset.vehicle = s.showVehicle;
+    }
+  }
+
   function applyUi(msg) {
     if (msg.theme) document.documentElement.dataset.theme = msg.theme;
+    if (msg.settings) applyThemeSettings(msg.settings);
     if (msg.background === 'transparent' || msg.background === 'opaque') {
       document.documentElement.dataset.bg = msg.background;
     }

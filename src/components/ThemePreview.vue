@@ -52,6 +52,8 @@ const props = defineProps({
   backgroundBlur: { type: Number, default: 0 },
   /** 悬浮窗文字颜色（#rrggbb）；主题支持时预览里的字也跟着变。 */
   textColor: { type: String, default: '#ffffff' },
+  /** 内置主题自己的配置值（曲线布局 / 显示模块……），预览和真机保持一致。 */
+  settings: { type: Object, default: null },
 });
 
 // 只有悬浮窗（overlay）预览才把 HUD 画成「浮在游戏上的窗」（四周留游戏画面）。
@@ -108,6 +110,7 @@ onBeforeUnmount(() => {
         :background-color="backgroundColor || '#0b0f14'"
         :background-opacity="backgroundOpacity"
         :text-color="textColor || '#ffffff'"
+        :settings="settings"
       />
     </div>
     <span v-if="badge && design" class="tp-badge">{{ design.w }}×{{ design.h }}</span>

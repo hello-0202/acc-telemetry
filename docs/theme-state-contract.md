@@ -379,7 +379,21 @@ public/themes/speed-gear/
   "design": { "w": 380, "h": 150 },
   "fit": "contain",
   "modes": ["overlay"],
-  "overlaySettings": ["background", "textColor"]
+  "overlaySettings": ["background", "textColor"],
+  "settings": [
+    {
+      "id": "traceLayout",
+      "group": "曲线",
+      "label": "布局",
+      "type": "segmented",
+      "default": "split",
+      "options": [
+        { "value": "split", "label": "分开" },
+        { "value": "merged", "label": "合并" }
+      ],
+      "hint": "分开：刹车 / 油门各一条；合并：叠在同一张图里"
+    }
+  ]
 }
 ```
 
@@ -390,6 +404,10 @@ public/themes/speed-gear/
   设置页才会出现对应的「背景 / 文字」控件、宿主才会应用对应外观；内置主题默认支持。
   `background` 同时覆盖宿主级的「模糊」（Acrylic 整窗效果），主题无需处理。
   不参与 `checkMeta()` 校验，老主题不带此字段不受影响。
+- `settings`：**仅内置主题**可用的业务配置项（如曲线布局、显示哪些模块）。
+  宿主在「背景 / 文字」之后渲染这些控件，值按「悬浮窗槽位 + 主题」存 localStorage，
+  并通过 `acc:init` / `acc:ui` 的 `settings` 对象发给主题；主题自己解释。
+  外部主题即使写了也会在 `themes.js` 里被清空 —— 外部的边界始终只有背景和文字色。
 
 ### 缩放规则
 
@@ -415,8 +433,8 @@ iframe 直接 `width:100%; height:100%`、不做 transform，**主题的视口�
 | 方向 | 消息 | 说明 |
 |---|---|---|
 | 主题 → 宿主 | `{ type: 'acc:ready' }` | 主题脚本就绪，可以喂数据。**每次收到 `acc:init` 都要回一次**（幂等，宿主会忽略重复） |
-| 宿主 → 主题 | `{ type: 'acc:init', v, mode, design, fit, scale, box, theme, background, backgroundColor, backgroundOpacity, textColor }` | 握手 + 告知当前 mode / 设计尺寸 / 缩放方式 / 容器初始尺寸（`box`）/ 宿主黑白色（`theme`）/ 悬浮窗外观（`backgroundColor`：`#rrggbb`，`backgroundOpacity`：0..1，`textColor`：`#rrggbb`；`background` 是兼容字段：`transparent` \| `opaque`） |
-| 宿主 → 主题 | `{ type: 'acc:ui', theme?, background?, backgroundColor?, backgroundOpacity?, textColor? }` | 用户切黑白主题 / 改悬浮窗背景或文字颜色时补发，不用重新 init（重新 init 会再触发一次 ready） |
+| 宿主 → 主题 | `{ type: 'acc:init', v, mode, design, fit, scale, box, theme, background, backgroundColor, backgroundOpacity, textColor, settings }` | 握手 + 告知当前 mode / 设计尺寸 / 缩放方式 / 容器初始尺寸（`box`）/ 宿主黑白色（`theme`）/ 悬浮窗外观（`backgroundColor`：`#rrggbb`，`backgroundOpacity`：0..1，`textColor`：`#rrggbb`；`background` 是兼容字段：`transparent` \| `opaque`）/ 内置主题配置（`settings`：已按 theme.json schema 补好默认值的对象，外部主题为空对象） |
+| 宿主 → 主题 | `{ type: 'acc:ui', theme?, background?, backgroundColor?, backgroundOpacity?, textColor?, settings? }` | 用户切黑白主题 / 改悬浮窗背景、文字颜色或内置主题配置时补发，不用重新 init（重新 init 会再触发一次 ready） |
 | 宿主 → 主题 | `{ type: 'acc:state', payload }` | 就是本文第三节的 state，录制中 30Hz、待机 2Hz |
 
 握手顺序上有两个坑，两边都做了兜底：

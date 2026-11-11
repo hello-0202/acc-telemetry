@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 import { isTauriRuntime, themeBaseUrl } from './theme-url.js';
 import { normalizeCategory } from './theme-categories.js';
+import { normalizeThemeSettingsSchema } from './theme-settings.js';
 
 // 内置主题登记表：新增一个内置主题 = 放进 public/themes/<id>/ + 这里加一行。
 // （public/ 下的文件不会被 import 分析，没法自动枚举，所以只能显式列。）
@@ -96,6 +97,10 @@ function makeEntry(id, source, meta, hasIndex) {
     tags: readTags(m),
     // 外部主题必须显式声明，才会出现「背景颜色 / 不透明度」等设置
     overlaySettings: readOverlaySettings(m),
+    // 主题自己的业务配置（曲线布局 / 显示哪些模块……）**只对内置主题开放**。
+    // 外部主题的边界是「导入 → 预览 / 使用 → 只调背景和文字色」，
+    // 所以即使它的 theme.json 写了 settings 也在这里丢掉，宿主 UI 不会出现额外控件。
+    settings: source === 'builtin' ? normalizeThemeSettingsSchema(m?.settings) : [],
   };
 }
 

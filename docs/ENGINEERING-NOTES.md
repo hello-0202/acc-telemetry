@@ -208,6 +208,13 @@
   面板按 `OVERLAY_SETTING_GROUPS` 分为「背景 / 文字」两组，作用于「选中主题占用的槽位」，
   主题没启用 / 外部主题未声明时只给提示。
   ⚠️ 新设置项若按槽位存，记得同步 `OverlayView.vue` 读值 + 透传给 `ThemeHost` / `acc:ui`。
+- **内置主题自己的配置项（2026-11-11）**：`theme.json` 新增 `settings`（`segmented` 定义，
+  归一在 `src/telemetry/theme-settings.js`），**只对内置主题生效** —— `themes.js` 生成清单时会把
+  `source: "user"` 的 `settings` 清空，外部主题永远只有「背景 / 文字」两组。
+  值按「槽位 + 主题」存 `acc.overlayThemeSettings.<slot>`（`src/telemetry/overlay-theme-settings.js`），
+  写完后发 `overlay-theme-settings-changed`；`OverlayView` 重读并透传给 `ThemeHost`，
+  `ThemeHost` 按 schema 补默认值后通过 `acc:init` / `acc:ui` 的 `settings` 下发。
+  `pedal-trace` 已用上：`traceLayout`（分开 / 合并）与 `showVehicle`（显示 / 隐藏右侧车辆信息）。
 - **预览框固定尺寸**：`.tpk-stage` 高度写死 `15.3846rem`，删掉 `.has-preview` 的高度切换与
   `transition:height` —— 点不点预览都不跳变（用户明确要求）。打开弹窗会自动选中并预览
   当前分类第一个主题（有已启用的优先已启用）。

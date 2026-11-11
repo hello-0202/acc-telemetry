@@ -1,8 +1,9 @@
 /* 踏板时序 HUD —— 设计基准 600×134，全部 px 写死，缩放交给宿主（contain）。
  *
  * 视觉：一整块横向卡片，三段紧凑排布——
- *   左 380px：上下两条时序轨道（上刹车红 / 下油门绿），折线 + 沿 y 轴向 x 轴
- *             渐淡的面积，最新点贴右；框外不叠任何文字。固定宽度、不再撑满；
+ *   左 380px：默认上下两条时序轨道（上刹车红 / 下油门绿，设置里可合并成一张），
+ *             折线 + 沿 y 轴向 x 轴渐淡的面积，最新点贴右；框外不叠任何文字。
+ *             固定宽度、不再撑满；隐藏车辆信息时吃掉省下的宽度；
  *   中 88px：两根 30px 竖直输入条（矩形 + 上方纯数字），框内是贴框铺满的
  *            纯色块，从底部升起；
  *   右 132px：转向横条（中心 0 点，左蓝 / 右橙、两半暗底）+ 条下方度数
@@ -91,6 +92,7 @@ html[data-bg='opaque'] .hud {
 }
 
 .chart {
+  position: relative;   /* 合并布局时，第二条曲线用 inset:0 对齐到这个图表区 */
   flex: 1;
   min-width: 0;
   display: flex;
@@ -132,15 +134,30 @@ html[data-bg='opaque'] .hud {
   stroke-linejoin: round;
   stroke-linecap: round;
 }
-.trace .dot { stroke: none; }
 
 /* 面积渐变定义在 index.html 的 <linearGradient>（userSpaceOnUse，锚在 y=0..52）：
    离 x 轴（y=52）越近越淡。这里不要写 fill —— CSS 的 fill 会盖掉
    polygon 上的 fill="url(#...)"。 */
 .trace.brake .line    { stroke: var(--brake); }
-.trace.brake .dot     { fill: var(--brake); }
 .trace.throttle .line { stroke: var(--throttle); }
-.trace.throttle .dot  { fill: var(--throttle); }
+
+/* 配置项 traceLayout=merged：两条曲线叠在同一张图里。
+   第二个 .trace 绝对定位盖在第一个上，复用同一套坐标；不再重复画底和网格，
+   面积降低一点透明度，红绿叠在一起时不至于糊成一块。折线仍然清晰在前。 */
+.hud[data-trace-layout='merged'] .trace + .trace {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.hud[data-trace-layout='merged'] .trace + .trace .grid { display: none; }
+.hud[data-trace-layout='merged'] .trace .area { opacity: 0.55; }
+
+/* 配置项 showVehicle=hide：整块车辆状态区（转向角度 / 挡位 / 速度）收起，
+   踏板区吃掉省下的宽度；分隔线也一起撤掉，否则右边缘会留下一条无意义的竖线。 */
+.hud[data-vehicle='hide'] .center { display: none; }
+.hud[data-vehicle='hide'] .inputs { border-right: 0; }
+.hud[data-vehicle='hide'] .traces { flex: 1 1 auto; }
 
 /* ---------------- 车辆状态区：转向条（中心 0 点，左蓝 / 右橙） ----------------
  * car.steer -1..1：负向左、正向右。整条横线以中心竖线分界，左右两半常驻

@@ -10,6 +10,7 @@ import { computed, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue';
 import { themeBaseUrl } from '../telemetry/theme-url.js';
 import { onThemesChanged } from '../telemetry/theme-watch.js';
 import { themeName } from '../telemetry/theme.js';
+import { normalizeThemeSettingsSchema, resolveThemeSettings } from '../telemetry/theme-settings.js';
 
 const props = defineProps({
   /** 主题目录名（内置 public/themes/<id>/，用户 %LOCALAPPDATA%\acc-telemetry\themes\<id>\） */
@@ -42,6 +43,12 @@ const props = defineProps({
    *   fluid   —— iframe 铺满容器、不缩放，主题自己用 %/flex 排版（主面板/看板）
    */
   fit: { type: String, default: null },
+  /**
+   * 主题自己的配置值（theme.json 的 `settings` 里声明的项）。
+   * 只对内置主题生效：外部主题的 settings 在 themes.js 已被清空。
+   * 这里只收「用户存过的值」，默认值由 theme.json 的 schema 补齐。
+   */
+  settings: { type: Object, default: null },
 });
 
 // 主题就绪时把设计尺寸抛给页面：悬浮窗据此把窗口调成「主题设计尺寸 + 内边距」
@@ -56,6 +63,9 @@ const fitMode = ref('contain');
 // theme.json 声明的外观能力（如 ['background']）：外部主题没声明的设置不生效。
 // 通过 ready 事件抛给 OverlayView，由它决定要不要铺宿主底板。
 const overlaySettings = ref([]);
+// 主题自己的配置项定义（只内置主题有）；值由父组件按槽位读出来传进 settings。
+const settingsSchema = ref([]);
+const effectiveSettings = computed(() => resolveThemeSettings(settingsSchema.value, props.settings));
 const boxSize = ref({ w: 0, h: 0 });
 const scale = ref(1);
 const ready = ref(false);
@@ -120,6 +130,10 @@ async function loadMeta() {
       overlaySettings.value = Array.isArray(meta?.overlaySettings)
         ? meta.overlaySettings.filter((v) => typeof v === 'string')
         : [];
+      // 外部主题即使写了 settings 也不认：保持「外部只有背景 / 文字色」的边界。
+      settingsSchema.value = props.source === 'user'
+        ? []
+        : normalizeThemeSettingsSchema(meta?.settings);
     }
   } catch {
     /* 没有 theme.json 就用默认尺寸 */
@@ -174,6 +188,9 @@ function sendInit() {
     backgroundColor: props.backgroundColor,
     backgroundOpacity: props.backgroundOpacity,
     textColor: props.textColor,
+    // 内置主题自己的配置项（已按 theme.json schema 补好默认值）。
+    // 外部主题 schema 为空 → 空对象，老主题忽略这个字段即可。
+    settings: { ...effectiveSettings.value },
   });
 }
 
@@ -217,6 +234,9 @@ async function onMessage(event) {
     // 再读一次 theme.json：ready 可能比首次 loadMeta 先到，overlaySettings 必须是最新的，
     // 否则外部主题的「背景支持」会在这条竞态里被判成 false。
     await loadMeta();
+    // 主题可能在第一次 init（schema 还没读到）时就回了 ready；补一条带 settings 的 init，
+    // 保证它拿到补好默认值的配置。对重复 init 回 ready 是主题侧的约定，不会死循环。
+    sendInit();
     pushState(props.state);
     // overlaySettings：外部主题声明支持的能力，OverlayView 据此决定能不能铺宿主底板
     emit('ready', { ...design.value, overlaySettings: overlaySettings.value });
@@ -264,6 +284,13 @@ watch(
   },
 );
 
+// 主题配置变化：同样走轻量 acc:ui。effectiveSettings 依赖 schema + props.settings，
+// 所以设置页改值、或 theme.json 的 schema 迟到，都会在这里补发一次。
+watch(effectiveSettings, (settings) => {
+  if (!ready.value) return;
+  post({ type: 'acc:ui', settings: { ...settings } });
+});
+
 // 换主题（或换来源）时 design 可能完全不同：重读 theme.json 再重新量一次容器，
 // 否则新主题会被按旧主题的尺寸缩放。iframe 的 src 是 computed，会自己重新加载。
 watch(
@@ -274,6 +301,7 @@ watch(
     design.value = { w: 380, h: 150 };
     fitMode.value = 'contain';
     overlaySettings.value = [];
+    settingsSchema.value = [];
     await loadMeta();
     measure();
   },
