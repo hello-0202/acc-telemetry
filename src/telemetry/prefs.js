@@ -7,6 +7,8 @@ import { getConfig } from './api.js';
 export const prefs = reactive({
   sampleHz: 100,
   pushHz: 50,
+  // 对手榜单刷新间隔（毫秒）：50 = 20Hz / 100 = 10Hz / 250 = 4Hz
+  broadcastIntervalMs: 100,
   backgroundResident: false,
 });
 
@@ -14,6 +16,9 @@ export function applyPrefs(values) {
   if (!values) return;
   if (values.sampleHz != null) prefs.sampleHz = Number(values.sampleHz);
   if (values.pushHz != null) prefs.pushHz = Number(values.pushHz);
+  if (values.broadcastIntervalMs != null) {
+    prefs.broadcastIntervalMs = Number(values.broadcastIntervalMs);
+  }
   if (values.backgroundResident != null) {
     prefs.backgroundResident = !!values.backgroundResident;
   }

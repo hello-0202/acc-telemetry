@@ -52,11 +52,11 @@ window.addEventListener('message', (e) => {
 | 事实 | 值 |
 |---|---|
 | 推送频率 | 录制中 **30Hz**，待机 **2Hz** |
-| 榜单内容实际刷新率 | **≈4Hz**（广播侧节奏，外面套着 30Hz 的信封） |
+| 榜单内容实际刷新率 | **默认 ≈10Hz**（广播侧节奏，`broadcastIntervalMs` 可调；外面套着 30Hz 的信封） |
 | 顶层 `payload.status` | `idle` / `waiting` / `streaming` / `error` |
 | 有没有 `standings` 这个键 | **永远有**，键不会缺，别写 `if (payload.standings)` 兜底 |
 
-因为内容只有 4Hz，**别拿它做逐帧平滑动画**——位置会一跳一跳。要做平滑，就在 `spline` 上自己插值。
+因为内容默认只有 10Hz，**别拿它做逐帧平滑动画**——位置会一跳一跳。要做平滑，就在 `spline` 上自己插值。
 
 ---
 

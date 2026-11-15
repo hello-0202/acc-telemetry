@@ -30,10 +30,12 @@ DEFAULTS = {
     "backgroundResident": False,
     # 广播（UDP）数据源：只影响 state.standings，不影响录制 / 高频 frame。
     # broadcastPort = 0 表示自动读 ACC 的 broadcasting.json（读不到回退 9000）。
-    # 本轮没有设置页控件，要改直接编辑 config.json。
+    # 刷新率（broadcastIntervalMs）在设置页「采集与性能」里可调；开关 / 端口仍改 config.json。
     "broadcastEnabled": True,
     "broadcastPort": 0,
-    "broadcastIntervalMs": 250,
+    # 100ms = 10Hz：ACC 每辆车的位置刷新间隔，同时决定榜单快照节拍。
+    # 旧默认 250ms（4Hz）在画相对位置/距离的 HUD 上肉眼能看出慢半拍。
+    "broadcastIntervalMs": 100,
 }
 
 

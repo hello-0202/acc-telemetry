@@ -34,12 +34,21 @@ def test_settings_defaults() -> None:
 
     assert settings.enabled is True
     assert settings.port == 0  # 0 = 自动读 broadcasting.json
-    assert settings.interval_ms == 250
+    assert settings.interval_ms == 100
 
 
 def test_settings_rejects_silly_interval() -> None:
-    assert br.BroadcastSettings.from_config({"broadcastIntervalMs": 0}).interval_ms == 250
+    assert br.BroadcastSettings.from_config({"broadcastIntervalMs": 0}).interval_ms == 100
     assert br.BroadcastSettings.from_config({"broadcastIntervalMs": 1}).interval_ms == 10
+
+
+def test_snapshot_interval_follows_broadcast_interval() -> None:
+    # 组装节拍跟 ACC 的推送间隔走，别在数据源之外再扣一个 4Hz 天花板。
+    assert br._snapshot_interval_s(100) == pytest.approx(0.1)
+    assert br._snapshot_interval_s(250) == pytest.approx(0.25)
+    # 夹到 [20Hz, 4Hz]：太小没意义（state 信封才 30Hz），太大也不多组装。
+    assert br._snapshot_interval_s(10) == pytest.approx(0.05)
+    assert br._snapshot_interval_s(1000) == pytest.approx(0.25)
 
 
 def test_settings_parses_strings_from_json() -> None:

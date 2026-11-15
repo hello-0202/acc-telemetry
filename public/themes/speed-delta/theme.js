@@ -141,6 +141,13 @@
   }
 
   /* ------------------------------- 换挡提示 ------------------------------- */
+  /* 阈值 = 占红线转速的比例，主题设置（theme.json 的 settings.shiftPoint）以 % 下发。
+     默认 94%：以前写死 96%，7600 转的车就是 7296 才提示，离断油只剩约 300 转；
+     低挡转速每秒爬几千转，眼睛看到闪烁再去拉杆已经贴到断油，所以体感偏晚。 */
+  var shiftPoint = 0.94;
+  /* 迟滞：亮过之后要跌到阈值下方 3 个百分点才灭。
+     转速在临界点上波动时，没有迟滞会每帧翻转，闪烁被反复重启，看起来「抽」。 */
+  var SHIFT_OFF_GAP = 0.03;
   var shiftOn = false;
   function setShift(on) {
     if (on === shiftOn) return;
@@ -160,7 +167,10 @@
     var max = maxRpmOf(car);
     var g = num(car.gear);
     if (rpm == null || max == null || g == null || g < 1) return false;
-    return rpm / max >= 0.96;
+    // 点亮用设定阈值，熄灭要求再低 3 个点：换挡后转速掉得很深，不受影响；
+    // 只在临界点附近来回时才起作用。
+    var threshold = shiftOn ? shiftPoint - SHIFT_OFF_GAP : shiftPoint;
+    return rpm / max >= threshold;
   }
 
   /* ------------------------------- 渲染 ------------------------------- */
@@ -219,8 +229,19 @@
     // 幂等：宿主每次 init 都回一条 ready（宿主自己会忽略重复）
     try { window.parent.postMessage({ type: 'acc:ready' }, '*'); } catch (e) { /* 独立打开时无 parent */ }
   }
+  // 主题设置：宿主已按 theme.json schema 补好默认值，这里只取自己关心的项。
+  // 值来自滑块，恒为数字，单位为 %；越界值再兜一次底。
+  function applySettings(s) {
+    if (!s || typeof s !== 'object') return;
+    var p = s.shiftPoint;
+    if (typeof p === 'number' && isFinite(p)) {
+      shiftPoint = Math.max(0.5, Math.min(0.999, p / 100));
+    }
+  }
+
   // 宿主告知的界面状态：文字颜色（主数字 / 标签通过 --text-color 跟随）、背景等
   function applyUi(msg) {
+    applySettings(msg.settings);
     if (msg.theme) document.documentElement.dataset.theme = msg.theme;
     if (msg.background === 'transparent' || msg.background === 'opaque') {
       document.documentElement.dataset.bg = msg.background;

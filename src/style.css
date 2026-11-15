@@ -499,7 +499,6 @@ html[data-theme="dark"] .kv.lap .v{color:#fff}
 .tc-actions .btn{height:1.6923rem;font-size:0.8077rem;padding:0 0.6923rem}
 .theme-tools{display:flex;align-items:center;gap:0.5385rem;flex-wrap:wrap;margin-top:0.7692rem;padding-top:0.7692rem;border-top:0.0769rem solid var(--line)}
 .theme-tools .btn{height:1.8462rem;font-size:0.8462rem;padding:0 0.7692rem}
-.tc-hint{font-size:0.8077rem;color:var(--text-faint)}
 /* 分组标题（仅悬浮窗选择器；主面板不分组）：顺序由 THEME_CATEGORIES 决定，空分类不渲染 */
 .tc-group-title{margin:14px 0 8px;font-family:inherit;font-size:12px;font-weight:600;line-height:1.2;color:var(--ink-dim,#8a94a6);letter-spacing:.04em}
 .theme-group:first-of-type .tc-group-title{margin-top:4px}
@@ -585,11 +584,18 @@ html[data-theme="dark"] .kv.lap .v{color:#fff}
 .tpk-setting-group-head{margin:0.6154rem 0 0.3077rem;padding-bottom:0.3077rem;border-bottom:0.0769rem solid var(--line);font-family:var(--font-display);font-size:1rem;font-weight:700;letter-spacing:0.08em;color:var(--text)}
 /* 同一分组内的设置项之间不再画横线：分组标题已经足够区分，横线反而把行切得太碎 */
 .tpk-setting{display:flex;flex-wrap:wrap;align-items:center;gap:0.4615rem;padding:0.4615rem 0}
-.tpk-setting-label{min-width:4.6154rem;font-size:0.8462rem;color:var(--text-dim)}
+/* 标签 + 小问号同一行：说明不再独占一整行，收进问号的悬停气泡（HelpTip.vue）。
+   标签列**定宽**（6.6rem = 6 个中文 + 间距 + 问号）：否则标签按字数分配宽度，
+   「箭头显示」(4 字) 和「箭头不透明度」(6 字) 会把滑杆左端顶到不同位置，
+   同一列里的拉条就长短不一。定宽后所有滑杆起止点严格对齐。 */
+.tpk-setting-label{flex:0 0 6.6rem;min-width:0;display:flex;align-items:center;gap:0.3077rem;font-size:0.8462rem;color:var(--text-dim)}
+.tpk-setting-label-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tpk-setting-seg button{padding:0.2308rem 0.6154rem;font-size:0.7692rem}
 .tpk-setting-color{width:2.7692rem;height:1.8462rem;padding:0;border:0.0769rem solid var(--line);border-radius:0.2308rem;background:none;cursor:pointer}
+/* 滑杆吃掉标签与数值之间的全部剩余宽度；两侧邻居都定宽，所以每根滑杆等长 */
 .tpk-setting-range{flex:1 1 8rem;min-width:6rem;accent-color:var(--signal);cursor:pointer}
-.tpk-setting-value{min-width:2.6rem;text-align:right;font-family:var(--font-mono);font-size:0.7692rem;color:var(--text-dim);font-variant-numeric:tabular-nums}
+/* 数值列也定宽：「100%」4 字符、「60m」3 字符，不定宽会让滑杆右端也跟着错位 */
+.tpk-setting-value{flex:0 0 2.6rem;min-width:2.6rem;text-align:right;font-family:var(--font-mono);font-size:0.7692rem;color:var(--text-dim);font-variant-numeric:tabular-nums}
 .tpk-setting-presets{display:flex;align-items:center;gap:0.3846rem;flex-wrap:wrap}
 .tpk-setting-preset{height:1.5385rem;font-size:0.7308rem;padding:0 0.4615rem}
 .tpk-setting-preset.active{border-color:var(--signal-text);color:var(--signal-text)}
@@ -597,7 +603,8 @@ html[data-theme="dark"] .kv.lap .v{color:#fff}
 .tpk-swatch:hover{transform:scale(1.08)}
 .tpk-swatch.active{outline:0.1538rem solid var(--signal-text);outline-offset:0.0769rem}
 .tpk-settings-empty code{font-family:var(--font-mono);font-size:0.7308rem;color:var(--text-dim)}
-.tpk-setting-hint{flex-basis:100%;font-size:0.7308rem;line-height:1.5;color:var(--text-faint)}
+/* 主题工具的说明也收成问号，挂在按钮行末尾 */
+.theme-tools .tc-hint-tip{margin-left:auto}
 .tpk-split .theme-tools{margin-top:0.9231rem}
 .tpk-empty{padding:1.5385rem 0;text-align:center;font-size:0.8462rem;color:var(--text-faint)}
 /* 主题选择弹窗 */

@@ -33,6 +33,13 @@ const releasesUrl = computed(() => {
 const SW = [100, 50, 20];
 const PUSH = [60, 50, 30];
 const SAMPLE_LABEL = { 100: '100 Hz 高精', 50: '50 Hz 标准', 20: '20 Hz 省电' };
+// 对手榜单（ACC UDP 广播）刷新率：值存的是注册给 ACC 的毫秒间隔。
+// 20Hz 最跟手但广播包最多；4Hz 是旧默认，画相对位置的 HUD 上延迟明显。
+const BROADCAST_RATES = [
+  { hz: 20, ms: 50 },
+  { hz: 10, ms: 100 },
+  { hz: 4, ms: 250 },
+];
 
 const clearText = ref('清空历史数据');
 const confirmOpen = ref(false);
@@ -293,6 +300,10 @@ function setPushHz(hz) {
   if (prefs.pushHz !== hz) patch({ pushHz: hz });
 }
 
+function setBroadcastMs(ms) {
+  if (prefs.broadcastIntervalMs !== ms) patch({ broadcastIntervalMs: ms });
+}
+
 function toggleResident() {
   patch({ backgroundResident: !prefs.backgroundResident });
 }
@@ -467,6 +478,20 @@ watch(() => telemetry.historyRevision, refresh);
             :disabled="saving"
             @click="setPushHz(hz)"
           >{{ hz }} Hz</button>
+        </div>
+      </div>
+
+      <div class="set-row"><span class="set-label">榜单刷新率
+          <HelpTip label="榜单刷新率说明" text="对手车位置（traffic-radar 等主题的箭头 / 距离）的刷新快慢，来自 ACC UDP 广播。调高更跟手、广播包更多；切换后广播会自动重连生效。" />
+        </span>
+        <div class="seg seg-hz">
+          <button
+            v-for="r in BROADCAST_RATES"
+            :key="r.ms"
+            :class="{ active: prefs.broadcastIntervalMs === r.ms }"
+            :disabled="saving"
+            @click="setBroadcastMs(r.ms)"
+          >{{ r.hz }} Hz</button>
         </div>
       </div>
 

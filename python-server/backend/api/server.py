@@ -110,7 +110,7 @@ def create_app(
         broadcast_conf: dict[str, object] = {
             "broadcastEnabled": config_values.get("broadcastEnabled", True),
             "broadcastPort": config_values.get("broadcastPort", 0),
-            "broadcastIntervalMs": config_values.get("broadcastIntervalMs", 250),
+            "broadcastIntervalMs": config_values.get("broadcastIntervalMs", 100),
         }
 
         def apply_runtime_config(values: dict) -> None:

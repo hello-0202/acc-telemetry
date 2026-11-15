@@ -1,0 +1,110 @@
+/* 交通雷达 HUD —— 设计基准 400×400，全部 px 写死，缩放交给宿主（contain）。
+ *
+ * 视觉：圆心 (200,200)、外圆 r=150（恒等于「箭头显示距离」），屏幕上方 = 本车前方。
+ *   圆周上每支箭头是「矩形杆 + 实心三角头」的导航箭头，尖端贴圆周、整支绕圆心转，
+ *   杆内写距离（数字 14px + 单位 m 11px）；圆内灰色小车是进入「车模型显示距离」的对手。
+ *   所有车模型 18×34 同尺寸，本车只靠白色 + 深描边区分。
+ *   三道圆环：外实线 = 箭头距离，中虚线 = 车模型距离，内红虚线 = 警戒距离。
+ *
+ * 背景不自己画（和其它内置主题同一套约定）：
+ *   0%（默认）        → 宿主不铺底，这里也绝不画，游戏画面直接透出来；
+ *   0% < x < 100%     → 宿主在 iframe 后面铺 rgba(颜色, 不透明度)，主题不能再叠一层；
+ *   ≈100%（opaque）   → 把底板并成同一个 --host-bg，避免两层复合比用户选的更黑。
+ * 需要可读性的元素各自带暗底：数量外置标签、空态提示胶囊。
+ * 文字色跟随 --text-color；紫 / 蓝 / 红 / 灰语义色不跟背景。
+ * syncHostTone() 按背景亮度 × 不透明度写 html[data-host-light]，浅底换深灰中性线。
+ */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+:root {
+  /* 照抄软件外壳的字体栈：数字等宽 + 表格数字，防止位数变化时抖动 */
+  --font-display: 'Chakra Petch', 'Bahnschrift', 'DIN Alternate', 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Sarasa Gothic SC', 'Sarasa Gothic', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'SimHei', 'NSimSun', 'Microsoft YaHei', monospace;
+}
+
+body {
+  font-family: var(--font-display);
+  color: var(--text-color, #E7EBF3);
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+.radar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+.radar text {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 不透明度拉满：宿主已经铺了实色，这里并成同一块，避免再叠一层深色 */
+html[data-bg='opaque'] .radar {
+  background: var(--host-bg, #0b0f14);
+}
+
+/* 非 streaming：整体压暗，别把上一场的车流当成实时值 */
+.radar[data-status='idle'],
+.radar[data-status='waiting'],
+.radar[data-status='error'] {
+  opacity: 0.72;
+}
+
+/* 有任意车进入箭头范围时圆环才亮起来；全离开后淡出（只在状态翻转时切，不做逐帧动画） */
+.ring {
+  transition: opacity 0.35s ease;
+}
+.radar[data-active='0'] .ring {
+  opacity: 0.18;
+}
+
+/* 数量：默认写在车内，设置里可挪到车下方标签 */
+.radar[data-count-pos='inside'] #badge { opacity: 0; }
+.radar[data-count-pos='label'] #badge { opacity: 1; }
+.radar[data-count-pos='label'] #self-count { opacity: 0; }
+
+/* 圆内对手车：浅色底板上换深一档灰，别和底板糊在一起 */
+.opponent-body {
+  fill: #888780;
+  stroke: #475569;
+}
+
+/* ---------------- 浅色底板 ----------------
+ * 白色本车靠描边区分，浅底时描边再加深；中环和对手车同步换深灰。
+ * 语义色（警戒红 / 八套箭头配色）不动。 */
+html[data-host-light='1'] .ring-mid { stroke: #475569; }
+html[data-host-light='1'] .opponent-body { fill: #5F5E5A; stroke: #334155; }
+html[data-host-light='1'] #self rect { stroke: #0F172A; }
+
+/* ---------------- 独立打开（双击 index.html）时的预览舞台 ----------------
+ * 只用于本地看样式：给一块模拟游戏画面的底色 + 固定 400×400 居中。
+ * 真宿主发 acc:init 后 theme.js 会移除 data-standalone，恢复 100% 铺满 + 完全透明。 */
+html[data-standalone] body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(120% 85% at 50% -10%, rgba(150, 190, 218, 0.85), transparent 62%),
+    linear-gradient(180deg,
+      #7d97ab 0%, #a6b6b9 25%,
+      #58634f 26%, #3c4439 39%,
+      #292e2b 66%, #343936 100%);
+}
+
+html[data-standalone] .radar {
+  width: 400px;
+  height: 400px;
+  flex: none;
+}

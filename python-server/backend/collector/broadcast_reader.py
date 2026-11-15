@@ -6,8 +6,8 @@
   （``isReadOnly=True``）。切镜头 / 换 HUD 页不需要，也就不该有写权限。
 - **只喂适配器**：UDP 包全部交给 ``BroadcastAdapter.feed()``，本模块不认识任何
   ACC 结构体、不做字段翻译（ADR-0001 §2.1）。
-- **节流组装**：包到得再快也只按 ``SNAPSHOT_INTERVAL_S``（4Hz）组装一次快照，
-  广播绝不驱动 30Hz 的 state 或 100Hz 的采集。
+- **节流组装**：快照按 ``realtimeUpdateInterval``（``broadcastIntervalMs``）的节奏组装，
+  默认 100ms ≈ 10Hz，最多 20Hz。广播绝不驱动 30Hz 的 state 或 100Hz 的采集。
 - **失败隔离**：任何异常都吞在这里、只记日志。广播坏了不能影响录制 / 圈次 / HUD，
   更不能写 ``state_error``。
 
@@ -19,7 +19,7 @@
     CONNECTING（只读注册，等 REGISTRATION_RESULT）
       │ 成功                    │ 超时 / 被拒
       ▼                        ▼
-    CONNECTED ─ 4Hz → bus ──→  BACKOFF(1/2/5/10s)
+    CONNECTED ─ 10Hz → bus ──→  BACKOFF(1/2/5/10s)
       │ 3s 无包 / 离开赛道
       └→ 清空 standings，退避重连
 """
@@ -53,7 +53,11 @@ CLIENT_NAME = "acc-telemetry"
 READ_ONLY_COMMAND_PASSWORD = "__acc_telemetry_read_only__"
 
 # ---- 节拍 / 超时 ----------------------------------------------------------
-SNAPSHOT_INTERVAL_S = 0.25  # 组装快照（≤4Hz，广播本身的刷新率就在这量级）
+# 快照组装节拍跟着注册时请求的 realtimeUpdateInterval 走：ACC 按这个间隔给每辆车
+# 推 RealtimeCarUpdate，组装得比它快没有新数据，比它慢就是白加一层延迟。
+# 旧实现写死 0.25s，等于在数据源之外又扣了一个 4Hz 天花板。
+SNAPSHOT_INTERVAL_MIN_S = 0.05  # 20Hz：主题 state 信封才 30Hz，再快也没人消费
+SNAPSHOT_INTERVAL_MAX_S = 0.25  # 配置把间隔调大时最多仍按 4Hz 组装（多组装无意义）
 REGISTER_TIMEOUT_S = 2.0
 PACKET_TIMEOUT_S = 3.0  # 超过这么久没包 = 断线
 IDLE_POLL_S = 1.0  # 不可用状态下的复查间隔
@@ -69,12 +73,14 @@ ACC_LIVE, ACC_PAUSE = 2, 3
 
 @dataclass(frozen=True, slots=True)
 class BroadcastSettings:
-    """广播开关（来自 ``config.json``，本轮没有设置页控件）。"""
+    """广播配置：刷新率在设置页可调，开关 / 端口直接改 ``config.json``。"""
 
     enabled: bool = True
     # 0 = 自动读 broadcasting.json；文件里也是 0 视为「未配置」
     port: int = 0
-    interval_ms: int = 250
+    # 默认 100ms：ACC 每辆车按这个间隔推位置。旧默认 250ms（4Hz）在
+    # traffic-radar 这类画相对位置的 HUD 上能明显看出「箭头慢几拍」。
+    interval_ms: int = 100
 
     @classmethod
     def from_config(cls, values: dict[str, Any] | None) -> "BroadcastSettings":
@@ -82,7 +88,7 @@ class BroadcastSettings:
         return cls(
             enabled=bool(values.get("broadcastEnabled", True)),
             port=_as_int(values.get("broadcastPort")),
-            interval_ms=max(10, _as_int(values.get("broadcastIntervalMs"), 250) or 250),
+            interval_ms=max(10, _as_int(values.get("broadcastIntervalMs"), 100) or 100),
         )
 
 
@@ -126,7 +132,7 @@ class _DatagramFeed(asyncio.DatagramProtocol):
     """收到的数据报进缓冲区，并用一个 Event 唤醒主循环。
 
     这里刻意**不用 ``asyncio.Queue``**：``queue.get()`` 一旦被取消（超时那一拍），
-    已经出队的那条报文就永久丢了 —— 4Hz 的车辆更新遇上 4Hz 的等待节奏，实测会
+    已经出队的那条报文就永久丢了 —— 实测按固定节拍等待时几乎每拍都在取消，
     丢掉绝大多数包，榜单全是 stale。缓冲区 + Event 没有这个交接问题：
     Event 只负责叫醒，数据永远留在缓冲区里等 drain。
     """
@@ -265,6 +271,7 @@ async def broadcast_standings_loop(
                     port=port,
                     interval_ms=current.interval_ms,
                     connection_password=str(config.get("connection_password") or ""),
+                    settings=settings,
                 )
             except asyncio.CancelledError:
                 raise
@@ -272,23 +279,38 @@ async def broadcast_standings_loop(
                 logger.exception("广播连接异常，按断线处理")
                 outcome = _Outcome("error", False)
 
-            # 断开就清空：旧榜单继续挂在 state 上比没有更糟
-            bus.latest_standings = None
-            set_standings_status(outcome.reason, port=port)
+            # 断开就清空：旧榜单继续挂在 state 上比没有更糟。
+            # 换了刷新率不算断开 —— 别把内部原因写进契约里的 7 种 reason。
+            if outcome.reason != "reconfigured":
+                bus.latest_standings = None
+                set_standings_status(outcome.reason, port=port)
             if stop_event.is_set():
                 break
 
-            if outcome.connected:
+            if outcome.reason == "reconfigured":
+                # 配置变更不是故障：不进退避计数，马上用新参数重连
                 attempt = 0
-            delay = BACKOFF_S[min(attempt, len(BACKOFF_S) - 1)]
-            attempt += 1
-            logger.info("广播断开（%s），%.0fs 后重连", outcome.reason, delay)
+                delay = 0.1
+            else:
+                if outcome.connected:
+                    attempt = 0
+                delay = BACKOFF_S[min(attempt, len(BACKOFF_S) - 1)]
+                attempt += 1
+            logger.info("广播断开（%s），%.1fs 后重连", outcome.reason, delay)
             if await _sleep(stop_event, delay):
                 break
     finally:
         bus.latest_standings = None
         if bus.standings_status.get("connected"):
             set_standings_status("no-data")
+
+
+def _snapshot_interval_s(interval_ms: int) -> float:
+    """快照组装间隔：跟注册时请求的广播间隔一致，再夹到 [20Hz, 4Hz] 之间。"""
+    return min(
+        SNAPSHOT_INTERVAL_MAX_S,
+        max(SNAPSHOT_INTERVAL_MIN_S, max(10, int(interval_ms)) / 1000.0),
+    )
 
 
 async def _stream(
@@ -298,6 +320,7 @@ async def _stream(
     port: int,
     interval_ms: int,
     connection_password: str,
+    settings: Callable[[], BroadcastSettings] | None = None,
 ) -> _Outcome:
     """一次完整的「注册 → 收包」生命周期。返回结束原因，不抛异常。"""
     loop = asyncio.get_running_loop()
@@ -342,7 +365,15 @@ async def _stream(
             host,
             port,
         )
-        return await _receive(transport, feed, adapter, stop_event)
+        return await _receive(
+            transport,
+            feed,
+            adapter,
+            stop_event,
+            _snapshot_interval_s(interval_ms),
+            interval_ms=interval_ms,
+            settings=settings,
+        )
     finally:
         transport.close()
 
@@ -352,8 +383,16 @@ async def _receive(
     feed: _DatagramFeed,
     adapter: BroadcastAdapter,
     stop_event: asyncio.Event,
+    snapshot_interval: float,
+    *,
+    interval_ms: int,
+    settings: Callable[[], BroadcastSettings] | None = None,
 ) -> _Outcome:
-    """注册成功后的收包主循环：喂包、按 4Hz 组装、补拉名册、判掉线。"""
+    """注册成功后的收包主循环：喂包、按配置节拍组装、补拉名册、判掉线。
+
+    ``settings`` 非空时每秒复查一次广播间隔：用户在设置里改了刷新率，
+    这里直接返回 ``reconfigured``，外层不进退避、立刻按新参数重连。
+    """
     # 先要名册和赛道信息，之后按周期补
     _send(transport, adapter.entry_list_request())
     _send(transport, adapter.track_data_request())
@@ -364,6 +403,7 @@ async def _receive(
     next_entry = now + ENTRY_LIST_RETRY_S
     next_track = now + TRACK_DATA_RETRY_S
     next_session_check = now + SESSION_CHECK_S
+    next_settings_check = now + 1.0
     last_packet = now
     session_key = _session_key(adapter, "")
     # 赛道名要「粘住」：adapter.reset() 会把 trackData 清空，如果拿清空后的空串
@@ -372,6 +412,19 @@ async def _receive(
 
     while not stop_event.is_set():
         now = time.monotonic()
+
+        # 设置页改了「榜单刷新率」：注册间隔是连接级参数，必须重连才生效。
+        # 别退化成下一次进赛道才生效，用户调完没反应会以为坏了。
+        if settings is not None and now >= next_settings_check:
+            next_settings_check = now + 1.0
+            desired = _read_settings(settings)
+            if desired.interval_ms != interval_ms:
+                logger.info(
+                    "广播刷新率变更（%sms → %sms），重连生效",
+                    interval_ms,
+                    desired.interval_ms,
+                )
+                return _Outcome("reconfigured", True)
 
         # 名册：适配器发现过期就立刻补，否则「没齐 5s / 齐了 30s」两档
         if now >= next_entry or adapter.needs_entry_list_sync:
@@ -430,7 +483,7 @@ async def _receive(
             # 组装是纯内存操作，和收包在同一个 Task 里做即可；不跨线程、不加锁
             bus.latest_standings = adapter.snapshot(now=now)
             set_standings_status(None, port=None, connected=True)
-            next_snapshot = now + SNAPSHOT_INTERVAL_S
+            next_snapshot = now + snapshot_interval
 
     return _Outcome("no-data", True)
 

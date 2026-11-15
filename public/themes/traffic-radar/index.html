@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>交通雷达 · Traffic Radar</title>
+    <link rel="stylesheet" href="./theme.css" />
+  </head>
+  <body>
+    <!--
+      设计基准 400×400（见 theme.json），宿主按 contain 等比缩放，内部一律按设计像素写死。
+      圆心 (200,200)，外圆 r=150 恒等于「箭头显示距离」；比例尺 k = 150 / arrowDist。
+      渲染顺序（从底到顶）：三道圆环 → 圆内对手小车 → 圆周箭头 → 白色本车 → 数量 → 空态提示。
+      所有车模型 18×34 同尺寸、竖向车头朝上；广播没有对手 yaw，所以小车不表示车头方向。
+      卡片本身不画底色：背景由宿主按设置铺在 iframe 后面，只有 data-bg='opaque' 时并成同一块。
+      箭头 / 小车节点由 theme.js 池化复用，这里只放固定的骨架。
+    -->
+    <svg
+      id="radar"
+      class="radar"
+      viewBox="0 0 400 400"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      data-status="idle"
+      data-active="0"
+      data-count-pos="inside"
+    >
+      <title>交通雷达悬浮窗</title>
+      <desc>中心白色本车周围一个大圆，圆周上的导航箭头指向附近对手车并写出距离；圆内灰色小车表示更近的车辆，警戒距离内箭头变红。</desc>
+      <g transform="translate(200,200)">
+        <!-- 外圆 = 箭头显示距离；中虚线环 = 车模型显示距离；内红虚线环 = 警戒距离 -->
+        <circle id="outer" class="ring ring-outer" r="150" fill="none" stroke="#A66FC4" stroke-opacity="0.55" stroke-width="1.5" />
+        <circle id="mid" class="ring ring-mid" r="60" fill="none" stroke="#94A3B8" stroke-opacity="0.8" stroke-width="1.2" stroke-dasharray="4 5" />
+        <circle id="inner" class="ring ring-inner" r="50" fill="none" stroke="#FF6B6B" stroke-opacity="0.85" stroke-width="1.2" stroke-dasharray="5 5" />
+
+        <!-- 动态节点：圆内对手车 / 圆周箭头（theme.js 按帧复用，不重建） -->
+        <g id="cars"></g>
+        <g id="arrows"></g>
+
+        <!-- 本车：与对手车完全相同尺寸，只靠白色 + 深描边区分；顶部短横线是风挡 -->
+        <g id="self">
+          <rect x="-9" y="-17" width="18" height="34" rx="5" fill="#FFFFFF" stroke="#334155" stroke-width="1.5" />
+          <path d="M -5,-11 L 5,-11" stroke="#334155" stroke-width="1.5" stroke-linecap="round" />
+          <text id="self-count" x="0" y="8" text-anchor="middle" font-size="14" font-weight="500" fill="#0B1220">0</text>
+        </g>
+
+        <!-- 数量备选位置：车下方小标签（设置项 countPos = label） -->
+        <g id="badge" transform="translate(0,36)" opacity="0">
+          <rect x="-20" y="-11" width="40" height="22" rx="8" fill="#04080C" fill-opacity="0.78" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="1" />
+          <text id="badge-text" x="0" y="5" text-anchor="middle" font-size="14" font-weight="500" fill="#E7EBF3">0</text>
+        </g>
+
+        <!-- 空态：广播没开 / 没进赛道 / 本车坐标不可用时给一行提示，自带暗底保证浅色底板上也能读 -->
+        <g id="notice-group" transform="translate(0,168)" style="display:none">
+          <rect x="-166" y="-14" width="332" height="24" rx="8" fill="#04080C" fill-opacity="0.78" />
+          <text id="notice" x="0" y="4" text-anchor="middle" font-size="12" fill="#E7EBF3"></text>
+        </g>
+      </g>
+    </svg>
+
+    <script src="./theme.js"></script>
+  </body>
+</html>

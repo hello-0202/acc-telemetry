@@ -1,7 +1,7 @@
 {
   "id": "speed-delta",
   "name": "speed-delta",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "author": "acc-telemetry",
   "desc": "270° 缺口转速环包挡位，环带随转速由浅到浓重（同色相、不换色）；右侧迈速、与最佳圈实时差值（绿=更快 / 红=落后）、当前圈速与最佳 / 最后参考圈；换挡时仅左侧仪表同色闪烁。",
   "category": "core",
@@ -23,5 +23,19 @@
   "overlaySettings": [
     "background",
     "textColor"
+  ],
+  "settings": [
+    {
+      "id": "shiftPoint",
+      "group": "换挡",
+      "label": "换挡提示转速",
+      "type": "slider",
+      "min": 88,
+      "max": 99,
+      "step": 1,
+      "unit": "%",
+      "default": 94,
+      "hint": "占红线转速的百分比，调低 = 更早提示。以 7600 转为例，96% ≈ 7296 转，离断油只剩约 300 转；低挡转速爬升快，容易看起来偏晚"
+    }
   ]
 }

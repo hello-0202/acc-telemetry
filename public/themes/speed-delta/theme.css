@@ -6,7 +6,8 @@
  * 布局（设计基准 520×264）：
  *   左侧 270° 缺口转速环包挡位，环带随转速由浅到浓重（同色相、不换色）；
  *   右侧迈速 + 与最佳圈实时差值（绿=更快 / 红=落后）+ 当前圈速 + 最佳 / 最后参考圈。
- *   换挡（rpm / 允许红线 ≥ 96% 且前进挡）时，仅左侧整块仪表同色闪烁。
+ *   换挡（rpm / 允许红线 ≥ 阈值且前进挡）时，仅左侧整块仪表同色闪烁；
+ *   阈值默认 94%，主题设置可调，判定带 3 个百分点迟滞。
  */
 
 html,
@@ -187,19 +188,20 @@ body {
   margin-top: 6px;
   height: 36px;
   display: grid;
-  grid-template-columns: 88px 1fr;
+  grid-template-columns: 100px 1fr;
   align-items: center;
   padding: 0 4px;
   border-top: 1px solid color-mix(in srgb, var(--text-color, #7db6c7) 22%, transparent);
 }
 
-/* 时间标题统一英文、等宽小字、固定白色（不跟随主色、不参与闪烁） */
+/* 时间标题统一英文、等宽、固定白色（不跟随主色、不参与闪烁）。
+   字号 / 字距放大后，「CURRENT LAP」比原来的 88px 标题列宽，列宽跟着放到 100px。 */
 .current-label,
 .time-label {
   font-family: var(--font-num);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.12em;
   color: #ffffff;
   white-space: nowrap;
 }
@@ -228,7 +230,7 @@ body {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 88px 1fr;
+  grid-template-columns: 100px 1fr;
   align-items: center;
   padding: 0 4px;
 }

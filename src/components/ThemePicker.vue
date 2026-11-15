@@ -48,6 +48,7 @@ import {
   writeThemeSetting,
 } from '../telemetry/overlay-theme-settings.js';
 import { resolveThemeSettings } from '../telemetry/theme-settings.js';
+import HelpTip from './HelpTip.vue';
 import ThemePreview from './ThemePreview.vue';
 
 const props = defineProps({
@@ -856,7 +857,11 @@ watch(() => props.active, (on) => {
                   <section v-for="g in activeSettingGroups" :key="g.id" class="tpk-setting-group">
                     <div class="tpk-setting-group-head">{{ g.label }}</div>
                     <div v-for="s in g.items" :key="s.def.id" class="tpk-setting">
-                    <div class="tpk-setting-label">{{ s.def.label }}</div>
+                    <!-- 说明不占行：收进标签旁的小问号，悬停 / 聚焦出气泡（HelpTip.vue） -->
+                    <div class="tpk-setting-label">
+                      <span class="tpk-setting-label-text">{{ s.def.label }}</span>
+                      <HelpTip v-if="s.def.hint" :label="s.def.label + ' 说明'" :text="s.def.hint" />
+                    </div>
 
                     <!-- 滑杆：透明度 0~100% -->
                     <template v-if="s.def.type === 'slider'">
@@ -917,7 +922,6 @@ watch(() => props.active, (on) => {
                       >{{ o.label }}</button>
                     </div>
 
-                    <div v-if="s.def.hint" class="tpk-setting-hint">{{ s.def.hint }}</div>
                     </div>
                   </section>
 
@@ -930,8 +934,25 @@ watch(() => props.active, (on) => {
                   >
                     <div class="tpk-setting-group-head">{{ g.label }}</div>
                     <div v-for="s in g.items" :key="s.def.id" class="tpk-setting">
-                      <div class="tpk-setting-label">{{ s.def.label }}</div>
-                      <div class="seg tpk-setting-seg" role="group" :aria-label="s.def.label">
+                      <div class="tpk-setting-label">
+                        <span class="tpk-setting-label-text">{{ s.def.label }}</span>
+                        <HelpTip v-if="s.def.hint" :label="s.def.label + ' 说明'" :text="s.def.hint" />
+                      </div>
+                      <!-- 主题自己的滑杆（距离 / 透明度等连续量）：复用外观设置的 range + 数值样式 -->
+                      <template v-if="s.def.type === 'slider'">
+                        <input
+                          class="tpk-setting-range"
+                          type="range"
+                          :min="s.def.min"
+                          :max="s.def.max"
+                          :step="s.def.step || 1"
+                          :value="s.value"
+                          :aria-label="s.def.label"
+                          @input="changeThemeSetting(s.def, Number($event.target.value))"
+                        />
+                        <span class="tpk-setting-value">{{ s.value }}{{ s.def.unit || '' }}</span>
+                      </template>
+                      <div v-else class="seg tpk-setting-seg" role="group" :aria-label="s.def.label">
                         <button
                           v-for="o in s.def.options"
                           :key="o.value"
@@ -939,7 +960,6 @@ watch(() => props.active, (on) => {
                           @click="changeThemeSetting(s.def, o.value)"
                         >{{ o.label }}</button>
                       </div>
-                      <div v-if="s.def.hint" class="tpk-setting-hint">{{ s.def.hint }}</div>
                     </div>
                   </section>
                 </template>
@@ -957,10 +977,11 @@ watch(() => props.active, (on) => {
                 <button class="btn btn-ghost" :disabled="busy" @click="reload">
                   {{ busy ? '刷新中…' : '刷新' }}
                 </button>
-                <span class="tc-hint">
-                  把主题目录拷进该文件夹就会自动出现在这里（{{ mode === 'monitor' ? 'modes 含 monitor 的主题才能当主面板'
-                    : 'modes 含 overlay 的主题才能当悬浮窗' }}）
-                </span>
+                <HelpTip
+                  class="tc-hint-tip"
+                  label="主题文件夹说明"
+                  :text="'把主题目录拷进该文件夹就会自动出现在这里（' + (mode === 'monitor' ? 'modes 含 monitor 的主题才能当主面板' : 'modes 含 overlay 的主题才能当悬浮窗') + '）'"
+                />
               </div>
             </div>
           </div>

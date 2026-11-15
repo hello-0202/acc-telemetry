@@ -12,12 +12,16 @@ router = APIRouter(prefix="/api", tags=["config"])
 # 只接受 UI 提供的档位，避免把后端跑进无效频率
 SAMPLE_HZ_CHOICES = (100, 50, 20)
 PUSH_HZ_CHOICES = (60, 50, 30)
+# 对手榜单（ACC UDP 广播）刷新间隔：20Hz / 10Hz / 4Hz。
+# 同时也是注册给 ACC 的 realtimeUpdateInterval，改完由广播 Task 重连生效。
+BROADCAST_INTERVAL_CHOICES = (50, 100, 250)
 
 
 def _values_to_payload(request: Request, values: dict) -> dict:
     return {
         "sampleHz": int(values.get("sampleHz", 100)),
         "pushHz": int(values.get("pushHz", 50)),
+        "broadcastIntervalMs": int(values.get("broadcastIntervalMs", 100)),
         "autoStart": bool(values.get("autoStart", True)),
         "backgroundResident": bool(values.get("backgroundResident", False)),
         "dbPath": str(request.app.state.db.path),
@@ -53,6 +57,13 @@ def save_config(payload: dict, request: Request) -> dict:
         push_hz = _coerce_choice(payload["pushHz"], PUSH_HZ_CHOICES)
         if push_hz is not None:
             clean["pushHz"] = push_hz
+
+    if "broadcastIntervalMs" in payload:
+        interval_ms = _coerce_choice(
+            payload["broadcastIntervalMs"], BROADCAST_INTERVAL_CHOICES
+        )
+        if interval_ms is not None:
+            clean["broadcastIntervalMs"] = interval_ms
 
     if "autoStart" in payload:
         clean["autoStart"] = bool(payload["autoStart"])

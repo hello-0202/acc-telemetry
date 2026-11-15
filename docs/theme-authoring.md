@@ -112,9 +112,24 @@
 ```
 
 - 值按「悬浮窗槽位 + 主题」存 localStorage，同一个主题放在两个悬浮窗里互不干扰。
-- 目前 `type` 只支持 `segmented`；`default` 必须是某个 option 的 `value`。
+- `type` 支持两种：`segmented`（分段按钮，`default` 必须是某个 option 的 `value`，值恒为字符串）
+  和 `slider`（滑杆，值恒为数字）。滑杆要写 `min` / `max` / `step` / `unit` / `default`：
+
+  ```json
+  {
+    "id": "arrowDist", "group": "距离", "label": "箭头显示", "type": "slider",
+    "min": 60, "max": 220, "step": 5, "unit": "m", "default": 150,
+    "hint": "超出这个距离的车不画箭头"
+  }
+  ```
+
+  值仍按字符串存进 localStorage，宿主用 `resolveThemeSettings()` 转回数字并 clamp 到
+  `[min, max]`；非法值回默认。参考 `public/themes/traffic-radar/theme.json`。
+- `hint` 是可选的一句话说明，**渲染成设置名右边的小问号**，鼠标悬停 / 键盘聚焦才弹气泡，
+  不再占一整行。面板本身很窄，写得再长也不用担心挤压控件，但别写成一段话（气泡最多 250px 宽）。
 - 主题脚本收到 `settings` 后自己决定怎么画（例如 `public/themes/pedal-trace/theme.js`
-  的 `applyThemeSettings()`）。非法定义会被丢掉，不会让主题变成坏主题。
+  的 `applyThemeSettings()`、`public/themes/traffic-radar/theme.js` 的 `applySettings()`）。
+  非法定义会被丢掉，不会让主题变成坏主题。
 
 `category` 的固定取值（`src/telemetry/theme-categories.js` 是单一真源，只有 6 个业务分类 + 未分类）：
 

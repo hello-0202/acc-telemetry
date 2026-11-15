@@ -14,7 +14,7 @@
 //   options   segmented 专用：[{ value, label }]
 //   min/max/step/unit  slider 专用
 //   presets   slider 专用快捷档位 [{ value, label }]；color 专用预设色（#rrggbb 字符串数组）
-//   hint      一句话说明，显示在控件下面
+//   hint      一句话说明：渲染成设置名旁边的小问号，悬停 / 键盘聚焦出气泡（不再占一整行）
 //   appliesTo(theme) -> bool  可选钩子，用来限定「哪些主题才有这项设置」
 //   read(slot) -> value       **必须读响应式状态**（reactive / ref），右侧面板才能在别的窗口改完后跟着更新
 //   write(slot, value)        按槽位写 localStorage + 广播事件，让对应 OverlayView 立刻生效

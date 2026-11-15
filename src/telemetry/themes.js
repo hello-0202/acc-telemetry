@@ -26,6 +26,10 @@ export const BUILTIN_THEME_IDS = [
   // 踏板时序 HUD：曲线看历史 + 双条看当前输入，右侧转向 / 挡位 / 迈速，
   // 转速逼近红线时挡位闪烁提示换挡。分类 inputs（操控输入）。
   'pedal-trace',
+  // 交通雷达：standings.rows[].x/z 与 position.x/z 同坐标系，直接相减算真实米数；
+  // 圆周上贴着「杆+三角头」导航箭头（可在设置里改配色 / 不透明度 / 比例 / 三档距离），
+  // 圆内画同尺寸小车，50m 警戒变珊瑚红。分类 overview。
+  'traffic-radar',
 ];
 
 export const DEFAULT_THEME = { id: 'speed-gear', source: 'builtin' };

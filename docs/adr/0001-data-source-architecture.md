@@ -66,8 +66,9 @@ ACC 还有第二条官方通道：**Broadcasting Network Protocol（UDP）**。�
   设置 `state_error`、停止录制、影响圈次识别、拖慢 100Hz 采集、卡住 WebSocket 广播。
 - 广播断开时，上层读到的就是「没有 `latest_standings`」，UI 退化成现在的单机视图。
 - 反过来不成立：共享内存不需要广播的任何数据。
-- 频率天生不同：共享内存 ~100Hz、广播 4Hz（`realtimeUpdateInterval` 可调）、主题 state 30Hz。
-  **广播绝不驱动高频 HUD 帧**，它只喂读模型，读模型再按自己的节奏（≤4Hz 变化）更新。
+- 频率天生不同：共享内存 ~100Hz、广播默认 10Hz（`broadcastIntervalMs` / `realtimeUpdateInterval`
+  可调；最初默认 4Hz，画相对位置的 HUD 上延迟明显，已调高）、主题 state 30Hz。
+  **广播绝不驱动高频 HUD 帧**，它只喂读模型，读模型再按自己的节奏（不超过广播频率）更新。
 
 推论（下一轮才实现，但方向现在就定死）：
 
@@ -95,7 +96,7 @@ ACC 还有第二条官方通道：**Broadcasting Network Protocol（UDP）**。�
 |---|---|---|
 | EntryList（身份：姓名/车号/组别） | 进服一次 + 重同步 | 几乎不过期，只在**换会话**时清空 |
 | TrackData（赛道长度） | 请求一次 | 换赛道才变 |
-| RealtimeCarUpdate（位置/圈速/名次） | 每车 ~4Hz | **每车独立新鲜度**，某车卡住不代表全场卡住 |
+| RealtimeCarUpdate（位置/圈速/名次） | 每车 ~10Hz（默认，可配） | **每车独立新鲜度**，某车卡住不代表全场卡住 |
 
 所以 `StandingsSnapshot.received_at` 只代表「这份快照被组装出来的时刻」，
 不代表每一行都新鲜。每行的时效靠适配器内的 `carId → 最后更新时间` 判定：
@@ -188,7 +189,7 @@ python-server/
 - `UDPEntryList.entryListCars` 是 vendored 代码里的**类级共享 `defaultdict`**，
   同进程内所有 `UDPBroadcastOutput` 共用一个字典。所以：适配器要显式 `reset()`，
   测试之间必须清理，**同进程只允许一个适配器实例**（本轮以文档 + 断言约束，不改 vendored 代码）；
-- 广播数据是 4Hz，任何需要「毫秒级」的差距计算都要在 4Hz 与 100Hz 之间插值/对齐，
+- 广播数据默认 10Hz，任何需要「毫秒级」的差距计算都要在广播频率与 100Hz 之间插值/对齐，
   这属于读模型的职责，不能交给主题。
 
 ## 5. 后续（下一轮 ADR 或本节增补）

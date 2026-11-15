@@ -233,7 +233,7 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 
 ### standings（对手榜单，来自广播）
 
-数据源是 ACC 的 **UDP 广播协议**（后端开一条只读连接，每 250ms 组装一次），
+数据源是 ACC 的 **UDP 广播协议**（后端开一条只读连接，默认每 100ms 组装一次；设置页「榜单刷新率」可选 20 / 10 / 4 Hz，底层写 `config.json` 的 `broadcastIntervalMs`，范围 10~1000ms），
 和共享内存那条链路**完全独立**：广播没连上 / 挂了 / 用户根本没开端口，`standings`
 只会变成 `available: false`，其它字段一个都不受影响。所以主题必须当作「可能一直不可用」来写。
 
@@ -335,7 +335,8 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
   `contracts/telemetry-state.json` 已随 PyInstaller 打进包里（`_MEIPASS/contracts/`）。
 - ✅ **P2**：`ThemeHost`（iframe 沙箱 + contain 缩放 + postMessage）+ 第一个预设主题 `speed-gear`（悬浮窗）。
 - ✅ **广播榜单（`standings`）**：`backend/collector/broadcast_reader.py` 开一条**只读** UDP 连接
-  （`backend/collector/broadcast_reader.py` 注册时故意给错的 `commandPassword`），≤4Hz 把
+  （`backend/collector/broadcast_reader.py` 注册时故意给错的 `commandPassword`），按
+  `broadcastIntervalMs`（默认 100ms ≈10Hz）把
   `StandingsSnapshot` 写入 `bus.latest_standings`，`state.py` 用
   `acc_telemetry/services/standings_model.py` 合成 `standings`。字段口径见本文 §五。
   广播是**增强不是依赖**：任何异常都吞在广播 Task 里，不影响录制 / 圈次 / HUD。
@@ -348,7 +349,7 @@ ACC 共享内存 ──► collector ──► StateAssembler ──► {"type":
 | `backend/storage/recorder.py::_publish_meta()` | 把赛道/车辆/PB 挂到 `bus.runtime["state_meta"]`，state 组装不去查库 |
 | `backend/api/state.py::build_state()` | 组装 + delta 插值 + status 判定，纯函数式读取总线 |
 | `backend/api/broadcaster.py` | 与旧帧并行推送，`state_hz` / `state_idle_hz` 可在 `bus.runtime` 调 |
-| `backend/collector/broadcast_reader.py` | 广播 UDP 只读连接 + ≤4Hz 组装，写 `bus.latest_standings` / `bus.standings_status`；断线退避 1/2/5/10s，换会话/赛道 `adapter.reset()` |
+| `backend/collector/broadcast_reader.py` | 广播 UDP 只读连接 + 按 `broadcastIntervalMs`（默认 100ms）组装，写 `bus.latest_standings` / `bus.standings_status`；断线退避 1/2/5/10s，换会话/赛道 `adapter.reset()` |
 | `acc_telemetry/services/standings_model.py` | 广播快照 + 共享内存里的自己 → `standings`（纯函数，可离线测） |
 | `acc_telemetry/sources/broadcast.py` | 唯一接触 `UDPCarInfo` / `UDPLapInfo` 的地方；每车独立新鲜度（5s） |
 

@@ -124,6 +124,9 @@ jobs:
           git checkout main 2>/dev/null || git checkout -b main
           git tag -f "$TAG"
           git push -f origin "$TAG"
+          # Gitee 的创建发行版接口把 target_commitish（分支或 commit）当必填字段，
+          # GitHub 不需要。这里直接取 tag 指向的 commit，和刚推上去的 tag 完全一致。
+          echo "GITEE_TARGET_COMMIT=$(git rev-parse "${TAG}^{commit}")" >> "$GITHUB_ENV"
 
       - name: Create Gitee release (reuse if it already exists)
         run: |
@@ -144,7 +147,9 @@ jobs:
               pass
           ')
           if [ -z "$RELEASE_ID" ]; then
-            BODY=$(printf '{"tag_name":"%s","name":"%s","body":"See CHANGELOG.md","prerelease":false}' "$TAG" "$TAG")
+            # target_commitish 是 Gitee 的必填字段（不传会 400），值是上一步推 tag 的那个 commit。
+            test -n "${GITEE_TARGET_COMMIT:-}" || { echo "GITEE_TARGET_COMMIT 为空，先确认 Push tag to Gitee 成功"; exit 1; }
+            BODY=$(printf '{"tag_name":"%s","name":"%s","target_commitish":"%s","body":"See CHANGELOG.md","prerelease":false}' "$TAG" "$TAG" "$GITEE_TARGET_COMMIT")
             CODE=$(curl -sS --connect-timeout 20 --max-time 60 \
               -o /tmp/release.json -w "%{http_code}" \
               -X POST "https://gitee.com/api/v5/repos/${GITEE_REPO}/releases" \

@@ -1,0 +1,141 @@
+{
+  "id": "traffic-radar",
+  "name": "traffic-radar",
+  "version": "0.2.0",
+  "author": "",
+  "desc": "交通雷达 HUD：中心是竖向车头朝上的白色本车，周围一个大圆表示箭头显示距离；附近对手车用「矩形杆 + 三角头」的导航箭头表示，箭头尖端贴在圆周上、整支绕圆心旋转，杆内写距离米数。进入车模型显示距离的车会在圆内画成同尺寸灰色小车，进入警戒距离的箭头变珊瑚红。中心数字是范围内的车辆数。数据只取 standings.rows[].x/z 与 position.x/z（同一米制世界坐标系），不需要赛道几何；广播未开启时给出空态提示。400×400，卡片不画底色，底板跟随悬浮窗背景设置。",
+  "category": "overview",
+  "tags": ["traffic", "radar", "proximity", "standings", "broadcast", "distance"],
+  "design": { "w": 400, "h": 400 },
+  "fit": "contain",
+  "modes": ["overlay"],
+  "overlaySettings": ["background", "textColor"],
+  "settings": [
+    {
+      "id": "arrowPalette",
+      "group": "配色",
+      "label": "箭头配色",
+      "type": "segmented",
+      "default": "violet",
+      "options": [
+        { "value": "violet", "label": "亮紫" },
+        { "value": "blue", "label": "蓝" },
+        { "value": "red", "label": "红" },
+        { "value": "teal", "label": "青" },
+        { "value": "orange", "label": "橙" },
+        { "value": "pink", "label": "粉" },
+        { "value": "white", "label": "白" },
+        { "value": "ink", "label": "墨黑" }
+      ],
+      "hint": "实心主色 + 同色系描边；50m 警戒固定珊瑚红，不随配色变"
+    },
+    {
+      "id": "arrowOpacity",
+      "group": "配色",
+      "label": "箭头不透明度",
+      "type": "slider",
+      "min": 20,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "default": 100,
+      "hint": "100% 为实心，调低让箭头淡一些；只作用于圆周箭头与杆内数字，警戒箭头保持醒目，不影响车模型和圆环"
+    },
+    {
+      "id": "arrowShape",
+      "group": "箭头",
+      "label": "箭头比例",
+      "type": "segmented",
+      "default": "stubby",
+      "options": [
+        { "value": "stubby", "label": "短胖" },
+        { "value": "slim", "label": "细长" }
+      ],
+      "hint": "短胖：全长 80 / 杆高 28；细长：全长 96 / 杆高 20"
+    },
+    {
+      "id": "arrowResponse",
+      "group": "箭头",
+      "label": "跟随速度",
+      "type": "slider",
+      "min": 20,
+      "max": 90,
+      "step": 5,
+      "unit": "%",
+      "default": 30,
+      "hint": "箭头 / 距离的一阶低通强度：调高更跟手但不平滑，调低更稳但看起来慢半拍。只影响画法，数据刷新率在「设置 → 采集与性能 → 榜单刷新率」里调"
+    },
+    {
+      "id": "unitSize",
+      "group": "箭头",
+      "label": "单位 m 字号",
+      "type": "segmented",
+      "default": "small",
+      "options": [
+        { "value": "small", "label": "小号" },
+        { "value": "same", "label": "同大" }
+      ],
+      "hint": "杆内距离数字固定 14px，单位 m 可缩小一号"
+    },
+    {
+      "id": "arrowDist",
+      "group": "距离",
+      "label": "箭头显示",
+      "type": "slider",
+      "min": 60,
+      "max": 220,
+      "step": 5,
+      "unit": "m",
+      "default": 150,
+      "hint": "同时是雷达外圆半径；超出这个距离的车不画箭头，也不计入中心数量"
+    },
+    {
+      "id": "modelDist",
+      "group": "距离",
+      "label": "车模型显示",
+      "type": "slider",
+      "min": 20,
+      "max": 140,
+      "step": 5,
+      "unit": "m",
+      "default": 60,
+      "hint": "进入这个距离才在圆内画灰色小车模型（中虚线环）"
+    },
+    {
+      "id": "alertDist",
+      "group": "距离",
+      "label": "警戒提示",
+      "type": "slider",
+      "min": 20,
+      "max": 120,
+      "step": 5,
+      "unit": "m",
+      "default": 50,
+      "hint": "箭头变珊瑚红（内红虚线环）；超过车模型距离时自动受其约束"
+    },
+    {
+      "id": "firstLap",
+      "group": "显示",
+      "label": "第一圈",
+      "type": "segmented",
+      "default": "show",
+      "options": [
+        { "value": "show", "label": "显示" },
+        { "value": "hide", "label": "不显示" }
+      ],
+      "hint": "发车第一圈车挤在一起、箭头会糊成一片。选「不显示」时只保留本车与圆环，跨过起跑线（已完成圈数 ≥ 1）后自动恢复"
+    },
+    {
+      "id": "countPos",
+      "group": "显示",
+      "label": "数量位置",
+      "type": "segmented",
+      "default": "inside",
+      "options": [
+        { "value": "inside", "label": "车内" },
+        { "value": "label", "label": "车下方标签" }
+      ],
+      "hint": "中心数字 = 进入「箭头显示」距离内的车辆数，无单位"
+    }
+  ]
+}
