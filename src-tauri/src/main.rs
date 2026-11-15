@@ -738,14 +738,20 @@ fn ensure_overlay_window<R: tauri::Runtime>(
     .focused(false)
     .visible(false)
     .build();
-    match built {
-        Ok(win) => Some(win),
+    let win = match built {
+        Ok(win) => win,
         Err(e) => {
             // 并发创建时后手会拿到 "window already exists"，再取一次就行
             eprintln!("[overlay] 创建 {label} 失败: {e}");
-            app.get_webview_window(&label)
+            return app.get_webview_window(&label);
         }
+    };
+    // 新窗口一建好（此时还是隐藏的）就先恢复保存的位置，不能等第一次 show：
+    // 隐藏窗口里的主题 iframe 同样会加载并触发 resize，等 show 再恢复就晚了。
+    if place_overlay(&win, slot) {
+        mark_overlay_placed(slot);
     }
+    Some(win)
 }
 
 // ── 悬浮窗位置 / 尺寸持久化 ──
@@ -791,15 +797,17 @@ fn load_overlay_rect(slot: u8) -> Option<OverlayRect> {
         .or_else(|| (slot == 1).then_some(st.overlay).flatten())
 }
 
-fn place_overlay<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>, slot: u8) {
+/// 把窗口摆回保存过的几何；没有保存过就贴主显示器右上角。
+/// 返回是否已经成功定位：拿不到显示器信息（窗口还没上屏）时返回 false，让调用方稍后重试。
+fn place_overlay<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>, slot: u8) -> bool {
     // 有保存过的几何就直接恢复（用户拖过 / 拉过之后记住），否则首次贴主显示器右上角
     if let Some(r) = load_overlay_rect(slot) {
         let _ = win.set_position(tauri::PhysicalPosition::new(r.x, r.y));
         let _ = win.set_size(tauri::PhysicalSize::new(r.w, r.h));
-        return;
+        return true;
     }
     let Ok(Some(monitor)) = win.current_monitor() else {
-        return;
+        return false;
     };
     let screen = monitor.size();
     let size = win
@@ -816,6 +824,12 @@ fn place_overlay<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>, slot: u8) {
         - col * (size.width as f64 + margin);
     let y = margin + row * (size.height as f64 + 16.0);
     let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
+    true
+}
+
+/// 标记槽位已完成首次定位，之后显示时不再重复套用保存的几何。
+fn mark_overlay_placed(slot: u8) {
+    OVERLAY_PLACED.lock().unwrap()[slot_index(slot)] = true;
 }
 
 /// 编辑态工具条高度（逻辑像素）。
@@ -931,14 +945,11 @@ fn overlay_set_visible<R: tauri::Runtime>(app: &tauri::AppHandle<R>, show: bool)
             let _ = win.set_always_on_top(true);
             // 每次显示都回到穿透态：平时永远不拦截游戏里的操作
             overlay_set_locked(app, &win, slot, true);
-            let need_place = {
-                let mut placed = OVERLAY_PLACED.lock().unwrap();
-                let need = !placed[idx];
-                placed[idx] = true;
-                need
-            };
-            if need_place {
-                place_overlay(&win, slot);
+            let need_place = !OVERLAY_PLACED.lock().unwrap()[idx];
+            // 正常路径在建窗 / 启动时已经定位好，这里只是兜底：
+            // 当时拿不到显示器信息（窗口还没上屏）会返回 false，显示前再试一次。
+            if need_place && place_overlay(&win, slot) {
+                mark_overlay_placed(slot);
             }
             let _ = win.show();
         } else {
@@ -1015,14 +1026,9 @@ async fn set_overlay_slots(app: tauri::AppHandle, slots: Vec<u8>) {
         let _ = win.set_always_on_top(true);
         overlay_set_locked(&app, &win, slot, true);
         let idx = slot_index(slot);
-        let need_place = {
-            let mut placed = OVERLAY_PLACED.lock().unwrap();
-            let need = !placed[idx];
-            placed[idx] = true;
-            need
-        };
-        if need_place {
-            place_overlay(&win, slot);
+        let need_place = !OVERLAY_PLACED.lock().unwrap()[idx];
+        if need_place && place_overlay(&win, slot) {
+            mark_overlay_placed(slot);
         }
         let _ = win.show();
     }
@@ -1895,6 +1901,19 @@ fn main() {
             // 必须在任何路径读取之前：解析默认布局 / 旧数据迁移 / 应用上次改的路径，
             // 而且此时 sidecar 还没启动，数据库没被占用，复制 WAL 才安全。
             init_paths();
+
+            // 立即恢复已存在悬浮窗（配置里预建的 overlay-1）的位置 / 尺寸。
+            // 此时窗口还是隐藏的，但 WebView 已经在加载主题；如果拖到第一次 show 才恢复，
+            // 主题 ready 触发的 resize 会先把「系统给的默认位置」写回 window-state.json，
+            // 保存的位置就永远读不回来了。
+            for slot in 1..=OVERLAY_SLOTS {
+                let Some(win) = app.get_webview_window(&overlay_label(slot)) else {
+                    continue;
+                };
+                if place_overlay(&win, slot) {
+                    mark_overlay_placed(slot);
+                }
+            }
 
             // 系统托盘（关闭窗口后用于恢复 / 退出）
             setup_tray(app)?;

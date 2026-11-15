@@ -12,6 +12,11 @@ import ThemeHost from './ThemeHost.vue';
 import { OVERLAY_SLOT_MAX, readThemeChoice } from '../telemetry/theme-choice.js';
 import { overlayBackdropStyle, readOverlayAppearance } from '../telemetry/overlay-background.js';
 import { readThemeSettings, themeSettingsKey } from '../telemetry/overlay-theme-settings.js';
+import {
+  clearOverlayUserSize,
+  readOverlayUserSize,
+  writeOverlayUserSize,
+} from '../telemetry/overlay-size.js';
 import { themeSupportsOverlaySetting } from '../telemetry/overlay-settings.js';
 import { disconnect, start, telemetry } from '../telemetry/useTelemetry.js';
 
@@ -77,7 +82,10 @@ watch(
 );
 
 function onThemeReady(meta) {
-  fitToTheme(meta);
+  // 记住当前主题的 design：下面判断「用户尺寸」时要拿它当基准，
+  // 主题升级改了 design 时旧尺寸覆盖也会自动失效。
+  themeDesign.value = meta?.w && meta?.h ? { w: meta.w, h: meta.h } : null;
+  applyThemeSize();
   const capabilityTheme = { source: choice.value.source, overlaySettings: meta?.overlaySettings };
   backgroundSupported.value = themeSupportsOverlaySetting(capabilityTheme, 'background');
   textSupported.value = themeSupportsOverlaySetting(capabilityTheme, 'textColor');
@@ -88,6 +96,8 @@ const locked = ref(true);
 // 窗口逻辑尺寸 / 内容区尺寸（内容区 = 扣掉 6px 内边距与 1px 边框，正是主题 design 的基准）
 const size = ref('');
 const design = ref('');
+// 当前主题的 design 数值（{w,h}），用来区分「用户手动改的尺寸」和「主题默认尺寸」
+const themeDesign = ref(null);
 
 let unlistenLock = null;
 let unlistenResize = null;
@@ -133,20 +143,43 @@ function scheduleSave() {
   saveTimer = setTimeout(doSave, 400);
 }
 
-async function doSave() {
+async function doSave(force = false) {
   if (!appWindow) return;
   // 编辑态的窗口多了一行工具条（高度 +22、位置上移），不能当成正式几何存下来；
   // 锁定 / 隐藏时 Rust 会复原窗口，那一次 resize/move 事件再落盘才是对的。
   if (!locked.value) return;
+  // 启动阶段窗口还是隐藏的：主题 ready 会触发一次 set_overlay_size，此时窗口可能还没完成定位
+  // （Rust 侧拿不到显示器时会把 place_overlay 留到 show 前重试）。
+  // 未显示过的几何绝不能落盘，否则会把 window-state.json 里保存的位置覆盖成系统默认值。
+  // 只有真正显示过（active）之后的移动 / 缩放才是用户几何。
+  // force：隐藏前补一次落盘，此时 active 已经变 false，但几何仍是用户最后的位置。
+  if (!active.value && !force) return;
   try {
     const pos = await appWindow.outerPosition();
-    const size = await appWindow.outerSize();
+    const outer = await appWindow.outerSize();
     await invoke('save_overlay_rect', {
       x: pos.x,
       y: pos.y,
-      w: size.width,
-      h: size.height,
+      w: outer.width,
+      h: outer.height,
     });
+
+    // 尺寸持久化：用户手动拉边后，把「主题区逻辑尺寸」按主题记下来。
+    // 和当前主题 design 一致（容差 1px）就当成默认尺寸，清掉旧覆盖；
+    // 否则记成用户尺寸，下次主题 ready 时不再被 fitToTheme 重置。
+    const d = themeDesign.value;
+    const key = themeSettingsKey(choice.value);
+    if (!d || !key) return;
+    let dpr = 1;
+    try { dpr = (await appWindow.scaleFactor()) || 1; } catch { dpr = 1; }
+    const inner = await appWindow.innerSize();
+    const lw = Math.round(inner.width / dpr) - OVERLAY_CHROME;
+    const lh = Math.round(inner.height / dpr) - OVERLAY_CHROME;
+    if (Math.abs(lw - d.w) <= 1 && Math.abs(lh - d.h) <= 1) {
+      clearOverlayUserSize(slot, key);
+    } else {
+      writeOverlayUserSize(slot, key, d, lw, lh);
+    }
   } catch { /* 权限缺失时忽略 */ }
 }
 
@@ -210,10 +243,57 @@ async function fitToTheme(d) {
   } catch { /* 失败就保持现有尺寸，主题会按 contain 缩放 */ }
 }
 
+/**
+ * 主题 ready 时决定窗口尺寸：
+ *   - 这个槽位 + 这个主题手动拉过边 → 沿用用户尺寸（不被 design 重置）；
+ *   - 没拉过 / 主题升级改了 design → 按主题 design 适配。
+ */
+async function applyThemeSize() {
+  const d = themeDesign.value;
+  if (!isTauri || !d) return;
+  if (!locked.value) return;
+  const saved = readOverlayUserSize(slot, themeSettingsKey(choice.value), d);
+  if (saved) {
+    try {
+      await invoke('set_overlay_size', {
+        width: saved.w + OVERLAY_CHROME,
+        height: saved.h + OVERLAY_CHROME,
+      });
+      syncSize();
+    } catch { /* 失败就保持现有尺寸，主题会按 contain 缩放 */ }
+    return;
+  }
+  await fitToTheme(d);
+}
+
+/** 编辑态工具条上的「默认尺寸」：清掉用户尺寸，回到当前主题的 design。 */
+async function resetSize() {
+  const d = themeDesign.value;
+  if (!isTauri || !d?.w || !d?.h) return;
+  clearOverlayUserSize(slot, themeSettingsKey(choice.value));
+  try {
+    await invoke('set_overlay_size', {
+      width: d.w + OVERLAY_CHROME,
+      // 编辑态窗口比主题区多一条工具条，别把主题区压小
+      height: d.h + OVERLAY_CHROME + (locked.value ? 0 : EDIT_BAR),
+    });
+    syncSize();
+  } catch { /* 失败就保持现有尺寸 */ }
+}
+
 watch(active, (on) => {
   if (!isTauri) return;
-  if (on) start({ passive: true });
-  else disconnect();
+  if (on) {
+    start({ passive: true });
+  } else {
+    // 隐藏前补一次落盘：编辑态拖动后直接 Ctrl+Shift+O 隐藏时，
+    // Rust 复原窗口产生的事件可能赶不上 400ms 的保存计时器，
+    // 等 active 变 false 就会把刚调好的位置丢掉。
+    // 延后 100ms，让「锁定 + 复原工具条」的事件先到，读到的才是锁定态几何。
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => doSave(true), 100);
+    disconnect();
+  }
 });
 
 onMounted(async () => {
@@ -319,6 +399,13 @@ onBeforeUnmount(() => {
       <span class="ov-size" :title="'窗口 ' + size">
         design <b>{{ design }}</b>
       </span>
+      <button
+        class="ov-lock"
+        type="button"
+        title="恢复当前主题的默认尺寸"
+        @pointerdown.stop
+        @click="resetSize"
+      >重置</button>
       <button class="ov-lock" type="button" @pointerdown.stop @click="lock">锁定</button>
     </div>
 

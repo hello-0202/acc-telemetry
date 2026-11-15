@@ -15,6 +15,7 @@
 | 构建机器       | `windows-latest`（仅 Windows 安装包）                                                                    |
 | 构建顺序       | 装 Node 20 / Rust / Python 3.10 → 用 PyInstaller 打包 Python sidecar → `tauri-apps/tauri-action` 编译安装包 |
 | 产物         | NSIS `.exe` 安装包、MSI、各自对应的 `.sig` 签名文件，以及 `latest.json`                                             |
+| Gitee 同步    | CI 只推 tag 和 `update/latest.json`；安装包由维护者从 GitHub Release 手动下载后上传到 Gitee 同一 tag 的 Release |
 | Release 状态 | 自动创建为 **Draft（草稿）**，名字形如 `ACC Telemetry v0.3.2`                                                    |
 | 更新检查地址     | `https://github.com/hello-0202/acc-telemetry/releases/latest/download/latest.json`                 |
 | 更新器约束      | `requireSignedVersion: true`，`installMode: passive` —— 没有有效签名的包会被客户端拒绝                             |
@@ -112,7 +113,19 @@ chore(release): v1.0.0
 > ⚠️ **最关键的一步就是点击 Publish。**
 > 草稿或预发布不会出现在 `releases/latest`，老版本客户端将永远提示「已是最新版本」。
 
-### 第 6 步：验证更新链路（可选但强烈建议）
+### 第 6 步：手动把安装包传到 Gitee
+
+CI 不再搬运安装包，只同步 Gitee 的 tag 和 `update/latest.json`。
+GitHub Release 发布后：
+
+1. 从 GitHub Release 下载 `acc-telemetry_<版本>_x64-setup.exe` 和 `.msi`（文件名必须与 CI 产物完全一致）。
+2. 打开 Gitee 发行版 `helloets/acc-telemetry-releases` 里同 tag 的 Release（CI 已自动创建，没有就手动建一个）。
+3. 把两个安装包作为附件上传。
+
+> ⚠️ `latest.json` 里的签名由 CI 构建产出，只能对应 GitHub Release 里那份安装包。
+> 上传时**不要重新打包、不要改名**，否则客户端签名校验会失败。
+
+### 第 7 步：验证更新链路（可选但强烈建议）
 
 ```bash
 curl -L https://github.com/hello-0202/acc-telemetry/releases/latest/download/latest.json
@@ -186,6 +199,7 @@ cp dist_new/telemetry_core.exe ../src-tauri/binaries/telemetry_core-x86_64-pc-wi
 [ ] Actions Release 工作流成功
 [ ] Draft Release 说明已填写、未勾 Pre-release
 [ ] 已点击 Publish release
+[ ] 安装包（.exe / .msi，文件名不变）已手动上传到 Gitee 同 tag 的 Release
 [ ] latest.json 中的 version 正确
 [ ] 老版本客户端能检测到更新
 ```
